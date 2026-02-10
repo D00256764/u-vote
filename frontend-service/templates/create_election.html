@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Create Election - Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <h2 class="mb-4"><i class="bi bi-plus-circle"></i> Create New Election</h2>
+        
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <form method="POST" id="createElectionForm">
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Election Title *</label>
+                        <input type="text" class="form-control" id="title" name="title" required>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Options/Candidates *</label>
+                        <div id="optionsContainer">
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" name="options[]" placeholder="Option 1" required>
+                            </div>
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" name="options[]" placeholder="Option 2" required>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="addOptionBtn">
+                            <i class="bi bi-plus"></i> Add Option
+                        </button>
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Create Election
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let optionCount = 2;
+    
+    document.getElementById('addOptionBtn').addEventListener('click', function() {
+        optionCount++;
+        const container = document.getElementById('optionsContainer');
+        const div = document.createElement('div');
+        div.className = 'input-group mb-2';
+        div.innerHTML = `
+            <input type="text" class="form-control" name="options[]" placeholder="Option ${optionCount}">
+            <button class="btn btn-outline-danger" type="button" onclick="this.parentElement.remove()">
+                <i class="bi bi-trash"></i>
+            </button>
+        `;
+        container.appendChild(div);
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-lg-8 mx-auto text-center">
+        <h1 class="display-4 mb-4">
+            <i class="bi bi-shield-lock text-primary"></i>
+            Secure Voting System
+        </h1>
+        <p class="lead mb-5">
+            A cryptographically secure, identity-separated voting platform with immutable vote storage
+        </p>
+
+        <div class="row mb-5">
+            <div class="col-md-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-key-fill text-primary" style="font-size: 2rem;"></i>
+                        <h5 class="card-title mt-3">Single-Use Tokens</h5>
+                        <p class="card-text">Cryptographically secure one-time voting credentials</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-eye-slash text-primary" style="font-size: 2rem;"></i>
+                        <h5 class="card-title mt-3">Anonymous Voting</h5>
+                        <p class="card-text">Complete separation between voter identity and ballots</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <i class="bi bi-lock-fill text-primary" style="font-size: 2rem;"></i>
+                        <h5 class="card-title mt-3">Immutable Records</h5>
+                        <p class="card-text">Votes stored with cryptographic hashes and hash chains</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-block">
+            {% if session.get('token') %}
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">
+                    <i class="bi bi-speedometer2"></i> Go to Dashboard
+                </a>
+            {% else %}
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-2">
+                    <i class="bi bi-person-plus"></i> Register as Organizer
+                </a>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-lg">
+                    <i class="bi bi-box-arrow-in-right"></i> Login
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-lg-10 mx-auto">
+        <h3 class="text-center mb-4">How It Works</h3>
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">For Organizers</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="mb-0">
+                            <li>Create an election with options/candidates</li>
+                            <li>Upload voter email list (CSV)</li>
+                            <li>Generate secure one-time tokens</li>
+                            <li>Open the election</li>
+                            <li>Close and view results after voting ends</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="card border-success">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">For Voters</h5>
+                    </div>
+                    <div class="card-body">
+                        <ol class="mb-0">
+                            <li>Receive unique voting token via email</li>
+                            <li>Access ballot using the token</li>
+                            <li>Cast your vote securely</li>
+                            <li>Receive confirmation hash</li>
+                            <li>Vote is anonymous and immutable</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

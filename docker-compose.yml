@@ -1,0 +1,138 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: voting-postgres
+    environment:
+      POSTGRES_DB: voting_db
+      POSTGRES_USER: voting_user
+      POSTGRES_PASSWORD: voting_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - voting-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voting_user -d voting_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: voting-auth
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: voting_db
+      DB_USER: voting_user
+      DB_PASSWORD: voting_pass
+      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  voter-service:
+    build:
+      context: .
+      dockerfile: voter-service/Dockerfile
+    container_name: voting-voter
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: voting_db
+      DB_USER: voting_user
+      DB_PASSWORD: voting_pass
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  voting-service:
+    build:
+      context: .
+      dockerfile: voting-service/Dockerfile
+    container_name: voting-voting
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: voting_db
+      DB_USER: voting_user
+      DB_PASSWORD: voting_pass
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  results-service:
+    build:
+      context: .
+      dockerfile: results-service/Dockerfile
+    container_name: voting-results
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: voting_db
+      DB_USER: voting_user
+      DB_PASSWORD: voting_pass
+    ports:
+      - "5004:5004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  frontend-service:
+    build:
+      context: .
+      dockerfile: frontend-service/Dockerfile
+    container_name: voting-frontend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: voting_db
+      DB_USER: voting_user
+      DB_PASSWORD: voting_pass
+      AUTH_SERVICE_URL: http://auth-service:5001
+      VOTER_SERVICE_URL: http://voter-service:5002
+      VOTING_SERVICE_URL: http://voting-service:5003
+      RESULTS_SERVICE_URL: http://results-service:5004
+      FLASK_SECRET: your-super-secret-flask-key-change-this-in-production
+    ports:
+      - "8080:5000"
+    depends_on:
+      - postgres
+      - auth-service
+      - voter-service
+      - voting-service
+      - results-service
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  voting-network:
+    driver: bridge
