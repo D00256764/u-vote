@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Error - Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-lg-6 mx-auto">
+        <div class="card shadow text-center">
+            <div class="card-body p-5">
+                <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 5rem;"></i>
+                <h2 class="mt-4 mb-3">Voting Error</h2>
+                <p class="lead text-danger">{{ error }}</p>
+
+                <div class="alert alert-info mt-4">
+                    <h6>Possible reasons:</h6>
+                    <ul class="list-unstyled mb-0">
+                        <li><i class="bi bi-x-circle"></i> Token has already been used</li>
+                        <li><i class="bi bi-x-circle"></i> Token has expired</li>
+                        <li><i class="bi bi-x-circle"></i> Election is not currently open</li>
+                        <li><i class="bi bi-x-circle"></i> Invalid token</li>
+                    </ul>
+                </div>
+
+                <p class="mt-4">
+                    If you believe this is an error, please contact the election organizer.
+                </p>
+
+                <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">
+                    <i class="bi bi-house"></i> Return to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
