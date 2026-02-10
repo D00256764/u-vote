@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}{{ election.title }} - Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item active">{{ election.title }}</li>
+            </ol>
+        </nav>
+
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>{{ election.title }}</h2>
+            <span class="badge 
+                {% if election.status == 'draft' %}bg-secondary
+                {% elif election.status == 'open' %}bg-success
+                {% else %}bg-danger{% endif %} fs-6">
+                {{ election.status|upper }}
+            </span>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Election Details</h5>
+                        {% if election.description %}
+                            <p class="card-text">{{ election.description }}</p>
+                        {% endif %}
+                        
+                        <h6 class="mt-4">Options/Candidates:</h6>
+                        <ul class="list-group list-group-flush">
+                            {% for option in options %}
+                                <li class="list-group-item">{{ option.text }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card shadow-sm mb-3">
+                    <div class="card-body">
+                        <h5 class="card-title">Statistics</h5>
+                        <ul class="list-unstyled mb-0">
+                            <li><i class="bi bi-people"></i> Voters: {{ election.voter_count }}</li>
+                            <li><i class="bi bi-check-circle"></i> Votes Cast: {{ election.vote_count }}</li>
+                            <li><i class="bi bi-calendar"></i> Created: {{ election.created_at.strftime('%Y-%m-%d') }}</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Actions</h5>
+                        <div class="d-grid gap-2">
+                            <a href="{{ url_for('manage_voters', election_id=election.id) }}" 
+                               class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-people"></i> Manage Voters
+                            </a>
+                            
+                            {% if election.status == 'draft' %}
+                                <form method="POST" action="{{ url_for('open_election', election_id=election.id) }}" 
+                                      onsubmit="return confirm('Are you sure you want to open this election?')">
+                                    <button type="submit" class="btn btn-success btn-sm w-100">
+                                        <i class="bi bi-unlock"></i> Open Election
+                                    </button>
+                                </form>
+                            {% elif election.status == 'open' %}
+                                <form method="POST" action="{{ url_for('close_election', election_id=election.id) }}"
+                                      onsubmit="return confirm('Are you sure you want to close this election? This cannot be undone.')">
+                                    <button type="submit" class="btn btn-danger btn-sm w-100">
+                                        <i class="bi bi-lock"></i> Close Election
+                                    </button>
+                                </form>
+                            {% endif %}
+                            
+                            {% if election.status == 'closed' %}
+                                <a href="{{ url_for('view_results', election_id=election.id) }}" 
+                                   class="btn btn-primary btn-sm">
+                                    <i class="bi bi-bar-chart"></i> View Results
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
