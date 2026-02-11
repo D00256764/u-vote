@@ -1,447 +1,346 @@
-# Secure Voting System
+# U-Vote
 
-A token-based online voting system with cryptographic security, identity-ballot separation, and immutable vote storage.
+**A Secure, Accessible Online Voting System for Small-Scale Elections**
 
-## Features
+> Token-based online voting with cryptographic security, identity-ballot separation, immutable audit logging, and WCAG AA accessibility — deployed on Kubernetes with Calico network isolation.
 
-### 1️⃣ Organizer-Controlled Elections
-- Organizer account (email + password)
-- Create elections with custom options/candidates
-- Open/close election control
+---
 
-### 2️⃣ Pre-defined Voter List
-- Upload voter emails via CSV
-- System generates one-time voting credentials
-- No self-registration
+## Table of Contents
 
-### 3️⃣ Single-Use Voting Tokens
-- Cryptographically random tokens (URL-safe, 32 bytes)
-- Token tied to one election
-- Token expiration (default: 7 days)
-- Token invalidated after vote
+- [Project Overview](#project-overview)
+- [Project Context](#project-context)
+- [Architecture Summary](#architecture-summary)
+- [Repository Structure](#repository-structure)
+- [Getting Started](#getting-started)
+- [Development Approach](#development-approach)
+- [Security Measures](#security-measures)
+- [Project Deliverables](#project-deliverables)
+- [Documentation](#documentation)
+- [License](#license)
 
-### 4️⃣ Secure Vote Casting
-- Token-based ballot access
-- Server-side validation
-- Vote submission only once
-- No vote editing
+---
 
-### 5️⃣ Identity–Ballot Separation
-- Token used only to authorize vote
-- Vote stored without identity data
-- Token and vote stored separately
+## Project Overview
 
-### 6️⃣ Immutable Vote Storage
-- Append-only vote table
-- Hash each vote record (SHA-256)
-- Optional hash chain for audit trail
-- Database triggers prevent vote modification
+U-Vote is a secure, transparent, and inclusive online voting platform designed for small-scale democratic processes. It targets organisations where trust, accessibility, and auditability are critical but large-scale government infrastructure is unnecessary.
 
-### 7️⃣ Results After Close
-- Tally only after election ends
-- Read-only results
-- Detailed statistics and audit trail
+### Target Users
 
-## Technology Stack
+- **Student unions and councils** — campus-wide or departmental elections
+- **NGOs and non-profits** — board elections, member votes
+- **Local councils and clubs** — committee selections, policy decisions
+- **Small organisations** — any group needing verifiable, anonymous voting
 
-- **Backend**: Python + Flask
-- **Database**: PostgreSQL 15
-- **Frontend**: Flask + Jinja2 Templates
-- **Architecture**: Microservices
-- **Containerization**: Docker + Docker Compose
-- **Security**: bcrypt (passwords), JWT (auth), secrets module (tokens), SHA-256 (vote hashing)
+### Key Features
 
-## Microservices Architecture
+- **Token-based voting** — one-time secure URLs sent via email, no voter passwords required
+- **Identity-ballot separation** — votes are stored without any link to voter identity
+- **Immutable audit trail** — hash-chained event logs with tamper detection
+- **Anonymous ballots** — cryptographic hashing (SHA-256) on every vote record
+- **CSV voter import** — bulk voter management for administrators
+- **Email notifications** — voting invitations and results distribution
+- **WCAG AA accessibility** — inclusive design for users with diverse abilities
+- **Microservices architecture** — 8 independently deployable services
+- **Kubernetes deployment** — Calico network policies for service isolation
 
-```
-┌─────────────────┐
-│  PostgreSQL DB  │
-└────────┬────────┘
-         │
-    ┌────┴─────────────────────────────────┐
-    │                                      │
-┌───▼─────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
-│  Auth   │  │  Voter   │  │  Voting  │  │ Results  │
-│ Service │  │ Service  │  │ Service  │  │ Service  │
-│ :5001   │  │ :5002    │  │ :5003    │  │ :5004    │
-└───┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘
-    │            │            │            │
-    └────────────┴────────────┴────────────┘
-                     │
-              ┌──────▼──────┐
-              │  Frontend   │
-              │  Service    │
-              │   :5000     │
-              └─────────────┘
-```
+### Objectives
 
-### Services:
-1. **Auth Service** (5001): Organizer authentication and JWT management
-2. **Voter Service** (5002): Voter list management and token generation
-3. **Voting Service** (5003): Ballot access and vote casting
-4. **Results Service** (5004): Result tallying and audit trails
-5. **Frontend Service** (5000): Web UI with Jinja templates
+1. Implement secure user authentication to prevent identity fraud
+2. Protect vote data and system integrity against cybersecurity threats
+3. Ensure the platform is accessible to users with impairments or low digital literacy
+4. Provide a transparent, verifiable voting process with auditable logs
+5. Deliver a production-quality proof-of-concept suitable for real small-scale elections
 
-## Installation & Setup
+---
 
-### Prerequisites
-- Docker Desktop
-- Docker Compose
-- Git
+## Project Context
 
-### Quick Start
+This project is the capstone for the **4th Year BSc in Computing Systems and Operations** programme, fulfilling module **PROJ I8009** (10 credits, 2 semesters).
 
-1. **Clone the repository**:
-```bash
-git clone <repository-url>
-cd secure-voting-system
-```
+The module requires students to design, build, and deliver a working software solution supported by a production-quality **DevOps pipeline and operational platform**, demonstrating how modern software is delivered, deployed, and operated.
 
-2. **Start all services**:
-```bash
-docker-compose up --build
-```
+### Module Learning Outcomes
 
-3. **Access the application**:
-- Frontend: http://localhost:5000
-- Auth API: http://localhost:5001
-- Voter API: http://localhost:5002
-- Voting API: http://localhost:5003
-- Results API: http://localhost:5004
-- PostgreSQL: localhost:5432
+| # | Outcome |
+|---|---------|
+| MLO1 | Conduct background reading, research, and user analysis to develop requirements for a complex technical project |
+| MLO2 | Build, test, and deploy a substantial artefact while demonstrating best practice in modern DevOps |
+| MLO3 | Demonstrate understanding of Development, Configuration Management, CI/CD, and Operations including software tools for automation |
+| MLO4 | Communicate technical information clearly and succinctly using a range of media |
+| MLO5 | Critically assess project outputs, reflect on objectives, and discuss outcomes in an oral/practical presentation |
 
-### Database Initialization
+### Assessment Breakdown
 
-The database is automatically initialized with the schema on first startup using the `database/init.sql` file.
+| Component | Weight |
+|-----------|--------|
+| Interim Submission (Stage 1 — Design & Prototyping) | 30% |
+| Technical Documentation & Implementation (Stage 2) | 40% |
+| Project Log & Reflection | 20% |
+| Final Presentation & Product Demonstration | 10% |
 
-## Usage Guide
+---
 
-### For Organizers
+## Architecture Summary
 
-1. **Register an Account**
-   - Navigate to http://localhost:5000
-   - Click "Register as Organizer"
-   - Provide email and password
+U-Vote follows a **microservices architecture** with 8 services, each with isolated database permissions, deployed on Kubernetes with Calico network policies enforcing a default-deny security model.
 
-2. **Create an Election**
-   - Login to your dashboard
-   - Click "Create Election"
-   - Enter title, description, and options/candidates
-   - Click "Create Election"
+### Technology Stack
 
-3. **Add Voters**
-   - Go to election details
-   - Click "Manage Voters"
-   - Upload a CSV file with voter emails (see `sample-voters.csv`)
-   - Or add voters manually
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python + FastAPI |
+| **Frontend** | FastAPI + Jinja2 (server-side rendering) |
+| **Database** | PostgreSQL 15 |
+| **Orchestration** | Kubernetes (Kind for local dev) |
+| **Networking** | Calico CNI + Network Policies |
+| **Ingress** | Nginx Ingress Controller |
+| **Security** | bcrypt, JWT (HS256), SHA-256 hash chains |
+| **Secrets** | Kubernetes Secrets |
+| **Containerisation** | Docker |
 
-4. **Generate Tokens**
-   - In the "Manage Voters" page
-   - Click "Generate Tokens"
-   - Tokens are created for all voters
-   - **Important**: Send tokens to voters via secure channels (email, etc.)
-
-5. **Open the Election**
-   - In election details, click "Open Election"
-   - Election status changes to "OPEN"
-   - Voters can now cast votes
-
-6. **Close the Election**
-   - When voting period ends, click "Close Election"
-   - Election status changes to "CLOSED"
-   - Results become available
-
-7. **View Results**
-   - Click "View Results" on closed elections
-   - See vote distribution, statistics, and winner
-
-### For Voters
-
-1. **Receive Token**
-   - You'll receive a unique voting token from the organizer
-   - Token URL format: `http://localhost:5000/vote/<your-token>`
-
-2. **Cast Vote**
-   - Click the token URL
-   - Review the ballot
-   - Select your choice
-   - Confirm and submit
-   - **Note**: Votes cannot be changed after submission
-
-3. **Receive Confirmation**
-   - You'll receive a vote hash as confirmation
-   - Save this hash for your records
-   - It proves your vote was recorded
-
-## Security Features
-
-### Password Security
-- Passwords hashed with bcrypt (salt + hash)
-- Never stored in plaintext
-- Secure password verification
-
-### Token Security
-- Cryptographically random tokens (secrets.token_urlsafe)
-- 256-bit entropy
-- Single-use (marked as used after vote)
-- Time-based expiration
-- Cannot be guessed or predicted
-
-### Vote Security
-- **Identity Separation**: Votes stored without voter identification
-- **Immutability**: Database triggers prevent vote modification/deletion
-- **Hashing**: Each vote has SHA-256 hash for integrity
-- **Hash Chain**: Optional linkage between votes for audit trail
-- **Append-Only**: Votes can only be added, never updated or deleted
-
-### Authentication
-- JWT tokens for organizer sessions
-- 24-hour token expiration
-- Secure session management
-
-## API Documentation
-
-### Auth Service (Port 5001)
-
-**POST /register** - Register organizer
-```json
-{
-  "email": "organizer@example.com",
-  "password": "securepassword"
-}
-```
-
-**POST /login** - Login and get JWT
-```json
-{
-  "email": "organizer@example.com",
-  "password": "securepassword"
-}
-```
-
-**POST /verify** - Verify JWT token
-```json
-{
-  "token": "jwt-token-here"
-}
-```
-
-### Voter Service (Port 5002)
-
-**POST /elections/{election_id}/voters/upload** - Upload voters CSV
-
-**POST /elections/{election_id}/voters** - Add single voter
-```json
-{
-  "email": "voter@example.com"
-}
-```
-
-**GET /elections/{election_id}/voters** - List voters
-
-**POST /elections/{election_id}/tokens/generate** - Generate tokens
-
-**GET /tokens/{token}/validate** - Validate token
-
-### Voting Service (Port 5003)
-
-**GET /elections/{election_id}/ballot** - Get ballot
-Headers: `X-Voting-Token: <token>`
-
-**POST /elections/{election_id}/vote** - Cast vote
-Headers: `X-Voting-Token: <token>`
-```json
-{
-  "option_id": 1
-}
-```
-
-**GET /votes/{vote_id}/verify** - Verify vote exists
-
-### Results Service (Port 5004)
-
-**GET /elections/{election_id}/results** - Get results (closed elections only)
-
-**GET /elections/{election_id}/audit** - Get audit trail
-
-**GET /elections/{election_id}/statistics** - Get detailed statistics
-
-## File Structure
+### Services
 
 ```
-secure-voting-system/
-├── auth-service/
+                         ┌──────────────┐
+                         │   Internet   │
+                         └──────┬───────┘
+                                │ HTTPS
+                    ┌───────────▼────────────┐
+                    │   Nginx Ingress        │
+                    │  (API Gateway)         │
+                    └───────────┬────────────┘
+                                │
+        ┌───────────┬───────────┼───────────┬───────────┐
+        │           │           │           │           │
+   ┌────▼────┐ ┌────▼────┐ ┌───▼────┐ ┌────▼────┐ ┌───▼─────┐
+   │Frontend │ │  Auth   │ │Election│ │ Voting  │ │ Results │
+   │ :3000   │ │ :8001   │ │ :8002  │ │ :8003   │ │ :8004   │
+   └─────────┘ └─────────┘ └────────┘ └─────────┘ └─────────┘
+        │           │           │           │           │
+   ┌────▼────┐ ┌────▼────┐ ┌───▼────┐     │           │
+   │  Admin  │ │  Audit  │ │ Email  │     │           │
+   │ :8006   │ │ :8005   │ │ :8007  │     │           │
+   └─────────┘ └─────────┘ └────────┘     │           │
+        │           │           │           │           │
+        └───────────┴───────────┴───────────┴───────────┘
+                                │
+                    ┌───────────▼────────────┐
+                    │   PostgreSQL 15        │
+                    │   (PersistentVolume)   │
+                    └────────────────────────┘
+```
+
+| # | Service | Port | Responsibility |
+|---|---------|------|----------------|
+| 1 | **Frontend** | 3000 | Jinja2 templates, WCAG AA UI |
+| 2 | **Auth** | 8001 | Admin registration, login, JWT tokens |
+| 3 | **Election** | 8002 | Election CRUD, lifecycle management |
+| 4 | **Voting** | 8003 | Token validation, ballot display, vote casting |
+| 5 | **Results** | 8004 | Vote tallying, winner calculation (read-only DB access) |
+| 6 | **Audit** | 8005 | Immutable hash-chained event logging |
+| 7 | **Admin** | 8006 | Voter/candidate management, CSV import, token generation |
+| 8 | **Email** | 8007 | Voting invitations, results notifications |
+
+For the full architecture specification including database schema, API endpoints, data flow diagrams, and security model, see [`.docs/ARCHITECTURE.MD`](.docs/ARCHITECTURE.MD).
+
+---
+
+## Repository Structure
+
+```
+u-vote/
+├── .docs/                          # Project documentation
+│   ├── ARCHITECTURE.MD             # Application architecture (services, APIs, DB schema)
+│   ├── PLATFORM.MD                 # Platform infrastructure (Kubernetes, Calico, networking)
+│   ├── U-Vote_...pdf               # Research paper (background, risk analysis, UX design)
+│   ├── 4th Year Project...pdf      # Project brief & requirements
+│   └── Module PROJ I8009...pdf     # Module specification
+├── auth-service/                   # Admin authentication service
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── voter-service/
+├── voter-service/                  # Voter list & token management
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── voting-service/
+├── voting-service/                 # Ballot access & vote casting
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── results-service/
+├── results-service/                # Result tallying & statistics
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── frontend-service/
+├── frontend-service/               # Web UI (Jinja2 templates)
 │   ├── app.py
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── templates/
-│   │   ├── base.html
-│   │   ├── index.html
-│   │   ├── login.html
-│   │   ├── register.html
-│   │   ├── dashboard.html
-│   │   ├── create_election.html
-│   │   ├── election_detail.html
-│   │   ├── manage_voters.html
-│   │   ├── vote.html
-│   │   ├── vote_success.html
-│   │   ├── vote_error.html
-│   │   └── results.html
-│   └── static/
-│       └── css/
-│           └── style.css
-├── shared/
-│   ├── database.py
-│   └── security.py
+│   ├── templates/                  # HTML templates
+│   └── static/css/                 # Stylesheets
+├── shared/                         # Shared utilities
+│   ├── database.py                 # Database connection helper
+│   └── security.py                 # Security utilities
 ├── database/
-│   └── init.sql
-├── docker-compose.yml
-├── sample-voters.csv
-└── README.md
+│   └── init.sql                    # Database schema initialisation
+├── docker-compose.yml              # Local development orchestration
+├── sample-voters.csv               # Example voter CSV format
+└── README.md                       # This file
 ```
 
-## Environment Variables
+---
 
-### Database Configuration
-- `DB_HOST`: PostgreSQL host (default: postgres)
-- `DB_PORT`: PostgreSQL port (default: 5432)
-- `DB_NAME`: Database name (default: voting_db)
-- `DB_USER`: Database user (default: voting_user)
-- `DB_PASSWORD`: Database password (default: voting_pass)
+## Getting Started
 
-### Security Configuration
-- `JWT_SECRET`: JWT signing key (CHANGE IN PRODUCTION!)
-- `FLASK_SECRET`: Flask session secret (CHANGE IN PRODUCTION!)
+### Prerequisites
 
-## Production Deployment
+- **Docker** (v20.10+) and **Docker Compose**
+- **Git**
 
-⚠️ **IMPORTANT**: Before deploying to production:
+For full Kubernetes deployment, additionally:
+- **kubectl** (v1.27+)
+- **Kind** (v0.20.0+)
+- **Helm** (v3.12+)
+- 8GB RAM minimum (16GB recommended), 4 CPU cores, 20GB disk
 
-1. **Change all secrets**:
-   - `JWT_SECRET` in auth-service
-   - `FLASK_SECRET` in frontend-service
-   - Database password
+### Quick Start (Docker Compose)
 
-2. **Enable HTTPS**:
-   - Use reverse proxy (nginx, traefik)
-   - SSL/TLS certificates
-
-3. **Database**:
-   - Use managed PostgreSQL service
-   - Enable SSL connections
-   - Regular backups
-
-4. **Security**:
-   - Enable rate limiting
-   - Add CORS protection
-   - Implement logging and monitoring
-   - Regular security audits
-
-5. **Email Integration**:
-   - Integrate email service for token distribution
-   - Send tokens securely to voters
-
-## Sample Voter CSV Format
-
-```csv
-email
-voter1@example.com
-voter2@example.com
-voter3@example.com
-```
-
-## Troubleshooting
-
-### Services not starting
 ```bash
-# Check logs
-docker-compose logs
+# Clone the repository
+git clone https://github.com/D00256764/u-vote.git
+cd u-vote
 
-# Restart services
-docker-compose down
+# Start all services
 docker-compose up --build
+
+# Access the application
+# Frontend:  http://localhost:5000
+# Auth API:  http://localhost:5001
+# Voter API: http://localhost:5002
+# Vote API:  http://localhost:5003
+# Results:   http://localhost:5004
 ```
 
-### Database connection issues
-```bash
-# Check if PostgreSQL is ready
-docker-compose ps
-docker-compose logs postgres
+The database is automatically initialised with the schema on first startup via `database/init.sql`.
 
-# Reset database
-docker-compose down -v
-docker-compose up --build
-```
+### Kubernetes Deployment
 
-### Port conflicts
-If ports 5000-5004 are already in use, modify the port mappings in `docker-compose.yml`:
-```yaml
-ports:
-  - "8000:5000"  # Change 5000 to 8000 on host
-```
-
-## Development
-
-### Running individual services
-```bash
-# Start database only
-docker-compose up postgres
-
-# Install dependencies locally
-cd auth-service
-pip install -r requirements.txt
-
-# Run service
-python app.py
-```
-
-### Testing
-Each service can be tested individually using curl or Postman:
+For production-like deployment with Calico network isolation, see the detailed setup guide in [`.docs/PLATFORM.MD`](.docs/PLATFORM.MD).
 
 ```bash
-# Test auth service
-curl -X POST http://localhost:5001/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}'
+# Create Kind cluster with Calico
+./scripts/setup-mvp.sh
 
-# Test login
-curl -X POST http://localhost:5001/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"test123"}'
+# Verify
+kubectl get nodes
+kubectl get pods -n evote-dev
 ```
+
+---
+
+## Development Approach
+
+### Voter Authentication (Approach A — Token-Based URLs)
+
+U-Vote uses a **token-based authentication model** where voters never need passwords:
+
+1. Admin creates election and uploads voter list (CSV)
+2. System generates cryptographic tokens (`secrets.token_urlsafe(32)`)
+3. Email Service sends one-time voting URLs to each voter
+4. Voter clicks link, sees ballot, casts vote
+5. Token is invalidated — cannot be reused
+
+This approach minimises friction for voters while maintaining security through:
+- 256-bit entropy tokens
+- 7-day expiration
+- Single-use enforcement
+- No voter identity stored alongside votes
+
+### Election Lifecycle
+
+```
+draft  ──>  active  ──>  closed
+  │            │            │
+  │ (activate) │  (close)   │
+  │            │            │
+  Setup        Voting       Results
+  phase        open         available
+```
+
+### DevOps Requirements
+
+The platform addresses all module-required DevOps capabilities:
+
+- **CI/CD** — Automated testing and quality gates with deployment pipelines
+- **Infrastructure as Code** — Kubernetes manifests, Calico network policies
+- **Operational Platform** — Kubernetes with multi-node Kind cluster
+- **Observability** — Audit logging, hash-chain verification (Prometheus/Grafana planned)
+- **Security** — Secrets management, least-privilege DB users, network isolation
+- **Resilience** — Service isolation, fault tolerance through independent microservices
+
+---
+
+## Security Measures
+
+| Category | Implementation |
+|----------|---------------|
+| **Admin Auth** | bcrypt (cost 12), JWT HS256, 24h expiry, account lockout after 5 failures |
+| **Voter Auth** | Cryptographic tokens (256-bit), single-use, 7-day expiry |
+| **Vote Anonymity** | No voter ID in votes table, audit logs exclude candidate choice |
+| **Data Integrity** | SHA-256 hash chains, DB triggers prevent UPDATE/DELETE on votes |
+| **Network** | Calico default-deny policies, service-to-service isolation |
+| **Database** | Per-service DB users with least-privilege permissions |
+| **Input Validation** | Parameterised queries (SQL injection prevention), email format validation |
+| **Transport** | TLS termination at Nginx Ingress, internal HTTP only |
+
+---
+
+## Project Deliverables
+
+### Stage 1 — Design & Prototyping (30%)
+
+| Delivery | Schedule | Weight |
+|----------|----------|--------|
+| Documentation of objectives, user problem, value proposition | Week 3 | 5% |
+| MVP prototype demo | Week 9 | 10% |
+| Documentation of final MVP functionality and design | End of Semester 1 | 10% |
+| Platform design document and demo | End of Semester 1 | 10% |
+
+### Stage 2 — Implementation (40%)
+
+| Delivery | Schedule | Weight |
+|----------|----------|--------|
+| Provisioned platform and MVP deployment with logging | Week 9 | 10% |
+| CI pipeline demonstrating build and test automation | Week 9 | 10% |
+| CD pipeline demonstrating automated deployment with iterations | End of Semester 2 | 10% |
+| Application monitoring and non-functional testing | End of Semester 2 | 10% |
+
+### Project Log & Reflection (20%)
+
+| Delivery | Schedule | Weight |
+|----------|----------|--------|
+| Log of work and progress | End of Semester 1 | 5% |
+| Log of work and progress | End of Semester 2 | 5% |
+| Reflection: lessons learned, challenges, future improvements | End of Semester 2 | 10% |
+
+### Final Presentation (10%)
+
+Slides, poster, live demonstration, and Q&A at end of year.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`.docs/ARCHITECTURE.MD`](.docs/ARCHITECTURE.MD) | Full application architecture — services, APIs, database schema, data flows, security model |
+| [`.docs/PLATFORM.MD`](.docs/PLATFORM.MD) | Platform infrastructure — Kubernetes setup, Calico networking, deployment guide |
+| [`.docs/U-Vote_...pdf`](.docs/U-Vote_%20A%20Secure%2C%20Accessible%20Online%20Voting%20System%20for%20Small-Scale%20Elections.pdf) | Research paper — background, risk analysis, accessibility, UX design |
+| [`.docs/4th Year Project...pdf`](.docs/4th%20Year%20Project%20%E2%80%93%20Computing%20Systems%20and%20Operations.pdf) | Project brief and requirements |
+| [`.docs/Module PROJ I8009...pdf`](.docs/Module%20PROJ%20I8009%20Project%20.pdf) | Module specification |
+
+---
 
 ## License
 
-This project is provided as-is for educational and demonstration purposes.
-
-## Support
-
-For issues, questions, or contributions, please open an issue in the repository.
-
-## Roadmap
-
-Future enhancements:
-- [ ] Email integration for token distribution
-- [ ] SMS notifications
-- [ ] Advanced analytics dashboard
-- [ ] Multi-language support
-- [ ] Mobile app
-- [ ] Blockchain integration for enhanced audit trails
-- [ ] OAuth2 integration
-- [ ] Advanced reporting and exports
+This project is developed as part of the BSc in Computing Systems and Operations at Dundalk Institute of Technology (DkIT). It is provided for educational and demonstration purposes.
