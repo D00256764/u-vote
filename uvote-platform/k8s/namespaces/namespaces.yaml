@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uvote-dev
+  labels:
+    environment: development
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uvote-test
+  labels:
+    environment: testing
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: uvote-prod
+  labels:
+    environment: production
