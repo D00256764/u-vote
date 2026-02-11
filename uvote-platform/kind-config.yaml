@@ -1,0 +1,15 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: uvote
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 80
+  - containerPort: 443
+    hostPort: 443
+- role: worker
+- role: worker
+networking:
+  disableDefaultCNI: true
+  podSubnet: 192.168.0.0/16
