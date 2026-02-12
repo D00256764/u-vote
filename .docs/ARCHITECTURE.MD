@@ -1353,11 +1353,3 @@ evote-application/
 2. Write tests
 3. Submit pull request
 4. Pass code review
-
-## License
-
-[Your License]
-
-## Contact
-
-[Your Contact Info]

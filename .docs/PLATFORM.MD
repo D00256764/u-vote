@@ -549,11 +549,3 @@ evote-platform/
 ## Contributing
 
 See application repository for development guidelines.
-
-## License
-
-[Your License]
-
-## Contact
-
-[Your Contact Info]

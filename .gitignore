@@ -40,3 +40,7 @@ plat_scripts/logs/
 # Kubernetes
 kubeconfig
 *.kubeconfig
+
+# Claude
+.claude/
+.claude
