@@ -25,6 +25,8 @@
 
 U-Vote is a secure, transparent, and inclusive online voting platform designed for small-scale democratic processes. It targets organisations where trust, accessibility, and auditability are critical but large-scale government infrastructure is unnecessary.
 
+U-Vote differentiates itself from other online voting systems by balancing *practical security with inclusivity* — applying verifiable principles to a prototype that is usable, auditable, and realistic within small-scale election contexts.
+
 ### Target Users
 
 - **Student unions and councils** — campus-wide or departmental elections
@@ -41,7 +43,7 @@ U-Vote is a secure, transparent, and inclusive online voting platform designed f
 - **CSV voter import** — bulk voter management for administrators
 - **Email notifications** — voting invitations and results distribution
 - **WCAG AA accessibility** — inclusive design for users with diverse abilities
-- **Microservices architecture** — 8 independently deployable services
+- **Microservices architecture** — independently deployable services
 - **Kubernetes deployment** — Calico network policies for service isolation
 
 ### Objectives
@@ -56,7 +58,7 @@ U-Vote is a secure, transparent, and inclusive online voting platform designed f
 
 ## Project Context
 
-This project is the capstone for the **4th Year BSc in Computing Systems and Operations** programme, fulfilling module **PROJ I8009** (10 credits, 2 semesters).
+This project is the capstone for the **4th Year BSc in Computing Systems and Operations** programme at Dundalk Institute of Technology (DkIT), fulfilling module **PROJ I8009** (10 credits, 2 semesters).
 
 The module requires students to design, build, and deliver a working software solution supported by a production-quality **DevOps pipeline and operational platform**, demonstrating how modern software is delivered, deployed, and operated.
 
@@ -83,14 +85,14 @@ The module requires students to design, build, and deliver a working software so
 
 ## Architecture Summary
 
-U-Vote follows a **microservices architecture** with 8 services, each with isolated database permissions, deployed on Kubernetes with Calico network policies enforcing a default-deny security model.
+U-Vote follows a **microservices architecture** deployed on Kubernetes with Calico network policies enforcing a default-deny security model. The design targets 8 services, each with isolated database permissions.
 
 ### Technology Stack
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Python + FastAPI |
-| **Frontend** | FastAPI + Jinja2 (server-side rendering) |
+| **Backend** | Python + Flask/FastAPI |
+| **Frontend** | Flask + Jinja2 (server-side rendering) |
 | **Database** | PostgreSQL 15 |
 | **Orchestration** | Kubernetes (Kind for local dev) |
 | **Networking** | Calico CNI + Network Policies |
@@ -115,7 +117,7 @@ U-Vote follows a **microservices architecture** with 8 services, each with isola
         │           │           │           │           │
    ┌────▼────┐ ┌────▼────┐ ┌───▼────┐ ┌────▼────┐ ┌───▼─────┐
    │Frontend │ │  Auth   │ │Election│ │ Voting  │ │ Results │
-   │ :3000   │ │ :8001   │ │ :8002  │ │ :8003   │ │ :8004   │
+   │ :5000   │ │ :5001   │ │ :8002  │ │ :5003   │ │ :5004   │
    └─────────┘ └─────────┘ └────────┘ └─────────┘ └─────────┘
         │           │           │           │           │
    ┌────▼────┐ ┌────▼────┐ ┌───▼────┐     │           │
@@ -131,16 +133,26 @@ U-Vote follows a **microservices architecture** with 8 services, each with isola
                     └────────────────────────┘
 ```
 
-| # | Service | Port | Responsibility |
-|---|---------|------|----------------|
-| 1 | **Frontend** | 3000 | Jinja2 templates, WCAG AA UI |
-| 2 | **Auth** | 8001 | Admin registration, login, JWT tokens |
-| 3 | **Election** | 8002 | Election CRUD, lifecycle management |
-| 4 | **Voting** | 8003 | Token validation, ballot display, vote casting |
-| 5 | **Results** | 8004 | Vote tallying, winner calculation (read-only DB access) |
-| 6 | **Audit** | 8005 | Immutable hash-chained event logging |
-| 7 | **Admin** | 8006 | Voter/candidate management, CSV import, token generation |
-| 8 | **Email** | 8007 | Voting invitations, results notifications |
+#### Implemented Services
+
+| # | Service | Port | Responsibility | Status |
+|---|---------|------|----------------|--------|
+| 1 | **Frontend** | 5000 | Flask + Jinja2 templates, WCAG AA UI | Implemented |
+| 2 | **Auth** | 5001 | Admin registration, login, JWT tokens | Implemented |
+| 3 | **Voter** | 5002 | Voter list management, token generation, CSV import | Implemented |
+| 4 | **Voting** | 5003 | Token validation, ballot display, vote casting | Implemented |
+| 5 | **Results** | 5004 | Vote tallying, winner calculation (read-only DB access) | Implemented |
+
+#### Planned Services
+
+| # | Service | Port | Responsibility | Status |
+|---|---------|------|----------------|--------|
+| 6 | **Election** | 8002 | Election CRUD, lifecycle management | Planned |
+| 7 | **Audit** | 8005 | Immutable hash-chained event logging | Planned |
+| 8 | **Admin** | 8006 | Advanced admin operations | Planned |
+| 9 | **Email** | 8007 | Voting invitations, results notifications | Planned |
+
+> **Note:** In the current MVP, voter management and election creation are handled by the Voter Service and Frontend Service respectively. As the architecture matures, these will be split into dedicated Election, Admin, and Email services as documented in [ARCHITECTURE.MD](.docs/ARCHITECTURE.MD).
 
 For the full architecture specification including database schema, API endpoints, data flow diagrams, and security model, see [`.docs/ARCHITECTURE.MD`](.docs/ARCHITECTURE.MD).
 
@@ -172,19 +184,46 @@ u-vote/
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── frontend-service/               # Web UI (Jinja2 templates)
+├── frontend-service/               # Web UI (Flask + Jinja2 templates)
 │   ├── app.py
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── templates/                  # HTML templates
-│   └── static/css/                 # Stylesheets
+│   │   ├── base.html              # Base layout template
+│   │   ├── index.html             # Home page
+│   │   ├── login.html             # Admin login
+│   │   ├── register.html          # Admin registration
+│   │   ├── dashboard.html         # Admin dashboard
+│   │   ├── create_election.html   # Election creation form
+│   │   ├── election_detail.html   # Election management view
+│   │   ├── manage_voters.html     # Voter management
+│   │   ├── vote.html              # Voting interface
+│   │   ├── vote_success.html      # Vote confirmation
+│   │   ├── vote_error.html        # Vote error page
+│   │   └── results.html           # Election results display
+│   └── static/css/
+│       └── style.css              # Stylesheet
 ├── shared/                         # Shared utilities
 │   ├── database.py                 # Database connection helper
 │   └── security.py                 # Security utilities
 ├── database/
 │   └── init.sql                    # Database schema initialisation
+├── uvote-platform/                 # Kubernetes platform infrastructure
+│   ├── kind-config.yaml            # Kind cluster configuration
+│   └── k8s/
+│       ├── namespaces/
+│       │   └── namespaces.yaml     # Dev, test, prod namespaces
+│       └── database/
+│           ├── db-secret.yaml      # Database credentials
+│           ├── db-pvc.yaml         # Persistent volume claim
+│           ├── db-deployment.yaml  # PostgreSQL deployment
+│           └── schema.sql          # K8s database schema
+├── plat_scripts/                   # Platform automation scripts
+│   ├── setup_k8s_platform.py      # Automated K8s cluster setup
+│   └── test_db.py                  # Database integration tests
 ├── docker-compose.yml              # Local development orchestration
 ├── sample-voters.csv               # Example voter CSV format
+├── .gitignore                      # Git ignore rules
 └── README.md                       # This file
 ```
 
@@ -196,6 +235,7 @@ u-vote/
 
 - **Docker** (v20.10+) and **Docker Compose**
 - **Git**
+- **Python 3.12+** (for running platform scripts)
 
 For full Kubernetes deployment, additionally:
 - **kubectl** (v1.27+)
@@ -214,11 +254,11 @@ cd u-vote
 docker-compose up --build
 
 # Access the application
-# Frontend:  http://localhost:5000
-# Auth API:  http://localhost:5001
-# Voter API: http://localhost:5002
-# Vote API:  http://localhost:5003
-# Results:   http://localhost:5004
+# Frontend:      http://localhost:8080
+# Auth API:      http://localhost:5001
+# Voter API:     http://localhost:5002
+# Voting API:    http://localhost:5003
+# Results API:   http://localhost:5004
 ```
 
 The database is automatically initialised with the schema on first startup via `database/init.sql`.
@@ -228,19 +268,33 @@ The database is automatically initialised with the schema on first startup via `
 For production-like deployment with Calico network isolation, see the detailed setup guide in [`.docs/PLATFORM.MD`](.docs/PLATFORM.MD).
 
 ```bash
-# Create Kind cluster with Calico
-./scripts/setup-mvp.sh
+# Run the automated platform setup script
+python3 plat_scripts/setup_k8s_platform.py
 
 # Verify
 kubectl get nodes
 kubectl get pods -n evote-dev
 ```
 
+The platform setup script will:
+1. Create a Kind cluster with 3 nodes (1 control-plane, 2 workers)
+2. Install Calico CNI for network policy enforcement
+3. Create namespaces (evote-dev, evote-test, evote-prod)
+4. Deploy PostgreSQL with persistent storage
+5. Apply default-deny network policies
+
+### Running Database Tests
+
+```bash
+# Run the comprehensive database test suite against PostgreSQL on K8s
+python3 plat_scripts/test_db.py
+```
+
 ---
 
 ## Development Approach
 
-### Voter Authentication (Approach A — Token-Based URLs)
+### Voter Authentication (Token-Based URLs)
 
 U-Vote uses a **token-based authentication model** where voters never need passwords:
 
@@ -267,6 +321,19 @@ draft  ──>  active  ──>  closed
   phase        open         available
 ```
 
+### CSV Voter Import
+
+Voters can be bulk-imported via CSV file. The expected format:
+
+```csv
+email
+alice@example.com
+bob@example.com
+charlie@example.com
+```
+
+See [`sample-voters.csv`](sample-voters.csv) for an example.
+
 ### DevOps Requirements
 
 The platform addresses all module-required DevOps capabilities:
@@ -292,6 +359,14 @@ The platform addresses all module-required DevOps capabilities:
 | **Database** | Per-service DB users with least-privilege permissions |
 | **Input Validation** | Parameterised queries (SQL injection prevention), email format validation |
 | **Transport** | TLS termination at Nginx Ingress, internal HTTP only |
+
+### Key Problem Areas Addressed
+
+The research paper identifies three critical threat categories that U-Vote mitigates:
+
+1. **Identity Fraud** — Impersonation, synthetic identity fraud, and account takeover are countered with token-based auth, hash-chained audit logs, and restricted admin privileges
+2. **Cybersecurity Threats** — Voter registration DB attacks, DoS, unauthorised vote manipulation, and insider abuse are addressed through encryption, least-privilege access, and immutable logging
+3. **Accessibility Barriers** — WCAG AA compliance ensures the platform is usable by people with visual, auditory, motor, or cognitive impairments through screen reader support, keyboard navigation, scalable fonts, and multiple navigation options
 
 ---
 
