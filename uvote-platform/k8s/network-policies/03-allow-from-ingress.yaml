@@ -1,0 +1,260 @@
+# =============================================================================
+# U-Vote Ingress Controller Access Policy
+# =============================================================================
+#
+# API Gateway Pattern (Single Entry Point)
+# -----------------------------------------
+# The Nginx Ingress Controller is the sole entry point for all external
+# traffic into the U-Vote platform. It runs in the ingress-nginx namespace
+# and handles TLS termination, request routing, and rate limiting before
+# forwarding requests to backend services in uvote-dev.
+#
+# This policy allows ingress traffic FROM the ingress-nginx namespace TO
+# each externally accessible service on its documented port. Without this
+# policy, the default-deny (00) blocks all inbound traffic, making the
+# application unreachable from outside the cluster.
+#
+# Routing rules from ARCHITECTURE.MD § "Nginx Ingress Controller":
+#   /              → Frontend Service  (port 3000)
+#   /api/auth      → Auth Service      (port 8001)
+#   /api/elections → Election Service  (port 8002)
+#   /api/voting    → Voting Service    (port 8003)
+#   /api/results   → Results Service   (port 8004)
+#   /api/admin     → Admin Service     (port 8006)
+#
+# Services NOT exposed via ingress (internal only):
+#   - Audit Service  (port 8005) — receives events from other services only;
+#     no external API consumers. Exposing it would allow external actors to
+#     write arbitrary audit logs, breaking the integrity model.
+#   - Email Service  (port 8007) — triggered internally by admin-service;
+#     uses SMTP for outbound email, not HTTP from clients.
+#   - PostgreSQL     (port 5432) — database is never externally accessible;
+#     controlled by policy 02 (allow-to-database).
+#
+# Bidirectional note:
+# Since the ingress controller runs in a DIFFERENT namespace (ingress-nginx),
+# we can only control the ingress side from our namespace (uvote-dev). The
+# egress side (ingress controller sending traffic out) must be configured in
+# the ingress-nginx namespace, which is managed by the ingress controller's
+# own deployment and is typically permissive by default.
+#
+# Reference: PLATFORM.MD § "Ingress Controller"
+# Reference: PLATFORM.MD § "Network Security Architecture" → "External Access"
+# Reference: ARCHITECTURE.MD § "Nginx Ingress Controller (API Gateway)"
+#
+# =============================================================================
+#
+# Design choice: Separate NetworkPolicy per service
+# --------------------------------------------------
+# Each exposed service gets its own NetworkPolicy resource. This provides:
+#   - Granular control: each service can be independently enabled/disabled
+#   - Clear port mapping: each policy specifies exactly one service port
+#   - Easier auditing: kubectl get networkpolicy shows each service clearly
+#   - Independent lifecycle: adding/removing a service doesn't touch others
+#
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Frontend Service — port 3000
+# Serves the user interface (Jinja2 templates, static assets).
+# All user-facing pages are rendered by this service.
+# Ingress route: /
+# Reference: ARCHITECTURE.MD § "Frontend Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-frontend
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: frontend-service
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 3000
+
+---
+
+# -----------------------------------------------------------------------------
+# Auth Service — port 8001
+# Admin registration, login, JWT token issuance and validation.
+# Ingress route: /api/auth
+# Reference: ARCHITECTURE.MD § "Auth Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-auth
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: auth-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8001
+
+---
+
+# -----------------------------------------------------------------------------
+# Election Service — port 8002
+# Election CRUD, lifecycle management (draft → active → closed).
+# Ingress route: /api/elections
+# Reference: ARCHITECTURE.MD § "Election Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-election
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: election-service
+spec:
+  podSelector:
+    matchLabels:
+      app: election-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8002
+
+---
+
+# -----------------------------------------------------------------------------
+# Voting Service — port 8003
+# Token validation, ballot display, anonymous vote casting.
+# Ingress route: /api/voting
+# Reference: ARCHITECTURE.MD § "Voting Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-voting
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: voting-service
+spec:
+  podSelector:
+    matchLabels:
+      app: voting-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8003
+
+---
+
+# -----------------------------------------------------------------------------
+# Results Service — port 8004
+# Vote tallying, percentage calculation, winner determination.
+# Ingress route: /api/results
+# Reference: ARCHITECTURE.MD § "Results Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-results
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: results-service
+spec:
+  podSelector:
+    matchLabels:
+      app: results-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8004
+
+---
+
+# -----------------------------------------------------------------------------
+# Admin Service — port 8006
+# Voter/candidate management, token generation, CSV import.
+# Triggers email-service for voting/results links.
+# Ingress route: /api/admin
+# Reference: ARCHITECTURE.MD § "Admin Service"
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-to-admin
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: ingress-access
+    policy-order: "03"
+    target-service: admin-service
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8006

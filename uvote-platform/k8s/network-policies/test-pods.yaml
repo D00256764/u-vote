@@ -1,0 +1,105 @@
+# =============================================================================
+# U-Vote Network Policy Test Pods
+# =============================================================================
+# Purpose: Validate Calico network policies by deploying test pods that
+#          simulate allowed and blocked services trying to reach PostgreSQL.
+#
+# Namespace: uvote-dev (matches namespaces.yaml)
+# Database service: postgresql (ClusterIP on port 5432)
+#
+# Usage:
+#   kubectl apply -f test-pods.yaml
+#   kubectl delete -f test-pods.yaml
+#
+# Test commands (run after pods are ready):
+#
+#   # 1. Test ALLOWED connection (should SUCCEED - auth-service can reach DB)
+#   kubectl exec -n uvote-dev test-allowed-db -- \
+#     pg_isready -h postgresql -p 5432
+#
+#   # 2. Test BLOCKED connection (should FAIL/TIMEOUT - unknown label blocked)
+#   kubectl exec -n uvote-dev test-blocked-db -- \
+#     pg_isready -h postgresql -p 5432
+#
+#   # 3. Network diagnostics with netshoot
+#   kubectl exec -n uvote-dev test-netshoot -- \
+#     nc -zv postgresql 5432 -w 3
+#
+#   kubectl exec -n uvote-dev test-netshoot -- \
+#     nslookup postgresql.uvote-dev.svc.cluster.local
+#
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Pod 1: test-allowed-db
+# Simulates an ALLOWED service (auth-service) connecting to PostgreSQL.
+# The label app=auth-service should match the network policy whitelist
+# defined in 02-allow-to-database.yaml, so this pod CAN reach the database.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-allowed-db
+  namespace: uvote-dev
+  labels:
+    app: auth-service
+    purpose: network-policy-testing
+spec:
+  restartPolicy: Always
+  containers:
+  - name: test-allowed-db
+    image: postgres:15-alpine
+    command: ["sleep", "infinity"]
+
+---
+
+# -----------------------------------------------------------------------------
+# Pod 2: test-blocked-db
+# Simulates a service NOT in the network policy whitelist.
+# The label app=test-blocked does NOT match any allowed service labels
+# (auth-service, voting-service, election-service, results-service,
+# audit-service, admin-service), so this pod should be DENIED access
+# to PostgreSQL by the default-deny + allow-to-database policies.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-blocked-db
+  namespace: uvote-dev
+  labels:
+    app: test-blocked
+    purpose: network-policy-testing
+spec:
+  restartPolicy: Always
+  containers:
+  - name: test-blocked-db
+    image: postgres:15-alpine
+    command: ["sleep", "infinity"]
+
+---
+
+# -----------------------------------------------------------------------------
+# Pod 3: test-netshoot
+# Network diagnostic pod with tools like curl, nc, nslookup, dig, tcpdump,
+# iperf, and more. Useful for troubleshooting DNS resolution, connectivity,
+# and verifying network policy enforcement from a neutral pod.
+#
+# Examples:
+#   kubectl exec -n uvote-dev test-netshoot -- nc -zv postgresql 5432 -w 3
+#   kubectl exec -n uvote-dev test-netshoot -- nslookup postgresql
+#   kubectl exec -n uvote-dev test-netshoot -- curl -s http://auth-service:8001/health
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-netshoot
+  namespace: uvote-dev
+  labels:
+    app: test-netshoot
+    purpose: network-policy-testing
+spec:
+  restartPolicy: Always
+  containers:
+  - name: test-netshoot
+    image: nicolaka/netshoot:latest
+    command: ["sleep", "infinity"]

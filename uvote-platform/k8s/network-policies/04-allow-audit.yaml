@@ -1,0 +1,246 @@
+# =============================================================================
+# U-Vote Audit Service Access Policy (Bidirectional)
+# =============================================================================
+#
+# Comprehensive Audit Logging — Ingress + Egress
+# ------------------------------------------------
+# In a default-deny architecture, audit traffic must be allowed in BOTH
+# directions for services to send log events:
+#
+#   1. INGRESS to audit-service  — audit pod must accept incoming log events
+#   2. EGRESS from services      — service pods must be allowed to send events
+#
+# Without both policies, services cannot deliver audit events and the
+# security-critical audit trail is broken.
+#
+# Traffic flow is ONE-WAY: services → audit-service (port 8005).
+# The audit service does NOT initiate connections back to other services.
+# It receives events via HTTP POST and persists them to PostgreSQL
+# (database access already granted by policy 02).
+#
+# Complete data flow:
+#   Services → audit-service:8005 (this policy)
+#            ↓
+#   audit-service → postgresql:5432 (policy 02)
+#
+# From ARCHITECTURE.MD § "Audit Service" — Events Logged:
+#   - Admin login attempts (success/failure)
+#   - Admin registration
+#   - Election created/updated/closed
+#   - Candidate added/removed
+#   - Voter added/removed
+#   - Voting token generated
+#   - Vote cast (user + election, NOT candidate choice)
+#   - Results viewed
+#   - Email sent (voting/results)
+#
+# Services that send audit events (from ARCHITECTURE.MD):
+#   - auth-service      — login attempts, registrations
+#   - voting-service    — votes cast, token validation
+#   - election-service  — election lifecycle changes
+#   - results-service   — results accessed
+#   - admin-service     — voter/candidate management, token generation
+#   - email-service     — email delivery events
+#
+# Services that do NOT send audit events directly:
+#   - frontend-service  — communicates via backend APIs; audit logging is
+#     handled by the backend service that processes each request
+#   - postgresql        — database; receives audit writes, does not generate
+#     audit events itself
+#
+# Security importance (from ARCHITECTURE.MD § "Audit Service"):
+#   - Logs are append-only (immutable)
+#   - Hash-chained entries enable tamper detection
+#   - Critical for security compliance and forensic analysis
+#   - Audit logs exclude candidate choice (preserving vote anonymity)
+#
+# Reference: PLATFORM.MD § "Files" — 04-allow-audit.yaml
+# Reference: ARCHITECTURE.MD § "Audit Service"
+# Reference: ARCHITECTURE.MD § "Security Measures"
+#
+# =============================================================================
+
+
+# =============================================================================
+# POLICY 1 of 2: INGRESS TO AUDIT-SERVICE (04a)
+# =============================================================================
+# Targets the audit-service pod and allows inbound connections from the six
+# backend services that generate audit events, on port 8005/TCP.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-audit
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: audit-logging
+    policy-order: "04a"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets the audit-service pod
+  # Label app=audit-service from ARCHITECTURE.MD § "Audit Service".
+  # This policy defines WHO can send log events TO the audit service.
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: audit-service
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 8005 from each service that generates audit events.
+  # Each service is listed as a separate podSelector entry under a single
+  # ingress rule, forming a logical OR.
+  #
+  # Service list derived from ARCHITECTURE.MD § "Events Logged".
+  # ---------------------------------------------------------------------------
+  - from:
+    # -------------------------------------------------------------------------
+    # Auth Service (port 8001)
+    # Audit events: admin login attempts (success/failure), admin registration
+    # Reference: ARCHITECTURE.MD § "Auth Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: auth-service
+
+    # -------------------------------------------------------------------------
+    # Voting Service (port 8003)
+    # Audit events: vote cast (user + election, NOT candidate choice),
+    #               token validation
+    # Reference: ARCHITECTURE.MD § "Voting Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: voting-service
+
+    # -------------------------------------------------------------------------
+    # Election Service (port 8002)
+    # Audit events: election created, updated, activated, closed
+    # Reference: ARCHITECTURE.MD § "Election Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: election-service
+
+    # -------------------------------------------------------------------------
+    # Results Service (port 8004)
+    # Audit events: results viewed (by admin or voter)
+    # Reference: ARCHITECTURE.MD § "Results Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: results-service
+
+    # -------------------------------------------------------------------------
+    # Admin Service (port 8006)
+    # Audit events: voter added/removed, candidate added/removed,
+    #               voting token generated, CSV import, email triggers
+    # Reference: ARCHITECTURE.MD § "Admin Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: admin-service
+
+    # -------------------------------------------------------------------------
+    # Email Service (port 8007)
+    # Audit events: voting invitation sent, results notification sent,
+    #               delivery status tracking
+    # Reference: ARCHITECTURE.MD § "Email Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: email-service
+
+    ports:
+    - protocol: TCP
+      port: 8005
+
+---
+
+# =============================================================================
+# POLICY 2 of 2: EGRESS FROM SERVICES TO AUDIT-SERVICE (04b)
+# =============================================================================
+# Targets the six backend services that generate audit events and allows
+# them to send outbound connections to audit-service on port 8005/TCP,
+# plus DNS on port 53 so they can resolve the "audit-service" name.
+#
+# Why this is needed:
+# The default-deny policy (00-default-deny.yaml) blocks ALL egress. Without
+# this egress rule, services cannot INITIATE connections to the audit service
+# even though the ingress policy above allows traffic INTO the audit pod.
+#
+# Why DNS is included:
+# Services need to resolve "audit-service" to a cluster IP before connecting.
+# The 01-allow-dns.yaml policy already provides global DNS, but including it
+# here ensures audit connectivity is self-contained.
+#
+# Note: frontend-service is excluded because it does not call the audit
+# service directly — audit logging for frontend actions is handled by the
+# backend service processing each request.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-audit-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: audit-logging
+    policy-order: "04b"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets all six backend services using matchExpressions.
+  # The "In" operator creates a logical OR — any pod whose app label matches
+  # one of the listed values is selected by this policy.
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - auth-service
+      - voting-service
+      - election-service
+      - results-service
+      - admin-service
+      - email-service
+
+  policyTypes:
+  - Egress
+
+  egress:
+  # ---------------------------------------------------------------------------
+  # Rule 1: Allow egress to audit-service on port 8005/TCP
+  # Services can initiate HTTP POST requests to log audit events.
+  # Endpoint: POST /api/audit/log
+  # ---------------------------------------------------------------------------
+  - to:
+    - podSelector:
+        matchLabels:
+          app: audit-service
+    ports:
+    - protocol: TCP
+      port: 8005
+
+  # ---------------------------------------------------------------------------
+  # Rule 2: Allow egress to kube-dns on port 53 (UDP + TCP)
+  # Services must resolve "audit-service" to a cluster IP before connecting.
+  # Belt-and-suspenders with 01-allow-dns.yaml.
+  # ---------------------------------------------------------------------------
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
