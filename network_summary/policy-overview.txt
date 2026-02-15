@@ -1,0 +1,13 @@
+NAME                             POD-SELECTOR                                                                                        AGE
+allow-audit-egress               app in (admin-service,auth-service,election-service,email-service,results-service,voting-service)   11s
+allow-database-egress            app in (admin-service,audit-service,auth-service,election-service,results-service,voting-service)   25m
+allow-dns                        <none>                                                                                              44m
+allow-from-ingress-to-admin      app=admin-service                                                                                   6m20s
+allow-from-ingress-to-auth       app=auth-service                                                                                    6m20s
+allow-from-ingress-to-election   app=election-service                                                                                6m20s
+allow-from-ingress-to-frontend   app=frontend-service                                                                                6m20s
+allow-from-ingress-to-results    app=results-service                                                                                 6m20s
+allow-from-ingress-to-voting     app=voting-service                                                                                  6m20s
+allow-to-audit                   app=audit-service                                                                                   14s
+allow-to-database                app=postgresql                                                                                      40m
+default-deny                     <none>                                                                                              50m
