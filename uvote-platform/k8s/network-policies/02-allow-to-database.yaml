@@ -1,0 +1,249 @@
+# =============================================================================
+# U-Vote Database Access Control Policy (Bidirectional)
+# =============================================================================
+#
+# Least-Privilege Database Access — Ingress + Egress
+# ---------------------------------------------------
+# In a default-deny architecture, traffic must be allowed in BOTH directions
+# for a connection to succeed:
+#
+#   1. INGRESS to PostgreSQL  — the database pod must accept incoming traffic
+#   2. EGRESS from services   — the service pods must be allowed to send traffic
+#
+# Without both policies, connections time out even though one side is allowed.
+# This file contains TWO NetworkPolicy resources to ensure complete
+# bidirectional database access control.
+#
+# This implements the database isolation model from PLATFORM.MD
+# § "Service Isolation Rules":
+#
+#   "Only these services can reach PostgreSQL:
+#    - auth-service
+#    - voting-service
+#    - election-service
+#    - results-service
+#    - audit-service
+#    - admin-service
+#
+#    All others: BLOCKED"
+#
+# Defence in depth: this network-level restriction works alongside
+# per-service PostgreSQL users with minimal permissions (see
+# ARCHITECTURE.MD § "Database User Permissions"). Even if a pod gains
+# an allowed label, it still needs valid DB credentials.
+#
+# Services BLOCKED from direct database access:
+#   - frontend-service (port 3000) — communicates via backend APIs only,
+#     preventing SQL injection from the client-facing layer
+#   - email-service (port 8007) — stateless; triggered by admin-service,
+#     uses SMTP not PostgreSQL
+#   - Any pod without an explicitly allowed label
+#
+# Reference: PLATFORM.MD § "Service Isolation Rules"
+# Reference: PLATFORM.MD § "Network Security Architecture"
+# Reference: ARCHITECTURE.MD § "Database User Permissions"
+#
+# =============================================================================
+
+
+# =============================================================================
+# POLICY 1 of 2: INGRESS TO DATABASE (02a)
+# =============================================================================
+# Targets the PostgreSQL pod and allows inbound connections from the six
+# whitelisted services on port 5432/TCP.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-database
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: database-access
+    policy-order: "02a"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets the PostgreSQL pod
+  # Label app=postgresql confirmed from db-deployment.yaml.
+  # This policy defines WHO can connect TO the database (ingress rules).
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: postgresql
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5432 from each whitelisted service.
+  # Each service is listed as a separate podSelector entry under a single
+  # ingress rule, forming a logical OR — any pod matching any of these
+  # labels is permitted.
+  #
+  # Service list from PLATFORM.MD § "Service Isolation Rules" and
+  # database users from ARCHITECTURE.MD § "Database User Permissions".
+  # ---------------------------------------------------------------------------
+  - from:
+    # -------------------------------------------------------------------------
+    # Auth Service (port 8001)
+    # DB user: auth_service
+    # Permissions: SELECT, INSERT, UPDATE on admins
+    # Purpose: Admin registration, login, JWT token management
+    # Reference: ARCHITECTURE.MD § "Auth Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: auth-service
+
+    # -------------------------------------------------------------------------
+    # Voting Service (port 8003)
+    # DB user: voting_service
+    # Permissions: INSERT on votes, SELECT on elections/candidates,
+    #              UPDATE on voting_tokens
+    # Purpose: Token validation, ballot display, vote casting
+    # Reference: ARCHITECTURE.MD § "Voting Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: voting-service
+
+    # -------------------------------------------------------------------------
+    # Election Service (port 8002)
+    # DB user: election_service
+    # Permissions: SELECT, INSERT, UPDATE, DELETE on elections
+    # Purpose: Election CRUD, lifecycle management (draft → active → closed)
+    # Reference: ARCHITECTURE.MD § "Election Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: election-service
+
+    # -------------------------------------------------------------------------
+    # Results Service (port 8004)
+    # DB user: results_service
+    # Permissions: SELECT only (read-only access)
+    # Purpose: Vote tallying, winner calculation
+    # Reference: ARCHITECTURE.MD § "Results Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: results-service
+
+    # -------------------------------------------------------------------------
+    # Audit Service (port 8005)
+    # DB user: audit_service
+    # Permissions: INSERT, SELECT on audit_logs
+    # Purpose: Immutable hash-chained event logging, tamper detection
+    # Reference: ARCHITECTURE.MD § "Audit Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: audit-service
+
+    # -------------------------------------------------------------------------
+    # Admin Service (port 8006)
+    # DB user: admin_service
+    # Permissions: SELECT, INSERT, UPDATE, DELETE on voters, candidates,
+    #              voting_tokens
+    # Purpose: Voter/candidate management, token generation, CSV import
+    # Reference: ARCHITECTURE.MD § "Admin Service"
+    # -------------------------------------------------------------------------
+    - podSelector:
+        matchLabels:
+          app: admin-service
+
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+
+# =============================================================================
+# POLICY 2 of 2: EGRESS FROM SERVICES TO DATABASE (02b)
+# =============================================================================
+# Targets the six whitelisted service pods and allows them to send outbound
+# connections to PostgreSQL on port 5432/TCP, plus DNS on port 53 so they
+# can resolve the "postgresql" service name to a cluster IP.
+#
+# Why this is needed:
+# The default-deny policy (00-default-deny.yaml) blocks ALL egress. Without
+# this egress rule, even though the ingress policy above allows traffic INTO
+# the database, the service pods cannot INITIATE the connection. Both
+# directions must be explicitly allowed.
+#
+# Why DNS is included here:
+# The 01-allow-dns.yaml policy already allows DNS for all pods. However,
+# including DNS egress here makes this policy self-contained — if the DNS
+# policy were ever removed or modified, database-accessing services would
+# still be able to resolve "postgresql". This is a belt-and-suspenders
+# approach for the most critical data path in the application.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-database-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: database-access
+    policy-order: "02b"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets all six whitelisted services using matchExpressions.
+  # The "In" operator creates a logical OR — any pod whose app label matches
+  # one of the listed values is selected by this policy.
+  #
+  # This is equivalent to six separate podSelector entries but more concise.
+  # The list matches PLATFORM.MD § "Service Isolation Rules" exactly.
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - auth-service
+      - voting-service
+      - election-service
+      - results-service
+      - audit-service
+      - admin-service
+
+  policyTypes:
+  - Egress
+
+  egress:
+  # ---------------------------------------------------------------------------
+  # Rule 1: Allow egress to PostgreSQL on port 5432/TCP
+  # Targets the database pod by its label (app=postgresql). Services can
+  # initiate TCP connections to the database.
+  # ---------------------------------------------------------------------------
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+
+  # ---------------------------------------------------------------------------
+  # Rule 2: Allow egress to kube-dns on port 53 (UDP + TCP)
+  # Services must resolve "postgresql" to a cluster IP before connecting.
+  # This rule ensures DNS works for database-accessing services even if
+  # the global DNS policy (01-allow-dns.yaml) is modified.
+  #
+  # The namespaceSelector targets kube-system where CoreDNS runs.
+  # ---------------------------------------------------------------------------
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53

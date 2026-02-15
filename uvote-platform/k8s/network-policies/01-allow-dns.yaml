@@ -1,0 +1,76 @@
+# =============================================================================
+# U-Vote DNS Allow Policy
+# =============================================================================
+#
+# Why DNS is Critical
+# -------------------
+# With the default-deny policy (00-default-deny.yaml) in place, all egress
+# traffic is blocked — including DNS queries. Without DNS, pods cannot resolve
+# Kubernetes service names to cluster IPs, which means:
+#
+#   - Services cannot reach postgresql (database)
+#   - Services cannot reach each other (auth-service, voting-service, etc.)
+#   - Health checks and readiness probes that use service names will fail
+#   - The entire U-Vote application becomes non-functional
+#
+# This policy restores DNS resolution by allowing egress to kube-dns in the
+# kube-system namespace on port 53 (UDP for standard queries, TCP for
+# responses exceeding 512 bytes and zone transfers).
+#
+# Services requiring DNS (from ARCHITECTURE.MD):
+#   - Frontend Service  → resolves auth-service, election-service, etc.
+#   - Auth Service       → resolves postgresql
+#   - Voting Service     → resolves postgresql, audit-service
+#   - Election Service   → resolves postgresql, audit-service
+#   - Results Service    → resolves postgresql
+#   - Audit Service      → resolves postgresql
+#   - Admin Service      → resolves postgresql, email-service, audit-service
+#   - Email Service      → resolves SMTP host (external)
+#
+# Reference: PLATFORM.MD § "Network Policy Model" — "Allow DNS resolution"
+# Reference: PLATFORM.MD § "Files" — 01-allow-dns.yaml
+# Reference: ARCHITECTURE.MD § "Architecture Diagram" — service dependencies
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: dns
+    policy-order: "01"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: {} (empty)
+  # Applies to ALL pods in uvote-dev. Every service needs DNS resolution,
+  # so there is no reason to restrict this to specific labels.
+  # ---------------------------------------------------------------------------
+  podSelector: {}
+
+  policyTypes:
+  - Egress
+
+  egress:
+  # ---------------------------------------------------------------------------
+  # Allow DNS queries to kube-dns in kube-system namespace.
+  #
+  # - UDP port 53: standard DNS queries and responses
+  # - TCP port 53: large responses (>512 bytes) and zone transfers
+  #
+  # The namespaceSelector targets kube-system where CoreDNS (kube-dns) runs.
+  # This is the standard DNS namespace in all Kubernetes distributions
+  # including Kind clusters used by U-Vote (see PLATFORM.MD § "Quick Start").
+  # ---------------------------------------------------------------------------
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53

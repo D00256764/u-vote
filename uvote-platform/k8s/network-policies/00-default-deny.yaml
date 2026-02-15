@@ -1,0 +1,57 @@
+# =============================================================================
+# U-Vote Default Deny Network Policy
+# =============================================================================
+#
+# Zero-Trust Security Foundation
+# ------------------------------
+# This policy implements the default-deny-all network security model documented
+# in PLATFORM.MD under "Network Security Architecture":
+#
+#   ┌─────────────────────────────────────────────────┐
+#   │  Default: DENY ALL traffic                      │
+#   └─────────────────────────────────────────────────┘
+#
+# With this policy in place, NO pod in the uvote-dev namespace can send or
+# receive ANY traffic — including DNS, database connections, and inter-service
+# communication — unless an explicit NetworkPolicy grants it.
+#
+# This is the FIRST policy to apply (00-). Subsequent policies build on top:
+#   01-allow-dns.yaml           → Restores DNS resolution
+#   02-allow-to-database.yaml   → Permits whitelisted services → PostgreSQL
+#   03-allow-from-ingress.yaml  → Permits Ingress Controller → services
+#   04-allow-audit.yaml         → Permits services → Audit Service
+#
+# Reference: PLATFORM.MD § "Network Policy Model"
+# Reference: ARCHITECTURE.MD § "Security Measures" → "Network Security"
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    policy-order: "00"
+spec:
+  # -------------------------------------------------------------------------
+  # Pod Selector: {} (empty)
+  # An empty selector matches ALL pods in the namespace. Every pod deployed
+  # to uvote-dev will be subject to this deny-all baseline.
+  # -------------------------------------------------------------------------
+  podSelector: {}
+
+  # -------------------------------------------------------------------------
+  # Policy Types: Ingress + Egress
+  # By declaring both types with no corresponding rules, all inbound AND
+  # outbound traffic is denied. This is the Kubernetes-native way to
+  # implement a zero-trust network posture.
+  #
+  # - Ingress: blocks all incoming connections to every pod
+  # - Egress:  blocks all outgoing connections from every pod (including DNS)
+  # -------------------------------------------------------------------------
+  policyTypes:
+  - Ingress
+  - Egress
