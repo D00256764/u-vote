@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Vote - {{ election.title }}{% endblock %}
+{% block title %}Vote — {{ election.title }}{% endblock %}
 
 {% block content %}
 <div class="row mt-5">
@@ -8,7 +8,8 @@
         <div class="card shadow">
             <div class="card-body p-4">
                 <div class="text-center mb-4">
-                    <i class="bi bi-vote-fill text-primary" style="font-size: 3rem;"></i>
+                    <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
+                    <span class="badge bg-success ms-2">Identity Verified</span>
                     <h3 class="mt-3">{{ election.title }}</h3>
                     {% if election.description %}
                         <p class="text-muted">{{ election.description }}</p>
@@ -17,18 +18,20 @@
 
                 <div class="alert alert-info">
                     <i class="bi bi-info-circle"></i>
-                    <strong>Important:</strong> Your vote is anonymous and cannot be changed once submitted.
+                    <strong>Important:</strong> Your vote is anonymous and encrypted.
+                    Once submitted, it cannot be changed or linked to your identity.
                 </div>
 
-                <form method="POST" action="{{ url_for('submit_vote') }}" id="voteForm">
-                    <input type="hidden" name="token" value="{{ token }}">
-                    
+                <form method="POST" action="/vote/submit" id="voteForm">
+                    <input type="hidden" name="ballot_token" value="{{ ballot_token }}">
+                    <input type="hidden" name="election_id" value="{{ election.id }}">
+
                     <div class="mb-4">
                         <label class="form-label fw-bold">Select your choice:</label>
                         {% for option in options %}
                             <div class="form-check mb-3 p-3 border rounded">
-                                <input class="form-check-input" type="radio" 
-                                       name="option_id" id="option{{ option.id }}" 
+                                <input class="form-check-input" type="radio"
+                                       name="option_id" id="option{{ option.id }}"
                                        value="{{ option.id }}" required>
                                 <label class="form-check-label w-100" for="option{{ option.id }}">
                                     <strong>{{ option.text }}</strong>
@@ -47,8 +50,8 @@
 
                 <div class="text-center mt-3">
                     <small class="text-muted">
-                        <i class="bi bi-shield-check"></i> 
-                        Your vote is encrypted and stored anonymously
+                        <i class="bi bi-shield-check"></i>
+                        Your vote is encrypted with pgp_sym_encrypt and stored anonymously
                     </small>
                 </div>
             </div>

@@ -10,7 +10,9 @@ COPY results-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY results-service/app.py .
+COPY results-service/templates ./templates
+COPY results-service/static ./static
 
 EXPOSE 5004
 
-CMD ["python", "app.py"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5004"]
