@@ -1,0 +1,123 @@
+# U-Vote Kubernetes Manifest: Voting Service
+# Scanned Port: 5003 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5003)
+# Architecture Port: 8003 (from ARCHITECTURE.MD)
+# Network Policy Port: 8003 (from 03-allow-from-ingress.yaml)
+# Using Port: 5003 (code port — what the container actually binds to)
+# WARNING: Network policy 03-allow-from-ingress-to-voting allows port 8003,
+#          but container listens on 5003. Update network policy OR app.py to align.
+# Framework: FastAPI + Uvicorn + Jinja2
+# Database Access: Yes (asyncpg — blind_tokens, encrypted_ballots, vote_receipts, elections, election_options, audit_log)
+# External Access: Via Ingress Controller (voter-facing voting interface)
+# Health Endpoint: GET /health → {"status": "healthy", "service": "voting"}
+# Templates: Yes (Jinja2 — /vote/{token}, /vote/verify/{receipt_token})
+# Special: Ballot encryption (pgp_sym_encrypt), blind ballot tokens, hash-chained audit
+# Generated: 2026-02-16
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-service
+  namespace: uvote-dev
+  labels:
+    app: voting-service
+    tier: backend
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: voting-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: voting-service
+        tier: backend
+        version: v1
+    spec:
+      containers:
+      - name: voting-service
+        image: voting-service:latest
+        imagePullPolicy: Never  # Kind cluster — local images
+        ports:
+        - containerPort: 5003
+          name: http
+          protocol: TCP
+        env:
+        # Database credentials
+        - name: DB_HOST
+          value: "postgresql"
+        - name: DB_PORT
+          value: "5432"
+        - name: DB_NAME
+          value: "evote"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: password
+        # Inter-service communication
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service:5001"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5003
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # FastAPI/Jinja2 needs to write temp files
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voting-service
+  namespace: uvote-dev
+  labels:
+    app: voting-service
+spec:
+  type: ClusterIP
+  selector:
+    app: voting-service
+  ports:
+  - port: 5003
+    targetPort: 5003
+    protocol: TCP
+    name: http
+
+# Quick Commands:
+# Deploy:  kubectl apply -f voting-deployment.yaml
+# Status:  kubectl get pods -n uvote-dev -l app=voting-service
+# Logs:    kubectl logs -n uvote-dev -l app=voting-service --tail=100 -f
+# Exec:    kubectl exec -it -n uvote-dev deployment/voting-service -- /bin/bash
+# Delete:  kubectl delete -f voting-deployment.yaml
