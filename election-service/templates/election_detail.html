@@ -7,7 +7,7 @@
     <div class="col-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
                 <li class="breadcrumb-item active">{{ election.title }}</li>
             </ol>
         </nav>
@@ -48,7 +48,7 @@
                         <ul class="list-unstyled mb-0">
                             <li><i class="bi bi-people"></i> Voters: {{ election.voter_count }}</li>
                             <li><i class="bi bi-check-circle"></i> Votes Cast: {{ election.vote_count }}</li>
-                            <li><i class="bi bi-calendar"></i> Created: {{ election.created_at.strftime('%Y-%m-%d') }}</li>
+                            <li><i class="bi bi-calendar"></i> Created: {{ election.created_at[:10] }}</li>
                         </ul>
                     </div>
                 </div>
@@ -57,20 +57,20 @@
                     <div class="card-body">
                         <h5 class="card-title">Actions</h5>
                         <div class="d-grid gap-2">
-                            <a href="{{ url_for('manage_voters', election_id=election.id) }}" 
+                            <a href="http://localhost:8083/elections/{{ election.id }}/voters" 
                                class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-people"></i> Manage Voters
                             </a>
                             
                             {% if election.status == 'draft' %}
-                                <form method="POST" action="{{ url_for('open_election', election_id=election.id) }}" 
+                                <form method="POST" action="/elections/{{ election.id }}/open/confirm" 
                                       onsubmit="return confirm('Are you sure you want to open this election?')">
                                     <button type="submit" class="btn btn-success btn-sm w-100">
                                         <i class="bi bi-unlock"></i> Open Election
                                     </button>
                                 </form>
                             {% elif election.status == 'open' %}
-                                <form method="POST" action="{{ url_for('close_election', election_id=election.id) }}"
+                                <form method="POST" action="/elections/{{ election.id }}/close/confirm"
                                       onsubmit="return confirm('Are you sure you want to close this election? This cannot be undone.')">
                                     <button type="submit" class="btn btn-danger btn-sm w-100">
                                         <i class="bi bi-lock"></i> Close Election
@@ -79,7 +79,7 @@
                             {% endif %}
                             
                             {% if election.status == 'closed' %}
-                                <a href="{{ url_for('view_results', election_id=election.id) }}" 
+                                <a href="http://localhost:8084/elections/{{ election.id }}/results/view" 
                                    class="btn btn-primary btn-sm">
                                     <i class="bi bi-bar-chart"></i> View Results
                                 </a>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Vote Submitted — Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-lg-6 mx-auto">
+        <div class="card shadow text-center">
+            <div class="card-body p-5">
+                <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
+                <h2 class="mt-4 mb-3">Vote Successfully Cast!</h2>
+                <p class="lead mb-4">Your vote has been encrypted and securely recorded.</p>
+
+                <div class="alert alert-secondary">
+                    <h6 class="mb-2"><i class="bi bi-receipt"></i> Vote Receipt Token</h6>
+                    <code class="text-break d-block mb-2" style="font-size: 0.85rem;">{{ receipt_token }}</code>
+                    <hr>
+                    <h6 class="mb-2"><i class="bi bi-hash"></i> Ballot Hash</h6>
+                    <code class="text-break d-block">{{ ballot_hash }}</code>
+                    <p class="small mt-2 mb-0">
+                        Save these for your records. The receipt token lets you verify
+                        your encrypted ballot was included in the final tally.
+                    </p>
+                </div>
+
+                <div class="mt-4">
+                    <a href="/vote/verify/{{ receipt_token }}" class="btn btn-outline-primary">
+                        <i class="bi bi-search"></i> Verify My Vote Now
+                    </a>
+                </div>
+
+                <div class="mt-4">
+                    <h6>What happens next?</h6>
+                    <ul class="list-unstyled">
+                        <li><i class="bi bi-lock text-success"></i> Your vote is encrypted with a per-election key</li>
+                        <li><i class="bi bi-eye-slash text-success"></i> It cannot be linked to your identity</li>
+                        <li><i class="bi bi-link-45deg text-success"></i> It is part of an immutable hash chain</li>
+                        <li><i class="bi bi-bar-chart text-success"></i> Results will be available after the election closes</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

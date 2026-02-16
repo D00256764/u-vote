@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Receipt Verified — Secure Voting System{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-lg-6 mx-auto">
+        <div class="card shadow text-center">
+            <div class="card-body p-5">
+                <i class="bi bi-patch-check-fill text-success" style="font-size: 5rem;"></i>
+                <h2 class="mt-4 mb-3">Vote Receipt Verified</h2>
+                <p class="lead mb-4">Your encrypted ballot is confirmed in the system.</p>
+
+                <div class="alert alert-success">
+                    <h6 class="mb-1">Election</h6>
+                    <strong>{{ election_title }}</strong>
+                </div>
+
+                <div class="alert alert-secondary text-start">
+                    <div class="mb-3">
+                        <h6 class="mb-1"><i class="bi bi-receipt"></i> Receipt Token</h6>
+                        <code class="text-break" style="font-size: 0.8rem;">{{ receipt_token }}</code>
+                    </div>
+                    <div class="mb-3">
+                        <h6 class="mb-1"><i class="bi bi-hash"></i> Ballot Hash</h6>
+                        <code class="text-break" style="font-size: 0.8rem;">{{ ballot_hash }}</code>
+                    </div>
+                    <div>
+                        <h6 class="mb-1"><i class="bi bi-clock"></i> Cast At</h6>
+                        <span>{{ cast_at }}</span>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <p class="text-muted small">
+                        <i class="bi bi-info-circle"></i>
+                        This confirms your ballot was recorded. The ballot hash is part
+                        of an immutable hash chain — any tampering would break the chain
+                        and be detected during tallying.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
