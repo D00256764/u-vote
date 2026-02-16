@@ -1,6 +1,5 @@
-email
-alice@example.com
-bob@example.com
-charlie@example.com
-diana@example.com
-eve@example.com
+email,date_of_birth
+alice@example.com,1998-03-15
+chiryah08@gmail.com,2000-07-22
+hafsamoin65@gmail.com,2001-11-05
+

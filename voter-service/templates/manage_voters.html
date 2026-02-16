@@ -7,8 +7,8 @@
     <div class="col-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="/elections/{{ election_id }}">{{ election_title }}</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:8082/dashboard">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:8082/elections/{{ election_id }}/detail">{{ election_title }}</a></li>
                 <li class="breadcrumb-item active">Manage Voters</li>
             </ol>
         </nav>
@@ -23,7 +23,7 @@
                         <p class="card-text small text-muted">
                             Upload a CSV file with <strong>email</strong> and <strong>date_of_birth</strong> (YYYY-MM-DD) columns.
                         </p>
-                        <form method="POST" action="/elections/{{ election_id }}/voters/upload" enctype="multipart/form-data">
+                        <form method="POST" action="/elections/{{ election_id }}/voters/upload/form" enctype="multipart/form-data">
                             <div class="mb-3">
                                 <input type="file" class="form-control" name="file" accept=".csv" required>
                             </div>
@@ -42,7 +42,7 @@
                         <p class="card-text small text-muted">
                             Generate one-time voting tokens for all voters who don't have tokens yet.
                         </p>
-                        <form method="POST" action="/elections/{{ election_id }}/tokens/generate"
+                        <form method="POST" action="/elections/{{ election_id }}/tokens/generate/form"
                               onsubmit="return confirm('Generate tokens for all voters without tokens?')">
                             <button type="submit" class="btn btn-success">
                                 <i class="bi bi-key"></i> Generate Tokens

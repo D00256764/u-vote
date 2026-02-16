@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Your Identity{% endblock %}
+
+{% block content %}
+<div class="row mt-5">
+    <div class="col-lg-5 mx-auto">
+        <div class="card shadow">
+            <div class="card-body p-4">
+                <div class="text-center mb-4">
+                    <i class="bi bi-person-check text-primary" style="font-size: 3rem;"></i>
+                    <h3 class="mt-3">Verify Your Identity</h3>
+                    <p class="text-muted">
+                        Before you can vote, please confirm your date of birth.
+                        This is the second factor that proves you are the intended voter.
+                    </p>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Why?</strong> Even if someone intercepts your voting link,
+                    they cannot vote without knowing your date of birth.
+                </div>
+
+                <form method="POST" action="/vote/verify-identity">
+                    <input type="hidden" name="token" value="{{ token }}">
+
+                    <div class="mb-4">
+                        <label for="date_of_birth" class="form-label fw-bold">Date of Birth</label>
+                        <input type="date" class="form-control form-control-lg"
+                               id="date_of_birth" name="date_of_birth" required>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-shield-lock"></i> Verify &amp; Continue
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
