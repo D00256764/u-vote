@@ -53,6 +53,13 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_USE_TLS: ${SMTP_USE_TLS}
+      SMTP_FROM: ${SMTP_FROM}
+      FRONTEND_URL: http://localhost:8080
     ports:
       - "5002:5002"
     depends_on:
@@ -102,30 +109,46 @@ services:
       - voting-network
     restart: unless-stopped
 
-  frontend-service:
+  election-service:
     build:
       context: .
-      dockerfile: frontend-service/Dockerfile
-    container_name: voting-frontend
+      dockerfile: election-service/Dockerfile
+    container_name: voting-election
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
+    ports:
+      - "5005:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  frontend-service:
+    build:
+      context: .
+      dockerfile: frontend-service/Dockerfile
+    container_name: voting-frontend
+    environment:
       AUTH_SERVICE_URL: http://auth-service:5001
       VOTER_SERVICE_URL: http://voter-service:5002
       VOTING_SERVICE_URL: http://voting-service:5003
       RESULTS_SERVICE_URL: http://results-service:5004
-      FLASK_SECRET: your-super-secret-flask-key-change-this-in-production
+      ELECTION_SERVICE_URL: http://election-service:5005
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
     ports:
       - "8080:5000"
     depends_on:
-      - postgres
       - auth-service
       - voter-service
       - voting-service
       - results-service
+      - election-service
     networks:
       - voting-network
     restart: unless-stopped

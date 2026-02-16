@@ -7,8 +7,8 @@
     <div class="col-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="{{ url_for('election_detail', election_id=data.election.id) }}">{{ data.election.title }}</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:8082/dashboard">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:8082/elections/{{ data.election.id }}/detail">{{ data.election.title }}</a></li>
                 <li class="breadcrumb-item active">Results</li>
             </ol>
         </nav>
@@ -101,7 +101,7 @@
         </div>
 
         <div class="text-center">
-            <a href="{{ url_for('election_detail', election_id=data.election.id) }}" class="btn btn-secondary">
+            <a href="http://localhost:8082/elections/{{ data.election.id }}/detail" class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i> Back to Election
             </a>
         </div>
