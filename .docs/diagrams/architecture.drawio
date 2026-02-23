@@ -1,0 +1,79 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0" version="29.5.0">
+  <diagram name="Page-1" id="EP5OKz51QPaRICFZZW28">
+    <mxGraphModel dx="1615" dy="1141" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" parent="1" style="shape=cloud;whiteSpace=wrap;html=1;" value="&lt;b&gt;Internet&lt;/b&gt;" vertex="1">
+          <mxGeometry height="80" width="150" x="350" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Nginx Ingress&lt;/b&gt;&lt;br&gt;(API Gateway)&lt;br&gt;&lt;br&gt;- Rate Limiting&lt;br&gt;- TLS Termination&lt;br&gt;- Request Routing" vertex="1">
+          <mxGeometry height="130" width="250" x="300" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Frontend Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;Jinja2 Templates&lt;br&gt;&lt;br&gt;Port 3000" vertex="1">
+          <mxGeometry height="120" width="150" x="100" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Auth Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Admin register&lt;br&gt;- Admin login&lt;br&gt;- JWT tokens&lt;br&gt;&lt;br&gt;Port 8001" vertex="1">
+          <mxGeometry height="150" width="150" x="350" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Election Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Create elections&lt;br&gt;- Manage status&lt;br&gt;&lt;br&gt;Port 8002" vertex="1">
+          <mxGeometry height="120" width="150" x="600" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Voting Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Validate tokens&lt;br&gt;- Cast vote&lt;br&gt;&lt;br&gt;Port 8003" vertex="1">
+          <mxGeometry height="120" width="150" x="100" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Results Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Tally votes&lt;br&gt;- Calculate winner&lt;br&gt;&lt;br&gt;Port 8004" vertex="1">
+          <mxGeometry height="120" width="150" x="350" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Admin Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Add voters&lt;br&gt;- Add candidates&lt;br&gt;- Generate tokens&lt;br&gt;- CSV import&lt;br&gt;&lt;br&gt;Port 8006" vertex="1">
+          <mxGeometry height="170" width="150" x="600" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Audit Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Immutable event logging&lt;br&gt;- Hash-chained logs (tamper detection)&lt;br&gt;- Security event tracking&lt;br&gt;&lt;br&gt;Port 8005" vertex="1">
+          <mxGeometry height="130" width="650" x="100" y="790" as="geometry" />
+        </mxCell>
+        <mxCell id="11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="&lt;b&gt;Email Service&lt;/b&gt;&lt;br&gt;&lt;br&gt;- Send voting URLs&lt;br&gt;- Send results URLs&lt;br&gt;- Track delivery&lt;br&gt;&lt;br&gt;Port 8007" vertex="1">
+          <mxGeometry height="130" width="170" x="580" y="960" as="geometry" />
+        </mxCell>
+        <mxCell id="12" parent="1" style="shape=cylinder;whiteSpace=wrap;html=1;backgroundOutline=1;" value="&lt;b&gt;PostgreSQL Database&lt;/b&gt;&lt;br&gt;&lt;br&gt;Tables:&lt;br&gt;- admins&lt;br&gt;- elections&lt;br&gt;- candidates&lt;br&gt;- voters&lt;br&gt;- voting_tokens&lt;br&gt;- votes&lt;br&gt;- audit_logs&lt;br&gt;&lt;br&gt;Port 5432" vertex="1">
+          <mxGeometry height="200" width="250" x="300" y="1000" as="geometry" />
+        </mxCell>
+        <mxCell id="13" edge="1" parent="1" source="2" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="3" value="HTTPS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="14" edge="1" parent="1" source="3" style="edge=1;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" target="4" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="15" edge="1" parent="1" source="3" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="5" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="16" edge="1" parent="1" source="3" style="edge=1;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" target="6" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="17" edge="1" parent="1" source="4" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="7" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="18" edge="1" parent="1" source="5" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="8" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="19" edge="1" parent="1" source="6" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="9" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="20" edge="1" parent="1" source="7" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.1;entryY=0;" target="10" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="21" edge="1" parent="1" source="8" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="10" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="22" edge="1" parent="1" source="9" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.9;entryY=0;" target="10" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="23" edge="1" parent="1" source="10" style="edge=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="12" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="24" edge="1" parent="1" source="10" style="edge=1;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" target="11" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

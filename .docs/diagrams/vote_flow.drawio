@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64; rv:147.0) Gecko/20100101 Firefox/147.0" version="29.5.0">
+  <diagram name="Page-1" id="xzcL01VSHc8RxXtNnTsM">
+    <mxGraphModel dx="1211" dy="856" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-1" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=40;" value="Phase 1: Election Setup" vertex="1">
+          <mxGeometry height="360" width="260" x="80" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-12" edge="1" parent="1" source="eMI2TFd6HGC_fLfuHtPz-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="eMI2TFd6HGC_fLfuHtPz-10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="320" width="260" x="80" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-3" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="1. Admin Registers Account&lt;br&gt;- Auth Service" vertex="1">
+          <mxGeometry height="50" width="170" x="90" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-4" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;5. Admin Sends Voting Links&lt;/div&gt;&lt;div&gt;- Admin Service generates tokens&lt;/div&gt;&lt;div&gt;- Email Service sends voting URLs&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="220" x="90" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-5" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;4. Admin adds Voters (CSV or Manual)&lt;/div&gt;&lt;div&gt;- Admin Service&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50" width="230" x="90" y="240" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-6" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="3. Admin adds Candidates&lt;br&gt;- Admin Service" vertex="1">
+          <mxGeometry height="50" width="170" x="90" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-7" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="2. Admin Creates Election&lt;br&gt;- Election Service" vertex="1">
+          <mxGeometry height="50" width="170" x="90" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-8" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=40;" value="Phase 2: Voting" vertex="1">
+          <mxGeometry height="360" width="260" x="440" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-10" parent="eMI2TFd6HGC_fLfuHtPz-8" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="320" width="260" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-14" parent="eMI2TFd6HGC_fLfuHtPz-8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="6. Voter Receives Email" vertex="1">
+          <mxGeometry height="40" width="190" x="10" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-17" parent="eMI2TFd6HGC_fLfuHtPz-8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;7. Voter clicks URL&lt;/div&gt;&lt;div&gt;- Voting Service Validates Tokens&lt;/div&gt;&lt;div&gt;- Shows voting Dashboard with Candidates&lt;/div&gt;" vertex="1">
+          <mxGeometry height="90" width="240" x="10" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-16" parent="eMI2TFd6HGC_fLfuHtPz-8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;8. Voter selects candidate and submits&lt;/div&gt;&lt;div&gt;- Vote recorded in database&lt;/div&gt;&lt;div&gt;- Token marked as used&lt;/div&gt;&lt;div&gt;- Confirmation shown&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="240" x="10" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-15" parent="eMI2TFd6HGC_fLfuHtPz-8" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;9. If voter clicks link again&lt;/div&gt;&lt;div&gt;- Shows &quot;You already voted&quot;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="60" width="190" x="10" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-9" parent="1" style="swimlane;whiteSpace=wrap;html=1;startSize=40;" value="Phase 3: Results" vertex="1">
+          <mxGeometry height="250" width="260" x="80" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-11" parent="eMI2TFd6HGC_fLfuHtPz-9" style="rounded=0;whiteSpace=wrap;html=1;" value="" vertex="1">
+          <mxGeometry height="210" width="260" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-18" parent="eMI2TFd6HGC_fLfuHtPz-9" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;10. Admin closes election&lt;/div&gt;&lt;div&gt;- Election Service sets status as &quot;Closed&quot;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50" width="260" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-19" parent="eMI2TFd6HGC_fLfuHtPz-9" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;11. Admin clicks &quot;Send Results Links&quot;&lt;/div&gt;&lt;div&gt;- Email Service sends results URLs&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50" width="260" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-20" parent="eMI2TFd6HGC_fLfuHtPz-9" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="12. Voter Receives Email" vertex="1">
+          <mxGeometry height="50" width="260" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-21" parent="eMI2TFd6HGC_fLfuHtPz-9" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="&lt;div&gt;13. Voter Clicks URL&lt;/div&gt;&lt;div&gt;- Results Service shows tallies and winner&lt;/div&gt;" vertex="1">
+          <mxGeometry height="50" width="260" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="eMI2TFd6HGC_fLfuHtPz-13" edge="1" parent="1" source="eMI2TFd6HGC_fLfuHtPz-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" target="eMI2TFd6HGC_fLfuHtPz-9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
