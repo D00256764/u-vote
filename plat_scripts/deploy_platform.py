@@ -192,6 +192,7 @@ class PlatformDeployer:
             "images_load_failed": [],
             "services_deployed": [],
             "services_failed": [],
+            "ingress_applied": None,
             "pods_running": [],
             "pods_failed": [],
             "health_passed": [],
@@ -605,10 +606,39 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 6: Health Verification (wait for pods)
+    # Phase 6: Apply Ingress
     # -----------------------------------------------------------------------
-    def phase6_verify_health(self, timeout: int = 300) -> bool:
-        self.logger.header("Phase 6: Health Verification")
+    def phase6_apply_ingress(self) -> bool:
+        self.logger.header("Phase 6: Apply Ingress")
+        ingress_manifest = (
+            self.project_root / "uvote-platform" / "k8s" / "ingress" / "uvote-ingress.yaml"
+        )
+
+        if not ingress_manifest.exists():
+            self.logger.warning(
+                f"⚠ Ingress manifest not found: {ingress_manifest} — skipping"
+            )
+            self.results["ingress_applied"] = None
+            return True
+
+        self.logger.info(f"Applying {ingress_manifest.name}...")
+        rc, out, err = self.run_cmd(
+            ["kubectl", "apply", "-f", str(ingress_manifest)], check=False, mutating=True
+        )
+        if rc != 0:
+            self.logger.error(f"✗ Failed to apply ingress: {err.strip()}")
+            self.results["ingress_applied"] = False
+            return False
+
+        self.logger.success("✓ Ingress applied successfully")
+        self.results["ingress_applied"] = True
+        return True
+
+    # -----------------------------------------------------------------------
+    # Phase 7: Health Verification (wait for pods)
+    # -----------------------------------------------------------------------
+    def phase7_verify_health(self, timeout: int = 300) -> bool:
+        self.logger.header("Phase 7: Health Verification")
 
         if not self.results["services_deployed"]:
             self.logger.warning("⚠ No services were deployed — skipping health verification")
@@ -727,7 +757,7 @@ class PlatformDeployer:
         return False
 
     # -----------------------------------------------------------------------
-    # Phase 7: Network Policy Testing
+    # Phase 8: Network Policy Testing
     # -----------------------------------------------------------------------
     def _resolve_pod_name(self, deploy_name: str) -> str:
         """Return 'pod/<name>' for the first real service pod, or fall back to
@@ -786,8 +816,8 @@ class PlatformDeployer:
         )
         return rc == 0
 
-    def phase7_test_network_policies(self) -> bool:
-        self.logger.header("Phase 7: Network Policy Testing")
+    def phase8_test_network_policies(self) -> bool:
+        self.logger.header("Phase 8: Network Policy Testing")
         all_ok = True
 
         if self.dry_run:
@@ -853,7 +883,7 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 8: Health Endpoint Testing
+    # Phase 9: Health Endpoint Testing
     # -----------------------------------------------------------------------
     def _health_via_port_forward(
         self, deploy_name: str, container_port: int, path: str
@@ -929,8 +959,8 @@ class PlatformDeployer:
             except subprocess.TimeoutExpired:
                 pf_proc.kill()
 
-    def phase8_test_health_endpoints(self) -> bool:
-        self.logger.header("Phase 8: Health Endpoint Testing")
+    def phase9_test_health_endpoints(self) -> bool:
+        self.logger.header("Phase 9: Health Endpoint Testing")
 
         if self.dry_run:
             self.logger.info("[DRY-RUN] Would test health endpoints")
@@ -965,9 +995,9 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 9: Summary
+    # Phase 10: Summary
     # -----------------------------------------------------------------------
-    def phase9_generate_summary(self) -> None:
+    def phase10_generate_summary(self) -> None:
         r = self.results
         sep = "=" * 56
 
@@ -981,6 +1011,7 @@ class PlatformDeployer:
         has_failures = (
             r["images_failed"]
             or r["services_failed"]
+            or r["ingress_applied"] is False
             or r["pods_failed"]
             or r["health_failed"]
         )
@@ -1002,6 +1033,10 @@ class PlatformDeployer:
         self.logger.info(
             f"Services Deployed:  {len(r['services_deployed'])}/{total_svc}"
         )
+        if r["ingress_applied"] is True:
+            self.logger.success("Ingress Applied:    Yes")
+        elif r["ingress_applied"] is False:
+            self.logger.error("Ingress Applied:    No (failed)")
         if total_pods:
             self.logger.info(
                 f"Pods Running:       {len(r['pods_running'])}/{total_pods}"
@@ -1131,23 +1166,26 @@ class PlatformDeployer:
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
 
-        # Phase 6: Wait for healthy pods
+        # Phase 6: Apply Ingress
+        self.phase6_apply_ingress()
+
+        # Phase 7: Wait for healthy pods
         if not self.dry_run:
-            self.phase6_verify_health(timeout=timeout)
+            self.phase7_verify_health(timeout=timeout)
         else:
             self.logger.info("[DRY-RUN] Would wait for pods to be ready")
 
-        # Phase 7 & 8: Tests
+        # Phase 8 & 9: Tests
         if not skip_tests and not self.dry_run:
-            self.phase7_test_network_policies()
-            self.phase8_test_health_endpoints()
+            self.phase8_test_network_policies()
+            self.phase9_test_health_endpoints()
         elif skip_tests:
             self.logger.info("Skipping tests (--skip-tests)")
         else:
             self.logger.info("[DRY-RUN] Would run network and health tests")
 
-        # Phase 9: Summary
-        self.phase9_generate_summary()
+        # Phase 10: Summary
+        self.phase10_generate_summary()
 
         return len(self.results["services_failed"]) == 0
 
