@@ -1,5 +1,5 @@
 """
-Admin Frontend Service — Auth gateway for election organisers (Application 1).
+Admin Frontend Service — Auth gateway for election organisers (Application 1A).
 
 This is the entry point for organisers. It handles ONLY:
     - Landing page
@@ -8,7 +8,8 @@ This is the entry point for organisers. It handles ONLY:
     - Logout
 
 After login, the organiser is redirected to the Election Service dashboard.
-Each downstream service (election, voter, results) owns its own UI pages.
+
+NO DIRECT DATABASE ACCESS — auth only via auth-service REST API.
 
 Runs on port 5000, exposed to browsers on port 8080.
 """
@@ -49,19 +50,16 @@ templates = Jinja2Templates(directory="templates")
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def flash(request: Request, message: str, category: str = "info"):
-    """Append a flash message to the session (read once on next page load)."""
     if "_messages" not in request.session:
         request.session["_messages"] = []
     request.session["_messages"].append({"message": message, "category": category})
 
 
 def get_flashed_messages(request: Request) -> list[dict]:
-    """Pop and return all flash messages."""
     return request.session.pop("_messages", [])
 
 
 def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
-    """Safely parse JSON from a response, returning fallback on failure."""
     try:
         return resp.json()
     except Exception:
@@ -73,16 +71,14 @@ def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {
-        "request": request,
-        "messages": get_flashed_messages(request),
+        "request": request, "messages": get_flashed_messages(request),
     })
 
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
     return templates.TemplateResponse("register.html", {
-        "request": request,
-        "messages": get_flashed_messages(request),
+        "request": request, "messages": get_flashed_messages(request),
     })
 
 
@@ -112,8 +108,7 @@ async def register(request: Request, email: str = Form(...), password: str = For
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {
-        "request": request,
-        "messages": get_flashed_messages(request),
+        "request": request, "messages": get_flashed_messages(request),
     })
 
 
@@ -126,14 +121,12 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
     if resp.status_code == 200:
         data = safe_json(resp)
         request.session["token"] = data["token"]
-        request.session["organizer_id"] = data["organizer_id"]
+        request.session["organiser_id"] = data["organiser_id"]
         flash(request, "Login successful!", "success")
-        # Redirect to Election Service dashboard, passing organizer_id so the
-        # downstream service can store it in its own session.
-        oid = data["organizer_id"]
+        oid = data["organiser_id"]
         token = data["token"]
         return RedirectResponse(
-            url=f"{ELECTION_DASHBOARD}?organizer_id={oid}&token={token}",
+            url=f"{ELECTION_DASHBOARD}?organiser_id={oid}&token={token}",
             status_code=303,
         )
 
@@ -147,3 +140,8 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "frontend"}

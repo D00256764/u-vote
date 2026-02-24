@@ -57,7 +57,7 @@
                     <div class="card-body">
                         <h5 class="card-title">Actions</h5>
                         <div class="d-grid gap-2">
-                            <a href="http://localhost:8083/elections/{{ election.id }}/voters" 
+                            <a href="/elections/{{ election.id }}/voters" 
                                class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-people"></i> Manage Voters
                             </a>
@@ -79,9 +79,13 @@
                             {% endif %}
                             
                             {% if election.status == 'closed' %}
-                                <a href="http://localhost:8084/elections/{{ election.id }}/results/view" 
+                                <a href="/elections/{{ election.id }}/results" 
                                    class="btn btn-primary btn-sm">
                                     <i class="bi bi-bar-chart"></i> View Results
+                                </a>
+                                <a href="/elections/{{ election.id }}/audit" 
+                                   class="btn btn-outline-secondary btn-sm">
+                                    <i class="bi bi-journal-check"></i> Audit Trail
                                 </a>
                             {% endif %}
                         </div>

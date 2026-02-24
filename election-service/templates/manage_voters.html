@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Voters - {{ election_title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="/elections/{{ election_id }}/detail">{{ election_title }}</a></li>
+                <li class="breadcrumb-item active">Manage Voters</li>
+            </ol>
+        </nav>
+
+        <h2 class="mb-4"><i class="bi bi-people"></i> Manage Voters</h2>
+
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="alert alert-{{ msg.category }} alert-dismissible fade show" role="alert">
+                    {{ msg.message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Upload Voter List (CSV)</h5>
+                        <p class="card-text small text-muted">
+                            Upload a CSV file with <strong>email</strong> and <strong>date_of_birth</strong> (YYYY-MM-DD) columns.
+                        </p>
+                        <form method="POST" action="/elections/{{ election_id }}/voters/upload/form" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <input type="file" class="form-control" name="file" accept=".csv" required>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload"></i> Upload CSV
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Generate Voting Tokens</h5>
+                        <p class="card-text small text-muted">
+                            Generate one-time voting tokens for all voters who don't have tokens yet.
+                        </p>
+                        <form method="POST" action="/elections/{{ election_id }}/tokens/generate/form"
+                              onsubmit="return confirm('Generate tokens for all voters without tokens?')">
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-key"></i> Generate Tokens
+                            </button>
+                        </form>
+                        <form method="POST" action="/elections/{{ election_id }}/tokens/resend/form"
+                              onsubmit="return confirm('Resend unsent/failed tokens to voters? This will only target tokens that failed or were not sent.')"
+                              class="mt-2">
+                            <button type="submit" class="btn btn-outline-primary">
+                                <i class="bi bi-arrow-repeat"></i> Resend Failed/Unsent Tokens
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Voter List ({{ voters|length }})</h5>
+                
+                {% if voters %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Date of Birth</th>
+                                    <th>Added</th>
+                                    <th>Token Status</th>
+                                    <th>Voted</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for voter in voters %}
+                                    <tr>
+                                        <td>{{ voter.email }}</td>
+                                        <td class="small">{{ voter.date_of_birth }}</td>
+                                        <td class="small text-muted">{{ voter.created_at[:19] }}</td>
+                                        <td>
+                                            {% if voter.has_token %}
+                                                <span class="badge bg-success">
+                                                    <i class="bi bi-check-circle"></i> Has Token
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-warning">
+                                                    <i class="bi bi-exclamation-circle"></i> No Token
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if voter.has_voted %}
+                                                <span class="badge bg-info">
+                                                    <i class="bi bi-check-all"></i> Voted
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">
+                                                    <i class="bi bi-dash"></i> Not yet
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i> 
+                        No voters added yet. Upload a CSV file to add voters.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

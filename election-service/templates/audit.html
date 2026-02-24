@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Trail - {{ election.title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/dashboard">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="/elections/{{ audit.election_id }}/detail">{{ election.title }}</a></li>
+                <li class="breadcrumb-item active">Audit Trail</li>
+            </ol>
+        </nav>
+
+        <h2 class="mb-4"><i class="bi bi-journal-check"></i> Audit Trail</h2>
+
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body text-center">
+                        <h5 class="mb-0">{{ audit.total_ballots }}</h5>
+                        <small class="text-muted">Total Ballots</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body text-center">
+                        {% if audit.hash_chain_valid %}
+                            <h5 class="mb-0 text-success"><i class="bi bi-check-circle-fill"></i> Valid</h5>
+                        {% else %}
+                            <h5 class="mb-0 text-danger"><i class="bi bi-x-circle-fill"></i> Broken</h5>
+                        {% endif %}
+                        <small class="text-muted">Hash Chain Integrity</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body text-center">
+                        <h5 class="mb-0"><i class="bi bi-shield-lock text-primary"></i></h5>
+                        <small class="text-muted">Immutable Ledger</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">Ballot Hash Chain</h5>
+                <p class="small text-muted">
+                    Each ballot links to the previous one via cryptographic hashing, 
+                    forming an immutable chain. Any tampering would break the chain.
+                </p>
+
+                {% if audit.audit_trail %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Ballot Hash</th>
+                                    <th>Previous Hash</th>
+                                    <th>Cast At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in audit.audit_trail %}
+                                    <tr>
+                                        <td>{{ entry.sequence }}</td>
+                                        <td><code class="small">{{ entry.ballot_hash[:16] }}...</code></td>
+                                        <td>
+                                            {% if entry.previous_hash %}
+                                                <code class="small">{{ entry.previous_hash[:16] }}...</code>
+                                            {% else %}
+                                                <span class="text-muted small">Genesis</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="small">{{ entry.cast_at[:19] }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle"></i> No ballots cast yet.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="text-center mt-4">
+            <a href="/elections/{{ audit.election_id }}/results" class="btn btn-primary me-2">
+                <i class="bi bi-bar-chart"></i> View Results
+            </a>
+            <a href="/elections/{{ audit.election_id }}/detail" class="btn btn-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Election
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

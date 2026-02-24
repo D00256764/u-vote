@@ -13,6 +13,6 @@ COPY election-service/app.py .
 COPY election-service/templates ./templates
 COPY election-service/static ./static
 
-EXPOSE 5005
+EXPOSE 5002
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5005"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5002"]

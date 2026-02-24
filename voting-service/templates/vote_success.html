@@ -38,6 +38,33 @@
                         <li><i class="bi bi-bar-chart text-success"></i> Results will be available after the election closes</li>
                     </ul>
                 </div>
+
+                {% if results %}
+                <div class="mt-4">
+                    <h5>Current Results</h5>
+                    <p class="small text-muted">These are the official results (visible because the election is closed).</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Option</th>
+                                    <th class="text-end">Votes</th>
+                                    <th class="text-end">%</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in results.results %}
+                                <tr>
+                                    <td>{{ r.option_text }}</td>
+                                    <td class="text-end">{{ r.vote_count }}</td>
+                                    <td class="text-end">{{ r.percentage }}%</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>

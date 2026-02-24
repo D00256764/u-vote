@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "uvote.verify@gmail.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 SMTP_FROM = os.getenv("SMTP_FROM", "uvote.verify@gmail.com")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8081")
@@ -45,9 +45,10 @@ async def send_email(to: str, subject: str, body_text: str, body_html: str | Non
         "port": SMTP_PORT,
         "start_tls": SMTP_USE_TLS,
     }
-    if SMTP_USER and SMTP_PASS:
+    # Use SMTP_PASSWORD (matches docker-compose .env variable)
+    if SMTP_USER and SMTP_PASSWORD:
         kwargs["username"] = SMTP_USER
-        kwargs["password"] = SMTP_PASS
+        kwargs["password"] = SMTP_PASSWORD
 
     try:
         await aiosmtplib.send(msg, **kwargs)
@@ -117,43 +118,3 @@ async def send_voting_token_email(
 async def send_voting_token_email_raw(to: str, subject: str, text: str, html: str):
     """Wrapper to make testing easier."""
     await send_email(to, subject, text, html)
-
-
-async def send_otp_email(to_email: str, otp_code: str, election_title: str):
-    """Send a 6-digit OTP code for voter MFA verification."""
-    subject = f"Your Verification Code — {election_title}"
-
-    body_text = (
-        f"Your verification code for {election_title} is:\n\n"
-        f"    {otp_code}\n\n"
-        "This code expires in 10 minutes.\n"
-        "If you did not request this, please ignore this email.\n\n"
-        "— Secure Voting System"
-    )
-
-    body_html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background: #0d6efd; color: white; padding: 20px; text-align: center;">
-            <h1 style="margin: 0;">🗳️ Secure Voting System</h1>
-        </div>
-        <div style="padding: 30px; background: #f8f9fa; text-align: center;">
-            <h2>Verification Code</h2>
-            <p>Enter this code to verify your identity for:</p>
-            <p><strong>{election_title}</strong></p>
-            <div style="background: #ffffff; border: 2px dashed #0d6efd;
-                        padding: 20px; margin: 25px auto; max-width: 250px;
-                        border-radius: 10px;">
-                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px;
-                             color: #0d6efd; font-family: monospace;">
-                    {otp_code}
-                </span>
-            </div>
-            <p style="color: #6c757d; font-size: 14px;">
-                ⏰ This code expires in <strong>10 minutes</strong>.<br>
-                🔒 Do not share this code with anyone.
-            </p>
-        </div>
-    </div>
-    """
-
-    await send_email(to_email, subject, body_text, body_html)

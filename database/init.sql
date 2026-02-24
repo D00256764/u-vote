@@ -105,6 +105,11 @@ CREATE TABLE voting_tokens (
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Columns added post-initial-deploy to track email delivery attempts and status
+ALTER TABLE voting_tokens ADD COLUMN IF NOT EXISTS email_sent BOOLEAN DEFAULT FALSE;
+ALTER TABLE voting_tokens ADD COLUMN IF NOT EXISTS emails_failed INTEGER DEFAULT 0;
+ALTER TABLE voting_tokens ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMP NULL;
+
 ALTER TABLE voter_mfa
     ADD CONSTRAINT fk_voter_mfa_token
     FOREIGN KEY (token) REFERENCES voting_tokens(token) ON DELETE CASCADE;

@@ -1,161 +1,90 @@
 version: '3.8'
 
 services:
+  # ── Database ────────────────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
-    container_name: voting-postgres
     environment:
-      POSTGRES_DB: voting_db
-      POSTGRES_USER: voting_user
-      POSTGRES_PASSWORD: voting_pass
+      POSTGRES_DB: voting_system
+      POSTGRES_USER: voting_admin
+      POSTGRES_PASSWORD: secure_password_123
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
-    networks:
-      - voting-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U voting_user -d voting_db"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U voting_admin -d voting_system"]
+      interval: 5s
       timeout: 5s
       retries: 5
 
+  # ── Auth Service (SOLE database owner) ──────────────────────────────
   auth-service:
     build:
       context: .
       dockerfile: auth-service/Dockerfile
-    container_name: voting-auth
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: voting_db
-      DB_USER: voting_user
-      DB_PASSWORD: voting_pass
-      JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
     ports:
       - "5001:5001"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - voting-network
-    restart: unless-stopped
-
-  voter-service:
-    build:
-      context: .
-      dockerfile: voter-service/Dockerfile
-    container_name: voting-voter
     environment:
+      # Database — ONLY this service has DB access
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: voting_db
-      DB_USER: voting_user
-      DB_PASSWORD: voting_pass
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_USE_TLS: ${SMTP_USE_TLS}
-      SMTP_FROM: ${SMTP_FROM}
-      FRONTEND_URL: http://localhost:8080
-    ports:
-      - "5002:5002"
+      DB_NAME: voting_system
+      DB_USER: voting_admin
+      DB_PASSWORD: secure_password_123
+      # Auth
+      JWT_SECRET: your-secret-key-change-in-production
+      DEFAULT_ORG_ID: 1
+      # Email (SMTP)
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@securevoting.com}
+      FRONTEND_URL: http://localhost:8081
     depends_on:
       postgres:
         condition: service_healthy
-    networks:
-      - voting-network
-    restart: unless-stopped
 
-  voting-service:
-    build:
-      context: .
-      dockerfile: voting-service/Dockerfile
-    container_name: voting-voting
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: voting_db
-      DB_USER: voting_user
-      DB_PASSWORD: voting_pass
-    ports:
-      - "5003:5003"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - voting-network
-    restart: unless-stopped
-
-  results-service:
-    build:
-      context: .
-      dockerfile: results-service/Dockerfile
-    container_name: voting-results
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: voting_db
-      DB_USER: voting_user
-      DB_PASSWORD: voting_pass
-    ports:
-      - "5004:5004"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - voting-network
-    restart: unless-stopped
-
+  # ── Election Service (admin dashboard — NO DB access) ───────────────
   election-service:
     build:
       context: .
       dockerfile: election-service/Dockerfile
-    container_name: voting-election
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: voting_db
-      DB_USER: voting_user
-      DB_PASSWORD: voting_pass
     ports:
-      - "5005:5005"
+      - "8082:5002"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:5001
+      SESSION_SECRET: election-session-secret-change-me
     depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - voting-network
-    restart: unless-stopped
+      - auth-service
 
+  # ── Voting Service (voter-facing — NO DB access) ────────────────────
+  voting-service:
+    build:
+      context: .
+      dockerfile: voting-service/Dockerfile
+    ports:
+      - "8081:5003"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:5001
+    depends_on:
+      - auth-service
+
+  # ── Frontend Service (auth gateway — NO DB access) ──────────────────
   frontend-service:
     build:
       context: .
       dockerfile: frontend-service/Dockerfile
-    container_name: voting-frontend
-    environment:
-      AUTH_SERVICE_URL: http://auth-service:5001
-      VOTER_SERVICE_URL: http://voter-service:5002
-      VOTING_SERVICE_URL: http://voting-service:5003
-      RESULTS_SERVICE_URL: http://results-service:5004
-      ELECTION_SERVICE_URL: http://election-service:5005
-      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
     ports:
       - "8080:5000"
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:5001
+      SESSION_SECRET: frontend-session-secret-change-me
+      ELECTION_DASHBOARD_URL: http://localhost:8082/dashboard
     depends_on:
       - auth-service
-      - voter-service
-      - voting-service
-      - results-service
-      - election-service
-    networks:
-      - voting-network
-    restart: unless-stopped
 
 volumes:
   postgres_data:
-
-networks:
-  voting-network:
-    driver: bridge

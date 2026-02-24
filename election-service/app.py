@@ -1,61 +1,46 @@
 """
-Election Service — Election CRUD, lifecycle management, and admin UI pages.
+Election Service — Admin dashboard for election organisers (Application 1B).
 
-This service owns the election bounded context end-to-end:
-    - JSON API endpoints (used by other services)
-    - HTML pages: dashboard, create election, election detail
-    - Direct DB access for its own tables
+This service owns the organiser UI for:
+    - Dashboard (list elections)
+    - Create election
+    - Election detail (with voter count, vote count)
+    - Open / close election
+    - Voter management (add single, CSV upload, list, generate tokens)
+    - View results (after election is closed)
+    - Audit trail
 
-Runs on port 5005, exposed to browsers on port 8082.
+NO DIRECT DATABASE ACCESS — all data flows through auth-service REST API.
+
+Runs on port 5002, exposed to browsers on port 8082.
 """
+
 import os
-import sys
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Form
+from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
-# ── Shared imports ───────────────────────────────────────────────────────────
-current_dir = os.path.dirname(__file__)
-for p in [
-    os.path.join(current_dir, '..', 'shared'),
-    os.path.join(current_dir, 'shared'),
-    '/app/shared',
-]:
-    p_abs = os.path.abspath(p)
-    if os.path.isdir(p_abs):
-        sys.path.insert(0, p_abs)
-        break
-
-from database import Database
-from schemas import ElectionCreate, ElectionOut, ElectionOptionOut, HealthResponse
-
-# ── Service URLs (for JWT verification) ──────────────────────────────────────
+# ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
 
-# ── Async HTTP client ────────────────────────────────────────────────────────
+# ── Async HTTP client ───────────────────────────────────────────────────────
 http_client: httpx.AsyncClient | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global http_client
-    await Database.get_pool()
-    http_client = httpx.AsyncClient(timeout=10.0)
+    http_client = httpx.AsyncClient(timeout=30.0)
     yield
     await http_client.aclose()
-    await Database.close()
 
 
-app = FastAPI(
-    title="Election Service",
-    description="Election creation, lifecycle management, and admin UI",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Election Service", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me"))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -73,217 +58,42 @@ def get_flashed_messages(request: Request) -> list[dict]:
     return request.session.pop("_messages", [])
 
 
-# ── Routes ───────────────────────────────────────────────────────────────────
-
-@app.get("/health", response_model=HealthResponse)
-async def health():
-    return {"status": "healthy", "service": "election"}
-
-
-@app.get("/elections")
-async def list_elections(organizer_id: int):
-    """List all elections for an organizer."""
-    async with Database.connection() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT id, title, description, status, created_at, opened_at, closed_at
-            FROM elections
-            WHERE organizer_id = $1
-            ORDER BY created_at DESC
-            """,
-            organizer_id,
-        )
-
-    return {
-        "elections": [
-            {
-                "id": r["id"],
-                "title": r["title"],
-                "description": r["description"],
-                "status": r["status"],
-                "created_at": r["created_at"].isoformat(),
-                "opened_at": r["opened_at"].isoformat() if r["opened_at"] else None,
-                "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
-            }
-            for r in rows
-        ]
-    }
+def safe_json(resp: httpx.Response, fallback=None) -> dict:
+    try:
+        return resp.json()
+    except Exception:
+        return fallback or {}
 
 
-@app.post("/elections", status_code=201)
-async def create_election(organizer_id: int, data: ElectionCreate):
-    """Create a new election with options."""
-    async with Database.transaction() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO elections (organizer_id, title, description, status)
-            VALUES ($1, $2, $3, 'draft')
-            RETURNING id
-            """,
-            organizer_id, data.title, data.description,
-        )
-        election_id = row["id"]
-
-        for i, option_text in enumerate(data.options):
-            if option_text.strip():
-                await conn.execute(
-                    """
-                    INSERT INTO election_options (election_id, option_text, display_order)
-                    VALUES ($1, $2, $3)
-                    """,
-                    election_id, option_text.strip(), i,
-                )
-
-    return {"message": "Election created successfully", "election_id": election_id}
+def get_organiser_id(request: Request) -> int | None:
+    return request.session.get("organiser_id")
 
 
-@app.get("/elections/{election_id}")
-async def get_election(election_id: int, organizer_id: int | None = None):
-    """Get election details, options, voter count, and vote count."""
-    async with Database.connection() as conn:
-        election = await conn.fetchrow(
-            """
-            SELECT id, title, description, status, created_at,
-                   opened_at, closed_at, organizer_id
-            FROM elections WHERE id = $1
-            """,
-            election_id,
-        )
-
-        if not election:
-            raise HTTPException(status_code=404, detail="Election not found")
-
-        if organizer_id is not None and election["organizer_id"] != organizer_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        options = await conn.fetch(
-            """
-            SELECT id, option_text, display_order
-            FROM election_options
-            WHERE election_id = $1
-            ORDER BY display_order
-            """,
-            election_id,
-        )
-
-        voter_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
-        )
-        vote_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
-        )
-
-    return {
-        "election": {
-            "id": election["id"],
-            "title": election["title"],
-            "description": election["description"],
-            "status": election["status"],
-            "created_at": election["created_at"].isoformat(),
-            "opened_at": election["opened_at"].isoformat() if election["opened_at"] else None,
-            "closed_at": election["closed_at"].isoformat() if election["closed_at"] else None,
-            "voter_count": voter_count,
-            "vote_count": vote_count,
-        },
-        "options": [
-            {"id": o["id"], "text": o["option_text"], "order": o["display_order"]}
-            for o in options
-        ],
-    }
+def require_login(request: Request):
+    oid = get_organiser_id(request)
+    if not oid:
+        return None
+    return oid
 
 
-@app.post("/elections/{election_id}/open")
-async def open_election(election_id: int, organizer_id: int):
-    """Open a draft election for voting."""
-    async with Database.transaction() as conn:
-        result = await conn.execute(
-            """
-            UPDATE elections
-            SET status = 'open', opened_at = CURRENT_TIMESTAMP
-            WHERE id = $1 AND organizer_id = $2 AND status = 'draft'
-            """,
-            election_id, organizer_id,
-        )
-
-    if result == "UPDATE 0":
-        raise HTTPException(
-            status_code=400,
-            detail="Election not found, not yours, or not in draft status",
-        )
-
-    return {"message": "Election opened successfully"}
-
-
-@app.post("/elections/{election_id}/close")
-async def close_election(election_id: int, organizer_id: int):
-    """Close an open election."""
-    async with Database.transaction() as conn:
-        result = await conn.execute(
-            """
-            UPDATE elections
-            SET status = 'closed', closed_at = CURRENT_TIMESTAMP
-            WHERE id = $1 AND organizer_id = $2 AND status = 'open'
-            """,
-            election_id, organizer_id,
-        )
-
-    if result == "UPDATE 0":
-        raise HTTPException(
-            status_code=400,
-            detail="Election not found, not yours, or not in open status",
-        )
-
-    return {"message": "Election closed successfully"}
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# HTML PAGES — served directly by this service (service-owned templates)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _require_login(request: Request):
-    """Check session for organiser JWT. Redirect to auth gateway if missing."""
-    if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
-    return None
-
+# ── Dashboard entry (handles redirect from frontend-service) ────────────────
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
-    # ── Auth hand-off: login redirect sends organizer_id & token as query params ──
-    qp_token = request.query_params.get("token")
-    qp_oid = request.query_params.get("organizer_id")
-    if qp_token and qp_oid:
-        try:
-            request.session["token"] = qp_token
-            request.session["organizer_id"] = int(qp_oid)
-        except (ValueError, TypeError):
-            pass
-        # Strip query params and redirect to clean URL
-        return RedirectResponse(url="/dashboard", status_code=303)
+async def dashboard(request: Request, organiser_id: int | None = None,
+                    token: str | None = None):
+    # If redirected from frontend-service with query params, store in session
+    if organiser_id and token:
+        request.session["organiser_id"] = organiser_id
+        request.session["token"] = token
 
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
 
-    organizer_id = request.session["organizer_id"]
-    async with Database.connection() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT id, title, description, status, created_at, opened_at, closed_at
-            FROM elections WHERE organizer_id = $1 ORDER BY created_at DESC
-            """,
-            organizer_id,
-        )
-
-    elections = [
-        {
-            "id": r["id"], "title": r["title"], "description": r["description"],
-            "status": r["status"], "created_at": r["created_at"].isoformat(),
-            "opened_at": r["opened_at"].isoformat() if r["opened_at"] else None,
-            "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
-        }
-        for r in rows
-    ]
+    resp = await http_client.get(
+        f"{AUTH_SERVICE}/elections", params={"organiser_id": oid}
+    )
+    elections = safe_json(resp).get("elections", [])
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request, "elections": elections,
@@ -291,128 +101,260 @@ async def dashboard_page(request: Request):
     })
 
 
+# ── Create Election ─────────────────────────────────────────────────────────
+
 @app.get("/elections/create", response_class=HTMLResponse)
 async def create_election_page(request: Request):
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
     return templates.TemplateResponse("create_election.html", {
         "request": request, "messages": get_flashed_messages(request),
     })
 
 
 @app.post("/elections/create", response_class=HTMLResponse)
-async def create_election_form(request: Request):
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+async def create_election(request: Request, title: str = Form(...),
+                          description: str = Form(""),):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
 
     form = await request.form()
-    title = form.get("title")
-    description = form.get("description", "")
     options = form.getlist("options[]")
+    options = [o for o in options if o.strip()]
 
-    async with Database.transaction() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO elections (organizer_id, title, description, status)
-            VALUES ($1, $2, $3, 'draft') RETURNING id
-            """,
-            request.session["organizer_id"], title, description,
-        )
-        election_id = row["id"]
+    if len(options) < 2:
+        flash(request, "At least 2 options are required", "danger")
+        return templates.TemplateResponse("create_election.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
 
-        for i, opt in enumerate(options):
-            if opt.strip():
-                await conn.execute(
-                    "INSERT INTO election_options (election_id, option_text, display_order) VALUES ($1, $2, $3)",
-                    election_id, opt.strip(), i,
-                )
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections",
+        params={"organiser_id": oid},
+        json={"title": title, "description": description, "options": options},
+    )
 
-    flash(request, "Election created successfully!", "success")
-    return RedirectResponse(url=f"/elections/{election_id}", status_code=303)
+    if resp.status_code == 201:
+        eid = safe_json(resp).get("election_id")
+        flash(request, "Election created successfully!", "success")
+        return RedirectResponse(url=f"/elections/{eid}/detail", status_code=303)
 
+    flash(request, safe_json(resp).get("detail", "Failed to create election"), "danger")
+    return templates.TemplateResponse("create_election.html", {
+        "request": request, "messages": get_flashed_messages(request),
+    })
+
+
+# ── Election Detail ─────────────────────────────────────────────────────────
 
 @app.get("/elections/{election_id}/detail", response_class=HTMLResponse)
-async def election_detail_page(request: Request, election_id: int):
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+async def election_detail(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
 
-    organizer_id = request.session["organizer_id"]
-    async with Database.connection() as conn:
-        election = await conn.fetchrow(
-            """
-            SELECT id, title, description, status, created_at,
-                   opened_at, closed_at, organizer_id
-            FROM elections WHERE id = $1
-            """,
-            election_id,
-        )
-        if not election or election["organizer_id"] != organizer_id:
-            flash(request, "Election not found or access denied", "danger")
-            return RedirectResponse(url="/dashboard", status_code=303)
+    resp = await http_client.get(
+        f"{AUTH_SERVICE}/elections/{election_id}",
+        params={"organiser_id": oid},
+    )
+    if resp.status_code != 200:
+        flash(request, safe_json(resp).get("detail", "Election not found"), "danger")
+        return RedirectResponse(url="/dashboard", status_code=303)
 
-        options = await conn.fetch(
-            "SELECT id, option_text, display_order FROM election_options WHERE election_id = $1 ORDER BY display_order",
-            election_id,
-        )
-        voter_count = await conn.fetchval("SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id)
-        vote_count = await conn.fetchval("SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id)
-
+    data = safe_json(resp)
     return templates.TemplateResponse("election_detail.html", {
         "request": request,
-        "election": {
-            "id": election["id"], "title": election["title"],
-            "description": election["description"], "status": election["status"],
-            "created_at": election["created_at"].isoformat(),
-            "opened_at": election["opened_at"].isoformat() if election["opened_at"] else None,
-            "closed_at": election["closed_at"].isoformat() if election["closed_at"] else None,
-            "voter_count": voter_count, "vote_count": vote_count,
-        },
-        "options": [{"id": o["id"], "text": o["option_text"], "order": o["display_order"]} for o in options],
+        "election": data["election"],
+        "options": data["options"],
         "messages": get_flashed_messages(request),
     })
 
 
+# ── Open / Close Election ───────────────────────────────────────────────────
+
 @app.post("/elections/{election_id}/open/confirm")
-async def open_election_form(request: Request, election_id: int):
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+async def open_election(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
 
-    organizer_id = request.session["organizer_id"]
-    async with Database.transaction() as conn:
-        result = await conn.execute(
-            "UPDATE elections SET status = 'open', opened_at = CURRENT_TIMESTAMP WHERE id = $1 AND organizer_id = $2 AND status = 'draft'",
-            election_id, organizer_id,
-        )
-
-    if result == "UPDATE 0":
-        flash(request, "Cannot open election", "danger")
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections/{election_id}/open",
+        params={"organiser_id": oid},
+    )
+    if resp.status_code == 200:
+        flash(request, "Election opened for voting!", "success")
     else:
-        flash(request, "Election opened successfully!", "success")
-
+        flash(request, safe_json(resp).get("detail", "Cannot open election"), "danger")
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
 
 
 @app.post("/elections/{election_id}/close/confirm")
-async def close_election_form(request: Request, election_id: int):
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
+async def close_election(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
 
-    organizer_id = request.session["organizer_id"]
-    async with Database.transaction() as conn:
-        result = await conn.execute(
-            "UPDATE elections SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = $1 AND organizer_id = $2 AND status = 'open'",
-            election_id, organizer_id,
-        )
-
-    if result == "UPDATE 0":
-        flash(request, "Cannot close election", "danger")
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections/{election_id}/close",
+        params={"organiser_id": oid},
+    )
+    if resp.status_code == 200:
+        flash(request, "Election closed.", "success")
     else:
-        flash(request, "Election closed successfully!", "success")
-
+        flash(request, safe_json(resp).get("detail", "Cannot close election"), "danger")
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
 
+
+# ── Voter Management ────────────────────────────────────────────────────────
+
+@app.get("/elections/{election_id}/voters", response_class=HTMLResponse)
+async def manage_voters(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    # Get election title
+    election_resp = await http_client.get(
+        f"{AUTH_SERVICE}/elections/{election_id}",
+        params={"organiser_id": oid},
+    )
+    if election_resp.status_code != 200:
+        flash(request, "Election not found", "danger")
+        return RedirectResponse(url="/dashboard", status_code=303)
+    election_data = safe_json(election_resp)
+
+    # Get voters
+    voter_resp = await http_client.get(f"{AUTH_SERVICE}/elections/{election_id}/voters")
+    voters = safe_json(voter_resp).get("voters", [])
+
+    return templates.TemplateResponse("manage_voters.html", {
+        "request": request,
+        "election_id": election_id,
+        "election_title": election_data["election"]["title"],
+        "voters": voters,
+        "messages": get_flashed_messages(request),
+    })
+
+
+@app.post("/elections/{election_id}/voters/upload/form")
+async def upload_voters_form(request: Request, election_id: int,
+                             file: UploadFile = File(...)):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    contents = await file.read()
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections/{election_id}/voters/upload",
+        files={"file": (file.filename, contents, file.content_type or "text/csv")},
+    )
+    data = safe_json(resp)
+    if resp.status_code == 201:
+        flash(request,
+              f"Uploaded: {data.get('voters_added', 0)} added, "
+              f"{data.get('voters_skipped', 0)} skipped", "success")
+    else:
+        flash(request, data.get("detail", "Upload failed"), "danger")
+
+    return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+
+
+@app.post("/elections/{election_id}/tokens/generate/form")
+async def generate_tokens_form(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections/{election_id}/tokens/generate"
+    )
+    data = safe_json(resp)
+    if resp.status_code == 201:
+        flash(request,
+              f"Generated {data.get('tokens_generated', 0)} tokens. "
+              f"Emails sent: {data.get('emails_sent', 0)}, "
+              f"failed: {data.get('emails_failed', 0)}", "success")
+    else:
+        flash(request, data.get("detail", "Token generation failed"), "danger")
+
+    return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+
+
+@app.post("/elections/{election_id}/tokens/resend/form")
+async def resend_tokens_form(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    resp = await http_client.post(
+        f"{AUTH_SERVICE}/elections/{election_id}/tokens/resend",
+        params={"organiser_id": oid},
+    )
+    data = safe_json(resp)
+    if resp.status_code == 200:
+        flash(request,
+              f"Resend complete: tokens found {data.get('tokens_found',0)}. "
+              f"Emails sent: {data.get('emails_sent',0)}, failed: {data.get('emails_failed',0)}",
+              "success")
+    else:
+        flash(request, data.get("detail", "Resend failed"), "danger")
+
+    return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+
+
+# ── Results ──────────────────────────────────────────────────────────────────
+
+@app.get("/elections/{election_id}/results", response_class=HTMLResponse)
+async def view_results(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    resp = await http_client.get(f"{AUTH_SERVICE}/elections/{election_id}/results")
+    if resp.status_code != 200:
+        flash(request, safe_json(resp).get("detail", "Cannot view results"), "danger")
+        return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
+    data = safe_json(resp)
+    return templates.TemplateResponse("results.html", {
+        "request": request, "data": data,
+        "messages": get_flashed_messages(request),
+    })
+
+
+# ── Audit Trail ──────────────────────────────────────────────────────────────
+
+@app.get("/elections/{election_id}/audit", response_class=HTMLResponse)
+async def view_audit(request: Request, election_id: int):
+    oid = require_login(request)
+    if not oid:
+        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+
+    resp = await http_client.get(f"{AUTH_SERVICE}/elections/{election_id}/audit")
+    if resp.status_code != 200:
+        flash(request, safe_json(resp).get("detail", "Cannot view audit trail"), "danger")
+        return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
+    data = safe_json(resp)
+    # Also get election info for title
+    election_resp = await http_client.get(
+        f"{AUTH_SERVICE}/elections/{election_id}",
+        params={"organiser_id": oid},
+    )
+    election_data = safe_json(election_resp)
+
+    return templates.TemplateResponse("audit.html", {
+        "request": request, "audit": data,
+        "election": election_data.get("election", {}),
+        "messages": get_flashed_messages(request),
+    })
+
+
+# ── Health ───────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "election"}
