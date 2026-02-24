@@ -321,9 +321,15 @@ class PlatformDeployer:
                 all_ok = False
                 continue
 
+            dockerfile = svc_dir / "Dockerfile"
             self.logger.info(f"Building {svc}...")
             rc, out, err = self.run_cmd(
-                ["docker", "build", "-t", f"{svc}:latest", str(svc_dir)],
+                [
+                    "docker", "build",
+                    "-t", f"{svc}:latest",
+                    "-f", str(dockerfile),
+                    str(self.project_root),
+                ],
                 check=False,
                 timeout=600,
                 mutating=True,
@@ -382,14 +388,18 @@ class PlatformDeployer:
     def phase4_manage_secrets(self) -> bool:
         self.logger.header("Phase 4: Secret Management")
 
+        # password and postgres-password must be identical: uvote_admin IS the
+        # PostgreSQL superuser, so POSTGRES_PASSWORD and DB_PASSWORD must match.
+        _db_password = secrets.token_urlsafe(24)
+
         secret_specs = {
             "db-credentials": {
                 "type": "generic",
                 "literals": {
                     "username": "uvote_admin",
-                    "password": secrets.token_urlsafe(24),
-                    "postgres-password": secrets.token_urlsafe(24),
-                    "database": "evote",
+                    "password": _db_password,
+                    "postgres-password": _db_password,
+                    "database": "uvote",
                 },
             },
             "jwt-secret": {
@@ -407,15 +417,69 @@ class PlatformDeployer:
         }
 
         for name, spec in secret_specs.items():
-            rc, _, _ = self.run_cmd(
-                ["kubectl", "get", "secret", name, "-n", self.namespace],
+            rc, out, _ = self.run_cmd(
+                ["kubectl", "get", "secret", name, "-n", self.namespace,
+                 "-o", "jsonpath={.data}"],
                 check=False,
             )
             if rc == 0:
-                self.logger.success(f"✓ Secret '{name}' already exists (preserved)")
+                # Secret exists — check for missing keys and integrity issues
+                existing_data = json.loads(out) if out.strip() else {}
+                existing_keys = set(existing_data.keys())
+                required_keys = set(spec["literals"].keys())
+                missing_keys = required_keys - existing_keys
+
+                # Build patch payload starting with any missing keys
+                patch_data = {
+                    k: base64.b64encode(spec["literals"][k].encode()).decode()
+                    for k in missing_keys
+                }
+
+                # db-credentials integrity rule: password MUST equal
+                # postgres-password because uvote_admin is the PostgreSQL
+                # superuser.  Always derive password from the stored
+                # postgres-password (what PostgreSQL was actually initialised
+                # with) — never from a freshly generated random value.
+                if name == "db-credentials":
+                    pgpw_b64 = existing_data.get("postgres-password", "")
+                    if pgpw_b64:
+                        cur_pw_b64 = existing_data.get("password", "")
+                        if "password" in missing_keys or cur_pw_b64 != pgpw_b64:
+                            patch_data["password"] = pgpw_b64  # already b64
+                            if "password" not in missing_keys:
+                                self.logger.warning(
+                                    "⚠ db-credentials: password ≠ postgres-password — syncing"
+                                )
+
+                if not patch_data:
+                    self.logger.success(f"✓ Secret '{name}' already exists (preserved)")
+                    continue
+
+                if missing_keys:
+                    self.logger.warning(
+                        f"⚠ Secret '{name}' is missing keys: {', '.join(sorted(missing_keys))} — patching"
+                    )
+                rc, _, err = self.run_cmd(
+                    [
+                        "kubectl", "patch", "secret", name,
+                        "-n", self.namespace,
+                        "--type=merge",
+                        "-p", json.dumps({"data": patch_data}),
+                    ],
+                    check=False,
+                    mutating=True,
+                )
+                if rc != 0:
+                    self.logger.error(f"✗ Failed to patch secret '{name}': {err.strip()}")
+                    return False
+                self.logger.success(f"✓ Secret '{name}' patched")
+                if name == "db-credentials" and "password" in patch_data:
+                    final_pw = base64.b64decode(patch_data["password"]).decode()
+                    if not self._sync_pg_password(final_pw):
+                        return False
                 continue
 
-            # Build create command
+            # Secret does not exist — create it in full
             cmd = [
                 "kubectl", "create", "secret", "generic", name,
                 "-n", self.namespace,
@@ -429,7 +493,70 @@ class PlatformDeployer:
                 return False
             self.logger.success(f"✓ Secret '{name}' created")
 
+            # When db-credentials is created fresh, PostgreSQL may already be
+            # running and initialised with a different password.  Sync it now
+            # so services can authenticate without requiring a cluster reset.
+            if name == "db-credentials":
+                if not self._sync_pg_password(spec["literals"]["password"]):
+                    return False
+
+        # Always sync the PostgreSQL user password from the live secret,
+        # regardless of whether it was just created, patched, or preserved.
+        # This covers the "secret already existed" path where no patch occurs.
+        self.logger.info("Reading current db-credentials password from cluster...")
+        rc, pw_b64, err = self.run_cmd(
+            [
+                "kubectl", "get", "secret", "db-credentials",
+                "-n", self.namespace,
+                "-o", "jsonpath={.data.password}",
+            ],
+            check=False,
+        )
+        if rc != 0 or not pw_b64.strip():
+            self.logger.error(f"✗ Could not read db-credentials password: {err.strip()}")
+            return False
+        current_password = base64.b64decode(pw_b64.strip()).decode()
+        if not self._sync_pg_password(current_password):
+            return False
+
         return True
+
+    def _sync_pg_password(self, new_password: str) -> bool:
+        """Update PostgreSQL's uvote_admin password to match db-credentials.
+
+        Safe to call even if PostgreSQL is not yet running — returns True and
+        skips in that case.  Returns False (and logs an error) if the ALTER
+        USER statement fails, which will cause Phase 4 to abort since services
+        will be unable to authenticate.
+        """
+        rc, pod_name, _ = self.run_cmd(
+            [
+                "kubectl", "get", "pod", "-n", self.namespace,
+                "-l", "app=postgresql",
+                "-o", "jsonpath={.items[0].metadata.name}",
+            ],
+            check=False,
+        )
+        if rc != 0 or not pod_name.strip():
+            self.logger.debug("PostgreSQL not yet running — skipping password sync")
+            return True
+
+        pod = pod_name.strip()
+        self.logger.info("Syncing PostgreSQL uvote_admin password to match db-credentials...")
+        rc, _, err = self.run_cmd(
+            [
+                "kubectl", "exec", "-n", self.namespace, pod, "--",
+                "psql", "-U", "uvote_admin", "-d", "uvote",
+                "-c", f"ALTER USER uvote_admin PASSWORD '{new_password}';",
+            ],
+            check=False,
+        )
+        if rc == 0:
+            self.logger.success("✓ PostgreSQL uvote_admin password synced")
+            return True
+        else:
+            self.logger.error(f"✗ Failed to sync PostgreSQL password: {err.strip()}")
+            return False
 
     # -----------------------------------------------------------------------
     # Phase 5: Deploy Services
@@ -579,21 +706,86 @@ class PlatformDeployer:
                     if not cs.get("ready", False):
                         pname = pod["metadata"]["name"]
                         self.results["pods_failed"].append(pname)
-                        self.logger.info(f"Fetching logs for {pname}...")
-                        _, logs, _ = self.run_cmd(
-                            ["kubectl", "logs", "-n", self.namespace, pname,
-                             "--tail=30"],
-                            check=False,
-                        )
+
+                        # Try previous (crashed) container first, fall back to current
+                        for extra in (["--previous"], []):
+                            _, logs, _ = self.run_cmd(
+                                ["kubectl", "logs", "-n", self.namespace, pname,
+                                 "--tail=30"] + extra,
+                                check=False,
+                            )
+                            if logs.strip():
+                                break
+
                         if logs.strip():
-                            for line in logs.strip().splitlines()[-10:]:
-                                self.logger.debug(f"  {pname}: {line}")
+                            self.logger.error(f"✗ Logs for {pname}:")
+                            for line in logs.strip().splitlines():
+                                self.logger.error(f"  {line}")
+                        else:
+                            self.logger.error(f"✗ No logs available for {pname}")
 
         return False
 
     # -----------------------------------------------------------------------
     # Phase 7: Network Policy Testing
     # -----------------------------------------------------------------------
+    def _resolve_pod_name(self, deploy_name: str) -> str:
+        """Return 'pod/<name>' for the first real service pod, or fall back to
+        'deployment/<deploy_name>'.
+
+        Uses tier=backend to exclude test pods (e.g. test-allowed-db) that
+        share the same app label as a real service.  Without this filter,
+        kubectl exec/port-forward deployment/auth-service can land on the
+        test pod running 'sleep infinity', which has no listening ports and
+        may lack tool binaries like nc or python3.
+        """
+        rc, out, _ = self.run_cmd(
+            [
+                "kubectl", "get", "pods", "-n", self.namespace,
+                "-l", f"app={deploy_name},tier=backend",
+                "-o", "jsonpath={.items[0].metadata.name}",
+            ],
+            check=False, timeout=10,
+        )
+        pod_name = out.strip()
+        if rc == 0 and pod_name:
+            return f"pod/{pod_name}"
+        # Fallback — best effort if tier=backend pods not found
+        return f"deployment/{deploy_name}"
+
+    def _exec_tcp_check(self, deploy_name: str, host: str, port: int) -> bool:
+        """Return True if the pod can open a TCP connection to host:port.
+
+        Tries nc -zv first.  If nc is absent (exit output contains 'not found'
+        / 'no such file'), falls back to bash's /dev/tcp built-in so the test
+        works regardless of which tools the image ships with.
+        """
+        target = self._resolve_pod_name(deploy_name)
+        base = [
+            "kubectl", "exec", "-n", self.namespace,
+            target, "--",
+        ]
+
+        # Primary: netcat
+        rc, out, err = self.run_cmd(
+            base + ["sh", "-c", f"nc -zv {host} {port} 2>&1"],
+            check=False, timeout=10,
+        )
+        combined = (out + err).lower()
+        nc_missing = any(
+            phrase in combined
+            for phrase in ("not found", "no such file", "unknown command", "nc: command")
+        )
+        if not nc_missing:
+            return rc == 0
+
+        # Fallback: bash /dev/tcp built-in (works even without netcat)
+        rc, _, _ = self.run_cmd(
+            base + ["sh", "-c", f"timeout 5 bash -c '</dev/tcp/{host}/{port}' && echo ok"],
+            check=False, timeout=10,
+        )
+        return rc == 0
+
     def phase7_test_network_policies(self) -> bool:
         self.logger.header("Phase 7: Network Policy Testing")
         all_ok = True
@@ -602,7 +794,7 @@ class PlatformDeployer:
             self.logger.info("[DRY-RUN] Would test network policies")
             return True
 
-        # Test DB access from backend services (should succeed)
+        # Test DB access from every backend service
         for svc in ALL_SERVICES:
             info = SERVICE_REGISTRY[svc]
             deploy_name = info["deploy_name"]
@@ -611,18 +803,7 @@ class PlatformDeployer:
             if deploy_name not in self.results["services_deployed"]:
                 continue
 
-            # Use a timeout on the nc command so we don't wait forever
-            rc, out, err = self.run_cmd(
-                [
-                    "kubectl", "exec", "-n", self.namespace,
-                    f"deployment/{deploy_name}", "--",
-                    "python3", "-c",
-                    "import socket; s=socket.socket(); s.settimeout(5); s.connect(('postgresql',5432)); s.close(); print('ok')",
-                ],
-                check=False,
-                timeout=15,
-            )
-            connected = rc == 0
+            connected = self._exec_tcp_check(deploy_name, "postgresql", 5432)
 
             if should_succeed:
                 if connected:
@@ -641,7 +822,7 @@ class PlatformDeployer:
                     self.results["net_failed"].append(f"{deploy_name}→db:unexpected")
                     all_ok = False
 
-        # DNS resolution test
+        # DNS resolution test — shell tools only, no python3 dependency
         test_deploy = None
         for svc in ALL_SERVICES:
             info = SERVICE_REGISTRY[svc]
@@ -654,15 +835,15 @@ class PlatformDeployer:
             rc, out, _ = self.run_cmd(
                 [
                     "kubectl", "exec", "-n", self.namespace,
-                    f"deployment/{test_deploy}", "--",
-                    "python3", "-c",
-                    "import socket; print(socket.getaddrinfo('postgresql',5432)[0][4][0])",
+                    self._resolve_pod_name(test_deploy), "--",
+                    "sh", "-c",
+                    "nslookup postgresql 2>&1 || getent hosts postgresql 2>&1",
                 ],
                 check=False,
                 timeout=15,
             )
             if rc == 0 and out.strip():
-                self.logger.success(f"✓ DNS resolution working (postgresql → {out.strip()})")
+                self.logger.success("✓ DNS resolution working (postgresql resolves)")
                 self.results["net_passed"].append("dns")
             else:
                 self.logger.error("✗ DNS resolution failed")
@@ -674,6 +855,80 @@ class PlatformDeployer:
     # -----------------------------------------------------------------------
     # Phase 8: Health Endpoint Testing
     # -----------------------------------------------------------------------
+    def _health_via_port_forward(
+        self, deploy_name: str, container_port: int, path: str
+    ) -> Tuple[int, str]:
+        """Forward a deployment port to localhost, GET the health path, return
+        (http_status, response_body).  Status 0 means the tunnel never came up.
+
+        Using port-forward instead of exec avoids any dependency on tools
+        (python3, curl, wget) being present inside the container.
+        """
+        import urllib.request
+        import urllib.error
+
+        # Grab a free local port without leaving the socket open
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            local_port = s.getsockname()[1]
+
+        target = self._resolve_pod_name(deploy_name)
+        pf_proc = subprocess.Popen(
+            [
+                "kubectl", "port-forward", "-n", self.namespace,
+                target,
+                f"{local_port}:{container_port}",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        try:
+            # Poll until the tunnel accepts connections (up to 10 s)
+            deadline = time.time() + 10
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection(("localhost", local_port), timeout=1):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.2)
+
+            if not ready:
+                self.logger.debug(
+                    f"  port-forward to {deploy_name}:{container_port} did not become ready"
+                )
+                return 0, "port-forward not ready"
+
+            # Small pause: the local listener being up does not guarantee the
+            # pod-side tunnel is established.  Give kubectl a moment to fully
+            # wire the connection before firing the HTTP request.
+            time.sleep(0.5)
+
+            url = f"http://localhost:{local_port}{path}"
+            last_exc: Optional[Exception] = None
+            for _attempt in range(4):
+                try:
+                    r = urllib.request.urlopen(url, timeout=10)
+                    return r.status, r.read().decode("utf-8", errors="replace")[:200]
+                except urllib.error.HTTPError as exc:
+                    return exc.code, exc.read().decode("utf-8", errors="replace")[:200]
+                except OSError as exc:
+                    # ConnectionRefusedError (ECONNREFUSED) means the tunnel
+                    # is not quite ready yet — retry with backoff.
+                    last_exc = exc
+                    time.sleep(0.5)
+                except Exception as exc:
+                    return 0, str(exc)
+            return 0, str(last_exc)
+        finally:
+            pf_proc.terminate()
+            try:
+                pf_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pf_proc.kill()
+
     def phase8_test_health_endpoints(self) -> bool:
         self.logger.header("Phase 8: Health Endpoint Testing")
 
@@ -693,27 +948,17 @@ class PlatformDeployer:
             port = info["port"]
             path = info["health_path"]
 
-            # Use kubectl exec to curl from inside the pod
-            rc, out, err = self.run_cmd(
-                [
-                    "kubectl", "exec", "-n", self.namespace,
-                    f"deployment/{deploy_name}", "--",
-                    "python3", "-c",
-                    f"import urllib.request; r=urllib.request.urlopen('http://localhost:{port}{path}', timeout=10); print(r.status, r.read().decode()[:200])",
-                ],
-                check=False,
-                timeout=20,
-            )
+            status, body = self._health_via_port_forward(deploy_name, port, path)
 
-            if rc == 0 and out.strip().startswith("200"):
-                response_body = out.strip()[4:]  # strip "200 "
+            if status == 200:
                 self.logger.success(f"✓ {deploy_name} {path} → 200 OK")
-                self.logger.debug(f"  Response: {response_body[:100]}")
+                self.logger.debug(f"  Response: {body[:100]}")
                 self.results["health_passed"].append(deploy_name)
             else:
-                self.logger.error(f"✗ {deploy_name} {path} → Failed")
-                self.logger.debug(f"  stdout: {out.strip()}")
-                self.logger.debug(f"  stderr: {err.strip()}")
+                self.logger.error(
+                    f"✗ {deploy_name} {path} → Failed (status={status})"
+                )
+                self.logger.debug(f"  Body: {body[:100]}")
                 self.results["health_failed"].append(deploy_name)
                 all_ok = False
 

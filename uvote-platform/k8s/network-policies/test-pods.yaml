@@ -2,7 +2,7 @@
 # U-Vote Network Policy Test Pods
 # =============================================================================
 # Purpose: Validate Calico network policies by deploying test pods that
-#          simulate allowed and blocked services trying to reach PostgreSQL.
+#          simulate allowed and blocked services trying to reach PostgreSQL, manually.
 #
 # Namespace: uvote-dev (matches namespaces.yaml)
 # Database service: postgresql (ClusterIP on port 5432)
