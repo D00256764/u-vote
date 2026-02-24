@@ -15,12 +15,12 @@
 # application unreachable from outside the cluster.
 #
 # Routing rules from ARCHITECTURE.MD § "Nginx Ingress Controller":
-#   /              → Frontend Service  (port 3000)
-#   /api/auth      → Auth Service      (port 8001)
-#   /api/elections → Election Service  (port 8002)
-#   /api/voting    → Voting Service    (port 8003)
-#   /api/results   → Results Service   (port 8004)
-#   /api/admin     → Admin Service     (port 8006)
+#   /              → Frontend Service  (port 5000)
+#   /api/auth      → Auth Service      (port 5001)
+#   /api/elections → Election Service  (port 5005)
+#   /api/voting    → Voting Service    (port 5003)
+#   /api/results   → Results Service   (port 5004)
+#   /api/admin     → Admin Service     (port 5002)
 #
 # Services NOT exposed via ingress (internal only):
 #   - Audit Service  (port 8005) — receives events from other services only;
@@ -56,7 +56,7 @@
 
 
 # -----------------------------------------------------------------------------
-# Frontend Service — port 3000
+# Frontend Service — port 5000
 # Serves the user interface (Jinja2 templates, static assets).
 # All user-facing pages are rendered by this service.
 # Ingress route: /
@@ -86,12 +86,12 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 3000
+      port: 5000
 
 ---
 
 # -----------------------------------------------------------------------------
-# Auth Service — port 8001
+# Auth Service — port 5001
 # Admin registration, login, JWT token issuance and validation.
 # Ingress route: /api/auth
 # Reference: ARCHITECTURE.MD § "Auth Service"
@@ -120,12 +120,12 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 8001
+      port: 5001
 
 ---
 
 # -----------------------------------------------------------------------------
-# Election Service — port 8002
+# Election Service — port 5005
 # Election CRUD, lifecycle management (draft → active → closed).
 # Ingress route: /api/elections
 # Reference: ARCHITECTURE.MD § "Election Service"
@@ -154,12 +154,12 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 8002
+      port: 5005
 
 ---
 
 # -----------------------------------------------------------------------------
-# Voting Service — port 8003
+# Voting Service — port 5003
 # Token validation, ballot display, anonymous vote casting.
 # Ingress route: /api/voting
 # Reference: ARCHITECTURE.MD § "Voting Service"
@@ -188,12 +188,12 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 8003
+      port: 5003
 
 ---
 
 # -----------------------------------------------------------------------------
-# Results Service — port 8004
+# Results Service — port 5004
 # Vote tallying, percentage calculation, winner determination.
 # Ingress route: /api/results
 # Reference: ARCHITECTURE.MD § "Results Service"
@@ -222,12 +222,12 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 8004
+      port: 5004
 
 ---
 
 # -----------------------------------------------------------------------------
-# Admin Service — port 8006
+# Admin Service — port 5002
 # Voter/candidate management, token generation, CSV import.
 # Triggers email-service for voting/results links.
 # Ingress route: /api/admin
@@ -257,4 +257,4 @@ spec:
           kubernetes.io/metadata.name: ingress-nginx
     ports:
     - protocol: TCP
-      port: 8006
+      port: 5002
