@@ -54,7 +54,7 @@ services:
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
       SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
+      SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       SMTP_USE_TLS: ${SMTP_USE_TLS}
