@@ -34,6 +34,10 @@ for p in [
         sys.path.insert(0, p_abs)
         break
 
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('voter-service')
+
 from database import Database
 from security import generate_voting_token, generate_token_expiry
 from email_util import send_voting_token_email
@@ -59,8 +63,6 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "ch
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-logger = logging.getLogger(__name__)
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -77,13 +79,15 @@ def get_flashed_messages(request: Request) -> list[dict]:
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "voter"}
 
 
 @app.post("/elections/{election_id}/voters/upload", status_code=201)
-async def upload_voters(election_id: int, file: UploadFile = File(...)):
+async def upload_voters(request: Request, election_id: int, file: UploadFile = File(...)):
     """Upload voter list from CSV (requires email and date_of_birth columns)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     contents = await file.read()
     csv_data = contents.decode("utf-8")
     reader = csv.DictReader(StringIO(csv_data))
@@ -122,8 +126,9 @@ async def upload_voters(election_id: int, file: UploadFile = File(...)):
 
 
 @app.post("/elections/{election_id}/voters", status_code=201)
-async def add_voter(election_id: int, data: VoterAddRequest):
+async def add_voter(request: Request, election_id: int, data: VoterAddRequest):
     """Add a single voter."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     try:
         dob = date.fromisoformat(data.date_of_birth) if isinstance(data.date_of_birth, str) else data.date_of_birth
         async with Database.transaction() as conn:
@@ -134,14 +139,16 @@ async def add_voter(election_id: int, data: VoterAddRequest):
     except Exception as e:
         if "unique" in str(e).lower():
             raise HTTPException(status_code=409, detail="Voter already exists for this election")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error('Database error in add_voter: %s', e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"message": "Voter added successfully", "voter_id": row["id"]}
 
 
 @app.get("/elections/{election_id}/voters")
-async def get_voters(election_id: int):
+async def get_voters(request: Request, election_id: int):
     """Get all voters for an election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
@@ -169,11 +176,9 @@ async def get_voters(election_id: int):
 
 
 @app.post("/elections/{election_id}/tokens/generate", status_code=201)
-async def generate_tokens(election_id: int, data: TokenGenerateRequest | None = None):
+async def generate_tokens(request: Request, election_id: int, data: TokenGenerateRequest | None = None):
     """Generate voting tokens for all voters without an active token, then email each voter."""
-    import logging
-    logger = logging.getLogger(__name__)
-
+    logger.info('Request received: %s %s', request.method, request.url.path)
     expiry_hours = data.expiry_hours if data else 168
 
     async with Database.transaction() as conn:
@@ -236,7 +241,7 @@ async def generate_tokens(election_id: int, data: TokenGenerateRequest | None = 
             emails_sent += 1
         except Exception as e:
             emails_failed += 1
-            logger.error(f"Failed to email {t['email']}: {e}")
+            logger.error('Failed to send email: %s', e)
 
     return {
         "message": "Tokens generated and emails sent",
@@ -248,8 +253,9 @@ async def generate_tokens(election_id: int, data: TokenGenerateRequest | None = 
 
 
 @app.get("/tokens/{token}/validate", response_model=TokenValidateResponse)
-async def validate_token(token: str):
+async def validate_token(request: Request, token: str):
     """Validate a voting token."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             """
@@ -284,8 +290,9 @@ async def validate_token(token: str):
 # ── MFA Endpoints (Date of Birth Verification) ──────────────────────────────
 
 @app.post("/mfa/verify", status_code=200)
-async def verify_identity(token: str, date_of_birth: str):
+async def verify_identity(request: Request, token: str, date_of_birth: str):
     """Verify voter identity by checking date of birth against stored value."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     try:
         submitted_dob = date.fromisoformat(date_of_birth)
     except ValueError:
@@ -315,6 +322,7 @@ async def verify_identity(token: str, date_of_birth: str):
 
         # Compare dates
         if row["date_of_birth"] != submitted_dob:
+            logger.warning('Auth failure: %s', 'Date of birth does not match')
             raise HTTPException(status_code=403, detail="Date of birth does not match our records")
 
         # Check if already verified
@@ -330,8 +338,9 @@ async def verify_identity(token: str, date_of_birth: str):
 
 
 @app.get("/mfa/status")
-async def mfa_status(token: str):
+async def mfa_status(request: Request, token: str):
     """Check if a token has passed MFA (DOB verified)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             "SELECT id FROM voter_mfa WHERE token = $1", token,
@@ -353,6 +362,7 @@ def _require_login(request: Request):
 @app.get("/elections/{election_id}/voters", response_class=HTMLResponse)
 async def manage_voters_page(request: Request, election_id: int):
     """Render the voter management page — owned by this service."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -393,6 +403,7 @@ async def manage_voters_page(request: Request, election_id: int):
 @app.post("/elections/{election_id}/voters/upload/form")
 async def upload_voters_form(request: Request, election_id: int, file: UploadFile = File(...)):
     """HTML form handler for CSV upload — redirects back to manage voters page."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -436,6 +447,7 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
 @app.post("/elections/{election_id}/tokens/generate/form")
 async def generate_tokens_form(request: Request, election_id: int):
     """HTML form handler for token generation — redirects back to manage voters page."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -489,7 +501,7 @@ async def generate_tokens_form(request: Request, election_id: int):
             emails_sent += 1
         except Exception as e:
             emails_failed += 1
-            logger.error(f"Failed to email {t['email']}: {e}")
+            logger.error('Failed to send email: %s', e)
 
     msg = f"Generated {len(generated_tokens)} tokens — {emails_sent} emails sent"
     if emails_failed:
