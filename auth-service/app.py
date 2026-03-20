@@ -23,7 +23,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, date, timedelta
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from jose import jwt, JWTError
 
 # -- Shared imports -----------------------------------------------------------
@@ -38,6 +38,10 @@ for p in [
         sys.path.insert(0, p_abs)
         break
 
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('auth-service')
+
 from database import Database
 from security import (
     hash_password, verify_password,
@@ -48,8 +52,6 @@ from schemas import (
     AuthResponse, TokenVerifyResponse, BallotTokenResponse,
     HealthResponse, ErrorResponse,
 )
-
-logger = logging.getLogger("auth-service")
 
 # -- Config -------------------------------------------------------------------
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
@@ -77,13 +79,15 @@ app = FastAPI(
 # ==========================================================================
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "auth"}
 
 
 @app.post("/register", response_model=AuthResponse, status_code=201)
-async def register(data: RegisterRequest):
+async def register(request: Request, data: RegisterRequest):
     """Register a new organiser."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     pw_hash = hash_password(data.password)
     org_id = data.org_id or DEFAULT_ORG_ID
 
@@ -97,14 +101,16 @@ async def register(data: RegisterRequest):
     except Exception as e:
         if "unique" in str(e).lower():
             raise HTTPException(status_code=409, detail="Email already registered")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error('Database error in register: %s', e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"message": "Organiser registered successfully", "organiser_id": row["id"]}
 
 
 @app.post("/login", response_model=AuthResponse)
-async def login(data: LoginRequest):
+async def login(request: Request, data: LoginRequest):
     """Authenticate organiser and return JWT."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             "SELECT id, password_hash FROM organisers WHERE email = $1",
@@ -112,6 +118,7 @@ async def login(data: LoginRequest):
         )
 
     if not row or not verify_password(data.password, row["password_hash"]):
+        logger.warning('Auth failure: %s', 'Invalid credentials')
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = jwt.encode(
@@ -128,8 +135,9 @@ async def login(data: LoginRequest):
 
 
 @app.post("/verify", response_model=TokenVerifyResponse)
-async def verify_token(data: TokenVerifyRequest):
+async def verify_token(request: Request, data: TokenVerifyRequest):
     """Verify a JWT token."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     try:
         payload = jwt.decode(data.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return {
@@ -139,6 +147,7 @@ async def verify_token(data: TokenVerifyRequest):
         }
     except JWTError as e:
         msg = "Token expired" if "expired" in str(e).lower() else "Invalid token"
+        logger.warning('Auth failure: %s', msg)
         raise HTTPException(status_code=401, detail=msg)
 
 
@@ -147,8 +156,9 @@ async def verify_token(data: TokenVerifyRequest):
 # ==========================================================================
 
 @app.get("/tokens/{token}/validate", response_model=TokenVerifyResponse)
-async def validate_voting_token(token: str):
+async def validate_voting_token(request: Request, token: str):
     """Validate an identity-linked voting token (from the voter's email)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             """
@@ -182,8 +192,9 @@ async def validate_voting_token(token: str):
 # ==========================================================================
 
 @app.post("/mfa/verify", status_code=200)
-async def verify_identity(token: str, date_of_birth: str):
+async def verify_identity(request: Request, token: str, date_of_birth: str):
     """Verify voter identity by comparing submitted DOB to stored value."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     try:
         submitted_dob = date.fromisoformat(date_of_birth)
     except ValueError:
@@ -234,8 +245,9 @@ async def verify_identity(token: str, date_of_birth: str):
 
 
 @app.get("/mfa/status")
-async def mfa_status(token: str):
+async def mfa_status(request: Request, token: str):
     """Check if a voting token has passed MFA."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             "SELECT id FROM voter_mfa WHERE token = $1", token
@@ -251,7 +263,7 @@ async def mfa_status(token: str):
 # ==========================================================================
 
 @app.post("/ballot-token/issue", response_model=BallotTokenResponse)
-async def issue_ballot_token(token: str):
+async def issue_ballot_token(request: Request, token: str):
     """Issue an anonymous ballot token after MFA verification.
 
     Contract:
@@ -265,6 +277,7 @@ async def issue_ballot_token(token: str):
     After this function returns, there is NO record linking
     the voter_id to the ballot_token. The anonymity gap is closed.
     """
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         # Validate voting token
         vt_row = await conn.fetchrow(

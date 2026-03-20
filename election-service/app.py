@@ -10,6 +10,7 @@ Runs on port 5005, exposed to browsers on port 8082.
 """
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -30,6 +31,10 @@ for p in [
     if os.path.isdir(p_abs):
         sys.path.insert(0, p_abs)
         break
+
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('election-service')
 
 from database import Database
 from schemas import ElectionCreate, ElectionOut, ElectionOptionOut, HealthResponse
@@ -76,13 +81,15 @@ def get_flashed_messages(request: Request) -> list[dict]:
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "election"}
 
 
 @app.get("/elections")
-async def list_elections(organizer_id: int):
+async def list_elections(request: Request, organizer_id: int):
     """List all elections for an organizer."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
@@ -111,8 +118,9 @@ async def list_elections(organizer_id: int):
 
 
 @app.post("/elections", status_code=201)
-async def create_election(organizer_id: int, data: ElectionCreate):
+async def create_election(request: Request, organizer_id: int, data: ElectionCreate):
     """Create a new election with options."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         row = await conn.fetchrow(
             """
@@ -138,8 +146,9 @@ async def create_election(organizer_id: int, data: ElectionCreate):
 
 
 @app.get("/elections/{election_id}")
-async def get_election(election_id: int, organizer_id: int | None = None):
+async def get_election(request: Request, election_id: int, organizer_id: int | None = None):
     """Get election details, options, voter count, and vote count."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             """
@@ -193,8 +202,9 @@ async def get_election(election_id: int, organizer_id: int | None = None):
 
 
 @app.post("/elections/{election_id}/open")
-async def open_election(election_id: int, organizer_id: int):
+async def open_election(request: Request, election_id: int, organizer_id: int):
     """Open a draft election for voting."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         result = await conn.execute(
             """
@@ -215,8 +225,9 @@ async def open_election(election_id: int, organizer_id: int):
 
 
 @app.post("/elections/{election_id}/close")
-async def close_election(election_id: int, organizer_id: int):
+async def close_election(request: Request, election_id: int, organizer_id: int):
     """Close an open election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         result = await conn.execute(
             """
@@ -249,6 +260,7 @@ def _require_login(request: Request):
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     # ── Auth hand-off: login redirect sends organizer_id & token as query params ──
     qp_token = request.query_params.get("token")
     qp_oid = request.query_params.get("organizer_id")
@@ -293,6 +305,7 @@ async def dashboard_page(request: Request):
 
 @app.get("/elections/create", response_class=HTMLResponse)
 async def create_election_page(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -303,6 +316,7 @@ async def create_election_page(request: Request):
 
 @app.post("/elections/create", response_class=HTMLResponse)
 async def create_election_form(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -335,6 +349,7 @@ async def create_election_form(request: Request):
 
 @app.get("/elections/{election_id}/detail", response_class=HTMLResponse)
 async def election_detail_page(request: Request, election_id: int):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -377,6 +392,7 @@ async def election_detail_page(request: Request, election_id: int):
 
 @app.post("/elections/{election_id}/open/confirm")
 async def open_election_form(request: Request, election_id: int):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -398,6 +414,7 @@ async def open_election_form(request: Request, election_id: int):
 
 @app.post("/elections/{election_id}/close/confirm")
 async def close_election_form(request: Request, election_id: int):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -415,4 +432,3 @@ async def close_election_form(request: Request, election_id: int):
         flash(request, "Election closed successfully!", "success")
 
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
-

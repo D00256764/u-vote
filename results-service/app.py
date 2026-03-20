@@ -11,6 +11,7 @@ All endpoints are read-only; results only available after election closes.
 """
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -31,12 +32,12 @@ for p in [
         sys.path.insert(0, p_abs)
         break
 
-import logging
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('results-service')
 
 from database import Database
 from schemas import HealthResponse
-
-logger = logging.getLogger("results-service")
 
 # ── Auth-service URL for token verification ──────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -85,13 +86,15 @@ def _require_login(request: Request):
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "results"}
 
 
 @app.get("/elections/{election_id}/results")
-async def get_results(election_id: int):
+async def get_results(request: Request, election_id: int):
     """Get election results (only after election closes)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             "SELECT id, title, status, closed_at FROM elections WHERE id = $1",
@@ -153,8 +156,9 @@ async def get_results(election_id: int):
 
 
 @app.get("/elections/{election_id}/audit")
-async def get_audit_trail(election_id: int):
+async def get_audit_trail(request: Request, election_id: int):
     """Get audit information — vote hashes and hash-chain verification."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         status_row = await conn.fetchrow(
             "SELECT status FROM elections WHERE id = $1", election_id
@@ -204,8 +208,9 @@ async def get_audit_trail(election_id: int):
 
 
 @app.get("/elections/{election_id}/statistics")
-async def get_statistics(election_id: int):
+async def get_statistics(request: Request, election_id: int):
     """Get detailed statistics about the election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             """
@@ -280,13 +285,14 @@ ELECTION_SERVICE = os.getenv("ELECTION_SERVICE_URL", "http://localhost:8082")
 @app.get("/elections/{election_id}/results/view", response_class=HTMLResponse)
 async def results_page(request: Request, election_id: int):
     """Render the results page for a closed election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
     if redirect:
         return redirect
 
     # Reuse the JSON helpers — call internal functions directly
     try:
-        results_data = await get_results(election_id)
+        results_data = await get_results(request, election_id)
     except HTTPException as exc:
         flash(request, exc.detail, "error")
         return RedirectResponse(
@@ -296,13 +302,13 @@ async def results_page(request: Request, election_id: int):
 
     # Also grab statistics
     try:
-        stats_data = await get_statistics(election_id)
+        stats_data = await get_statistics(request, election_id)
     except HTTPException:
         stats_data = None
 
     # Also grab audit trail
     try:
-        audit_data = await get_audit_trail(election_id)
+        audit_data = await get_audit_trail(request, election_id)
     except HTTPException:
         audit_data = None
 
