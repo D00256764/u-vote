@@ -216,6 +216,52 @@ class Results:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stage 0: HEALTH
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stage_health(res: Results, pf: PortForwardManager, state: dict) -> bool:
+    res.section("[HEALTH]")
+
+    checks = [
+        ("auth",     "/health", {"status": "healthy", "service": "auth"}),
+        ("election", "/health", {"status": "healthy", "service": "election"}),
+        ("voting",   "/health", {"status": "healthy", "service": "voting"}),
+        ("results",  "/health", {"status": "healthy", "service": "results"}),
+        ("admin",    "/health", {"status": "healthy", "service": "admin"}),
+        ("frontend", "/health", {"status": "healthy", "service": "frontend"}),
+    ]
+
+    for pf_key, path, expected in checks:
+        base = pf.url(pf_key)
+        label = f"GET {pf_key}{path}"
+
+        try:
+            status, body = get(f"{base}{path}")
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
+            res.check(label, False, "service unreachable")
+            return False
+
+        if status != 200:
+            res.check(f"{label} → {status}", False, str(body)[:100])
+            return False
+
+        ok = (
+            isinstance(body, dict)
+            and body.get("status") == expected["status"]
+            and body.get("service") == expected["service"]
+        )
+        res.check(
+            f"{label} → {status}",
+            ok,
+            "" if ok else f"got {body!r}",
+        )
+        if not ok:
+            return False
+
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 1: AUTH
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -682,12 +728,13 @@ def main() -> None:
 
     t0 = time.time()
     try:
-        stage_auth(res, pf, state)
-        stage_frontend(res, pf, state)
-        stage_elections(res, pf, state)
-        stage_voting(res, pf, state)
-        stage_receipt(res, pf, state)
-        stage_results(res, pf, state)
+        if stage_health(res, pf, state):
+            stage_auth(res, pf, state)
+            stage_frontend(res, pf, state)
+            stage_elections(res, pf, state)
+            stage_voting(res, pf, state)
+            stage_receipt(res, pf, state)
+            stage_results(res, pf, state)
         stage_cleanup(res, pf, state, args.keep_data)
     finally:
         elapsed = time.time() - t0
