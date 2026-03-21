@@ -25,7 +25,7 @@ INSERT INTO organisers (org_id, email, password_hash)
 VALUES (
     1,
     'admin@uvote.com',
-    '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyWVxKfF8.WO'
+    '$2b$12$Zjf21IXT2qs0QRJ55GyPuO6zQvjadonrl8USd0/WzihfomSAxDuGy'
 );
 
 -- Sample election for development testing
