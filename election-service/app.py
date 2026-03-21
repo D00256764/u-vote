@@ -87,18 +87,18 @@ async def health(request: Request):
 
 
 @app.get("/elections")
-async def list_elections(request: Request, organizer_id: int):
-    """List all elections for an organizer."""
+async def list_elections(request: Request, organiser_id: int):
+    """List all elections for an organiser."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
             SELECT id, title, description, status, created_at, opened_at, closed_at
             FROM elections
-            WHERE organizer_id = $1
+            WHERE organiser_id = $1
             ORDER BY created_at DESC
             """,
-            organizer_id,
+            organiser_id,
         )
 
     return {
@@ -118,17 +118,17 @@ async def list_elections(request: Request, organizer_id: int):
 
 
 @app.post("/elections", status_code=201)
-async def create_election(request: Request, organizer_id: int, data: ElectionCreate):
+async def create_election(request: Request, organiser_id: int, data: ElectionCreate):
     """Create a new election with options."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO elections (organizer_id, title, description, status)
+            INSERT INTO elections (organiser_id, title, description, status)
             VALUES ($1, $2, $3, 'draft')
             RETURNING id
             """,
-            organizer_id, data.title, data.description,
+            organiser_id, data.title, data.description,
         )
         election_id = row["id"]
 
@@ -146,14 +146,14 @@ async def create_election(request: Request, organizer_id: int, data: ElectionCre
 
 
 @app.get("/elections/{election_id}")
-async def get_election(request: Request, election_id: int, organizer_id: int | None = None):
+async def get_election(request: Request, election_id: int, organiser_id: int | None = None):
     """Get election details, options, voter count, and vote count."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             """
             SELECT id, title, description, status, created_at,
-                   opened_at, closed_at, organizer_id
+                   opened_at, closed_at, organiser_id
             FROM elections WHERE id = $1
             """,
             election_id,
@@ -162,7 +162,7 @@ async def get_election(request: Request, election_id: int, organizer_id: int | N
         if not election:
             raise HTTPException(status_code=404, detail="Election not found")
 
-        if organizer_id is not None and election["organizer_id"] != organizer_id:
+        if organiser_id is not None and election["organiser_id"] != organiser_id:
             raise HTTPException(status_code=403, detail="Access denied")
 
         options = await conn.fetch(
@@ -202,7 +202,7 @@ async def get_election(request: Request, election_id: int, organizer_id: int | N
 
 
 @app.post("/elections/{election_id}/open")
-async def open_election(request: Request, election_id: int, organizer_id: int):
+async def open_election(request: Request, election_id: int, organiser_id: int):
     """Open a draft election for voting."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
@@ -210,9 +210,9 @@ async def open_election(request: Request, election_id: int, organizer_id: int):
             """
             UPDATE elections
             SET status = 'open', opened_at = CURRENT_TIMESTAMP
-            WHERE id = $1 AND organizer_id = $2 AND status = 'draft'
+            WHERE id = $1 AND organiser_id = $2 AND status = 'draft'
             """,
-            election_id, organizer_id,
+            election_id, organiser_id,
         )
 
     if result == "UPDATE 0":
@@ -225,7 +225,7 @@ async def open_election(request: Request, election_id: int, organizer_id: int):
 
 
 @app.post("/elections/{election_id}/close")
-async def close_election(request: Request, election_id: int, organizer_id: int):
+async def close_election(request: Request, election_id: int, organiser_id: int):
     """Close an open election."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
@@ -233,9 +233,9 @@ async def close_election(request: Request, election_id: int, organizer_id: int):
             """
             UPDATE elections
             SET status = 'closed', closed_at = CURRENT_TIMESTAMP
-            WHERE id = $1 AND organizer_id = $2 AND status = 'open'
+            WHERE id = $1 AND organiser_id = $2 AND status = 'open'
             """,
-            election_id, organizer_id,
+            election_id, organiser_id,
         )
 
     if result == "UPDATE 0":
@@ -261,13 +261,13 @@ def _require_login(request: Request):
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     logger.info('Request received: %s %s', request.method, request.url.path)
-    # ── Auth hand-off: login redirect sends organizer_id & token as query params ──
+    # ── Auth hand-off: login redirect sends organiser_id & token as query params ──
     qp_token = request.query_params.get("token")
-    qp_oid = request.query_params.get("organizer_id")
+    qp_oid = request.query_params.get("organiser_id")
     if qp_token and qp_oid:
         try:
             request.session["token"] = qp_token
-            request.session["organizer_id"] = int(qp_oid)
+            request.session["organiser_id"] = int(qp_oid)
         except (ValueError, TypeError):
             pass
         # Strip query params and redirect to clean URL
@@ -277,14 +277,14 @@ async def dashboard_page(request: Request):
     if redirect:
         return redirect
 
-    organizer_id = request.session["organizer_id"]
+    organiser_id = request.session["organiser_id"]
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
             SELECT id, title, description, status, created_at, opened_at, closed_at
-            FROM elections WHERE organizer_id = $1 ORDER BY created_at DESC
+            FROM elections WHERE organiser_id = $1 ORDER BY created_at DESC
             """,
-            organizer_id,
+            organiser_id,
         )
 
     elections = [
@@ -329,10 +329,10 @@ async def create_election_form(request: Request):
     async with Database.transaction() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO elections (organizer_id, title, description, status)
+            INSERT INTO elections (organiser_id, title, description, status)
             VALUES ($1, $2, $3, 'draft') RETURNING id
             """,
-            request.session["organizer_id"], title, description,
+            request.session["organiser_id"], title, description,
         )
         election_id = row["id"]
 
@@ -354,17 +354,17 @@ async def election_detail_page(request: Request, election_id: int):
     if redirect:
         return redirect
 
-    organizer_id = request.session["organizer_id"]
+    organiser_id = request.session["organiser_id"]
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             """
             SELECT id, title, description, status, created_at,
-                   opened_at, closed_at, organizer_id
+                   opened_at, closed_at, organiser_id
             FROM elections WHERE id = $1
             """,
             election_id,
         )
-        if not election or election["organizer_id"] != organizer_id:
+        if not election or election["organiser_id"] != organiser_id:
             flash(request, "Election not found or access denied", "danger")
             return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -397,11 +397,11 @@ async def open_election_form(request: Request, election_id: int):
     if redirect:
         return redirect
 
-    organizer_id = request.session["organizer_id"]
+    organiser_id = request.session["organiser_id"]
     async with Database.transaction() as conn:
         result = await conn.execute(
-            "UPDATE elections SET status = 'open', opened_at = CURRENT_TIMESTAMP WHERE id = $1 AND organizer_id = $2 AND status = 'draft'",
-            election_id, organizer_id,
+            "UPDATE elections SET status = 'open', opened_at = CURRENT_TIMESTAMP WHERE id = $1 AND organiser_id = $2 AND status = 'draft'",
+            election_id, organiser_id,
         )
 
     if result == "UPDATE 0":
@@ -419,11 +419,11 @@ async def close_election_form(request: Request, election_id: int):
     if redirect:
         return redirect
 
-    organizer_id = request.session["organizer_id"]
+    organiser_id = request.session["organiser_id"]
     async with Database.transaction() as conn:
         result = await conn.execute(
-            "UPDATE elections SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = $1 AND organizer_id = $2 AND status = 'open'",
-            election_id, organizer_id,
+            "UPDATE elections SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = $1 AND organiser_id = $2 AND status = 'open'",
+            election_id, organiser_id,
         )
 
     if result == "UPDATE 0":

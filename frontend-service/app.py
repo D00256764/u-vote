@@ -166,14 +166,14 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
     if resp.status_code == 200:
         data = safe_json(resp)
         request.session["token"] = data["token"]
-        request.session["organizer_id"] = data["organizer_id"]
+        request.session["organiser_id"] = data["organiser_id"]
         flash(request, "Login successful!", "success")
-        # Redirect to Election Service dashboard, passing organizer_id so the
+        # Redirect to Election Service dashboard, passing organiser_id so the
         # downstream service can store it in its own session.
-        oid = data["organizer_id"]
+        oid = data["organiser_id"]
         token = data["token"]
         return RedirectResponse(
-            url=f"{ELECTION_DASHBOARD}?organizer_id={oid}&token={token}",
+            url=f"{ELECTION_DASHBOARD}?organiser_id={oid}&token={token}",
             status_code=303,
         )
 
