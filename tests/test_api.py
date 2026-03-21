@@ -22,6 +22,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import asyncio
+import tests.helpers.mailhog as _mailhog_helper
+from tests.helpers.mailhog import get_latest_voting_token, delete_all_messages
 from contextlib import contextmanager
 from typing import Any, Dict, Optional, Tuple
 
@@ -36,6 +39,7 @@ SERVICES: Dict[str, Dict[str, Any]] = {
     "voting":   {"app": "voting-service",   "port": 5003},
     "results":  {"app": "results-service",  "port": 5004},
     "frontend": {"app": "frontend-service", "port": 5000},
+    "mailhog":  {"app": "mailhog",          "port": 8025},
 }
 
 
@@ -429,37 +433,66 @@ def stage_voting(res: Results, pf: PortForwardManager, state: dict) -> bool:
     res.check(f"POST /elections/{eid}/voters (voter) → {status}", ok,
               "" if ok else str(body)[:100])
 
-    # Generate voting token directly via DB (SMTP unavailable in test cluster)
-    # The tokens/generate endpoint generates tokens then emails them; the email
-    # step hangs because outbound SMTP is blocked by network policy.  We test
-    # the token-generation DB path by inserting a token directly and then
-    # exercising every downstream endpoint (validate → MFA → ballot-token →
-    # vote/submit) via the real API.
-    voter_id = state.get("voter_id")
+    # Token generation is now tested through the real email-delivery path.
+    # MailHog captures the email in-cluster (SMTP port 1025) without external
+    # delivery. The test retrieves the token via the MailHog HTTP API (port
+    # 8025) using tests/helpers/mailhog.py. The psql workaround has been
+    # removed.
+    # Prerequisite note: Port 587 (SMTP) is blocked by egress policy —
+    # MailHog on port 1025 captures emails in-cluster; psql workaround removed.
+    _mailhog_helper.MAILHOG_API = f"{pf.url('mailhog')}/api/v2/messages"
     voting_token: Optional[str] = None
-    if voter_id is not None:
-        raw_tok = uuid.uuid4().hex + uuid.uuid4().hex  # 64 hex chars
-        rc, _out, err = _run([
-            "kubectl", "exec", "-n", pf.namespace, "deployment/postgresql",
-            "--", "psql", "-U", "uvote_admin", "-d", "uvote",
-            "-c",
-            f"INSERT INTO voting_tokens (token, voter_id, election_id, expires_at) "
-            f"VALUES ('{raw_tok}', {voter_id}, {eid}, NOW() + INTERVAL '7 days')",
-        ])
-        ok = rc == 0
-        if ok:
-            voting_token = raw_tok
-            state["voting_token"] = voting_token
-        res.check(
-            "voting token inserted via DB (SMTP bypass)",
-            ok,
-            "" if ok else err[:100],
-        )
-    else:
-        res.check("voting token inserted via DB (SMTP bypass)", False,
-                  "skipped — voter_id missing")
+    check3_fail_reason = ""
 
-    if voting_token is None:
+    # a) Call the real token generation endpoint
+    gen_status = 0
+    tok_req = urllib.request.Request(
+        f"{admin_base}/elections/{eid}/tokens/generate",
+        method="POST",
+    )
+    tok_req.add_header("Authorization", f"Bearer {state['jwt']}")
+    try:
+        with urllib.request.urlopen(tok_req, timeout=15) as tok_resp:
+            gen_status = tok_resp.status
+    except urllib.error.HTTPError as exc:
+        gen_status = exc.code
+    except (urllib.error.URLError, OSError) as exc:
+        check3_fail_reason = str(exc)
+
+    if gen_status not in (200, 202):
+        if not check3_fail_reason:
+            check3_fail_reason = f"token generation returned HTTP {gen_status}"
+    else:
+        # b) Poll MailHog for email (up to 5 attempts, 1 s sleep between retries)
+        for attempt in range(5):
+            try:
+                voting_token = asyncio.run(get_latest_voting_token(voter_email))
+                break
+            except AssertionError as exc:
+                check3_fail_reason = str(exc)
+                if attempt < 4:
+                    time.sleep(1)
+
+        # c) Store the extracted token
+        if voting_token is not None:
+            state["voting_token"] = voting_token
+
+        # d) Clean up MailHog inbox (best-effort — never fail the check for this)
+        try:
+            asyncio.run(delete_all_messages())
+        except Exception:
+            pass
+
+    # e) Record check result
+    check3_ok = voting_token is not None
+    res.check(
+        f"POST /elections/{eid}/tokens/generate → email via MailHog",
+        check3_ok,
+        "Token generation email captured via MailHog" if check3_ok else check3_fail_reason,
+    )
+
+    if not check3_ok:
+        state["voting_token"] = None
         for label in [
             "GET auth/tokens/{token}/validate",
             "POST auth/mfa/verify (wrong DOB)",
