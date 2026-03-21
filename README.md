@@ -17,7 +17,7 @@
 - [Security Measures](#security-measures)
 - [Project Deliverables](#project-deliverables)
 - [Documentation](#documentation)
-- [License](#license)
+- [Licence](#licence)
 
 ---
 
@@ -429,6 +429,6 @@ Slides, poster, live demonstration, and Q&A at end of year.
 
 ---
 
-## License
+## Licence
 
 This project is developed as part of the BSc in Computing Systems and Operations at Dundalk Institute of Technology (DkIT). It is provided for educational and demonstration purposes.

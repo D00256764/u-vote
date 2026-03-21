@@ -105,7 +105,7 @@ FRONTEND_SERVICES = ["frontend-service"]
 class DeploymentLogger:
     """Dual logger: coloured console + plain-text log file."""
 
-    LEVEL_COLORS = {
+    LEVEL_COLOURS = {
         "INFO": Fore.WHITE,
         "SUCCESS": Fore.GREEN,
         "WARNING": Fore.YELLOW,
@@ -123,8 +123,8 @@ class DeploymentLogger:
     def log(self, level: str, message: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         plain = f"[{ts}] [{level}] {message}"
-        color = self.LEVEL_COLORS.get(level, "")
-        coloured = f"{color}[{ts}] [{level}]{Style.RESET_ALL} {message}"
+        colour = self.LEVEL_COLOURS.get(level, "")
+        coloured = f"{colour}[{ts}] [{level}]{Style.RESET_ALL} {message}"
 
         if level == "DEBUG" and not self.verbose:
             # Still write to file, just don't print

@@ -70,7 +70,7 @@ SMTP_ASSERT: Dict[str, str] = {
 class DeploymentLogger:
     """Dual logger: ANSI-coloured console + plain-text log file."""
 
-    LEVEL_COLORS: Dict[str, str] = {
+    LEVEL_COLOURS: Dict[str, str] = {
         "INFO":    "\033[37m",   # white
         "SUCCESS": "\033[32m",   # green
         "WARNING": "\033[33m",   # yellow
@@ -89,8 +89,8 @@ class DeploymentLogger:
     def log(self, level: str, message: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         plain = f"[{ts}] [{level}] {message}"
-        color = self.LEVEL_COLORS.get(level, "")
-        coloured = f"{color}[{ts}] [{level}]{self.RESET} {message}"
+        colour = self.LEVEL_COLOURS.get(level, "")
+        coloured = f"{colour}[{ts}] [{level}]{self.RESET} {message}"
 
         if level == "DEBUG" and not self.verbose:
             # Write to file only; do not clutter console

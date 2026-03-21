@@ -48,7 +48,7 @@ DB_USER = "uvote_admin"
 DB_NAME = "uvote"
 
 
-class Colors:
+class Colours:
     """ANSI escape codes for coloured terminal output.
 
     Used by the print_* helper functions to highlight test results.
@@ -170,37 +170,37 @@ class TestResults:
 
 def print_header(message: str) -> None:
     """Print a prominent section header surrounded by ``=`` bars."""
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{'=' * 70}{Colors.ENDC}")
-    print(f"{Colors.HEADER}{Colors.BOLD}{message.center(70)}{Colors.ENDC}")
-    print(f"{Colors.HEADER}{Colors.BOLD}{'=' * 70}{Colors.ENDC}\n")
+    print(f"\n{Colours.HEADER}{Colours.BOLD}{'=' * 70}{Colours.ENDC}")
+    print(f"{Colours.HEADER}{Colours.BOLD}{message.center(70)}{Colours.ENDC}")
+    print(f"{Colours.HEADER}{Colours.BOLD}{'=' * 70}{Colours.ENDC}\n")
 
 def print_test(test_num: int, message: str) -> None:
     """Print a numbered test banner, e.g. ``[Test 3] Required Tables Exist``."""
-    print(f"\n{Colors.CYAN}{Colors.BOLD}[Test {test_num}]{Colors.ENDC} {Colors.BOLD}{message}{Colors.ENDC}")
+    print(f"\n{Colours.CYAN}{Colours.BOLD}[Test {test_num}]{Colours.ENDC} {Colours.BOLD}{message}{Colours.ENDC}")
     if logger:
         logger.info(f"--- [Test {test_num}] {message} ---")
 
 def print_pass(message: str) -> None:
     """Print a green PASS line."""
-    print(f"{Colors.GREEN}✅ PASS: {message}{Colors.ENDC}")
+    print(f"{Colours.GREEN}✅ PASS: {message}{Colours.ENDC}")
     if logger:
         logger.info(f"  PASS: {message}")
 
 def print_fail(message: str) -> None:
     """Print a red FAIL line."""
-    print(f"{Colors.RED}❌ FAIL: {message}{Colors.ENDC}")
+    print(f"{Colours.RED}❌ FAIL: {message}{Colours.ENDC}")
     if logger:
         logger.error(f"  FAIL: {message}")
 
 def print_warning(message: str) -> None:
     """Print a yellow WARN line."""
-    print(f"{Colors.YELLOW}⚠️  WARN: {message}{Colors.ENDC}")
+    print(f"{Colours.YELLOW}⚠️  WARN: {message}{Colours.ENDC}")
     if logger:
         logger.warning(f"  WARN: {message}")
 
 def print_info(message: str) -> None:
     """Print a blue informational line."""
-    print(f"{Colors.BLUE}ℹ️  {message}{Colors.ENDC}")
+    print(f"{Colours.BLUE}ℹ️  {message}{Colours.ENDC}")
     if logger:
         logger.info(f"  INFO: {message}")
 
@@ -1203,7 +1203,7 @@ Examples:
         if args.load:
             test_load_performance(pod, results, args.load)
         elif args.load != 0:  # Not explicitly disabled
-            response = input(f"\n{Colors.YELLOW}Run load test with 1000 votes? (y/N): {Colors.ENDC}").strip().lower()
+            response = input(f"\n{Colours.YELLOW}Run load test with 1000 votes? (y/N): {Colours.ENDC}").strip().lower()
             if response == 'y':
                 test_load_performance(pod, results, 1000)
 
@@ -1215,15 +1215,15 @@ Examples:
         logger.info("=" * 70)
         logger.info(summary_text)
 
-    print(f"\n{Colors.BOLD}Results:{Colors.ENDC}")
-    print(f"  {Colors.GREEN}Passed:  {results.passed}{Colors.ENDC}")
-    print(f"  {Colors.RED}Failed:  {results.failed}{Colors.ENDC}")
-    print(f"  {Colors.YELLOW}Warnings: {results.warnings}{Colors.ENDC}")
-    print(f"  {Colors.CYAN}Total:   {results.passed + results.failed + results.warnings}{Colors.ENDC}")
+    print(f"\n{Colours.BOLD}Results:{Colours.ENDC}")
+    print(f"  {Colours.GREEN}Passed:  {results.passed}{Colours.ENDC}")
+    print(f"  {Colours.RED}Failed:  {results.failed}{Colours.ENDC}")
+    print(f"  {Colours.YELLOW}Warnings: {results.warnings}{Colours.ENDC}")
+    print(f"  {Colours.CYAN}Total:   {results.passed + results.failed + results.warnings}{Colours.ENDC}")
 
     # List individual failures for quick triage
     if results.failed > 0:
-        print(f"\n{Colors.RED}{Colors.BOLD}Failed Tests:{Colors.ENDC}")
+        print(f"\n{Colours.RED}{Colours.BOLD}Failed Tests:{Colours.ENDC}")
         for status, name, details in results.tests:
             if status == "FAIL":
                 print(f"  ❌ {name}")
@@ -1231,7 +1231,7 @@ Examples:
                     print(f"     {details[:100]}")
 
     if results.warnings > 0:
-        print(f"\n{Colors.YELLOW}{Colors.BOLD}Warnings:{Colors.ENDC}")
+        print(f"\n{Colours.YELLOW}{Colours.BOLD}Warnings:{Colours.ENDC}")
         for status, name, details in results.tests:
             if status == "WARN":
                 print(f"  ⚠️  {name}")
@@ -1241,19 +1241,19 @@ Examples:
     # Point the user to the full log file for debugging
     if logger and logger.handlers:
         log_path = logger.handlers[0].baseFilename
-        print(f"\n{Colors.BLUE}📄 Full log: {log_path}{Colors.ENDC}")
+        print(f"\n{Colours.BLUE}📄 Full log: {log_path}{Colours.ENDC}")
         logger.info(f"Test suite finished — {summary_text}")
         logger.info("=" * 70)
 
     # Set exit code based on results
     if results.failed > 0:
-        print(f"\n{Colors.RED}❌ Some tests failed{Colors.ENDC}")
+        print(f"\n{Colours.RED}❌ Some tests failed{Colours.ENDC}")
         sys.exit(1)
     elif results.warnings > 0:
-        print(f"\n{Colors.YELLOW}⚠️  All tests passed with warnings{Colors.ENDC}")
+        print(f"\n{Colours.YELLOW}⚠️  All tests passed with warnings{Colours.ENDC}")
         sys.exit(0)
     else:
-        print(f"\n{Colors.GREEN}✅ All tests passed!{Colors.ENDC}")
+        print(f"\n{Colours.GREEN}✅ All tests passed!{Colours.ENDC}")
         sys.exit(0)
 
 
@@ -1261,12 +1261,12 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print(f"\n{Colors.YELLOW}⚠️  Tests interrupted by user{Colors.ENDC}")
+        print(f"\n{Colours.YELLOW}⚠️  Tests interrupted by user{Colours.ENDC}")
         if logger:
             logger.warning("Test suite interrupted by user (KeyboardInterrupt)")
         sys.exit(130)
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Unexpected error: {e}{Colors.ENDC}")
+        print(f"\n{Colours.RED}❌ Unexpected error: {e}{Colours.ENDC}")
         if logger:
             logger.critical(f"Unexpected error: {e}", exc_info=True)
         import traceback
