@@ -53,18 +53,20 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_USE_TLS: ${SMTP_USE_TLS}
-      SMTP_FROM: ${SMTP_FROM}
-      FRONTEND_URL: http://localhost:8080
+      SMTP_HOST: mailhog          # dev override — production uses real SMTP host via Secret
+      SMTP_PORT: "1025"           # dev override — production uses 587
+      SMTP_USE_TLS: "false"       # dev override — production uses true
+      SMTP_FROM: "uvote@test.local"
+      SMTP_USER: ""               # no auth required for local MailHog
+      SMTP_PASS: ""               # no auth required for local MailHog
+      FRONTEND_URL: http://frontend-service:5000
     ports:
       - "5002:5002"
     depends_on:
       postgres:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     networks:
       - voting-network
     restart: unless-stopped
@@ -152,6 +154,19 @@ services:
     networks:
       - voting-network
     restart: unless-stopped
+
+  # MailHog — local development email testing ONLY.
+  # Captures outgoing emails instead of delivering them to real recipients.
+  # Not for production use. Web UI: http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: uvote-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP — receives emails from services
+      - "8025:8025"   # HTTP Web UI
+    networks:
+      - voting-network
 
 volumes:
   postgres_data:

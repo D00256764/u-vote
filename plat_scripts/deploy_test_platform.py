@@ -255,23 +255,29 @@ class MailHogDeployer:
             return self._record("Phase 1: Preflight", False)
         self.logger.success(f"✓ Namespace '{self.namespace}' exists")
 
-        # PostgreSQL pod running — cluster health signal (matches deploy_platform.py)
-        rc, out, _ = self.run_cmd(
-            [
-                "kubectl", "get", "pods",
-                "-n", self.namespace,
-                "-l", "app=postgresql",
-                "-o", "jsonpath={.items[0].status.phase}",
-            ],
-            check=False,
-        )
-        if rc != 0 or out.strip() != "Running":
-            self.logger.error(
-                f"✗ PostgreSQL pod is not Running in '{self.namespace}' "
-                f"(got: '{out.strip() or 'no output'}')"
+        # PostgreSQL pod running — required for uvote-dev, skipped for uvote-test
+        if self.namespace == "uvote-test":
+            self.logger.info(
+                "  PostgreSQL check skipped for uvote-test "
+                "(test namespace — no DB pod expected)"
             )
-            return self._record("Phase 1: Preflight", False)
-        self.logger.success(f"✓ PostgreSQL pod is Running in '{self.namespace}'")
+        else:
+            rc, out, _ = self.run_cmd(
+                [
+                    "kubectl", "get", "pods",
+                    "-n", self.namespace,
+                    "-l", "app=postgresql",
+                    "-o", "jsonpath={.items[0].status.phase}",
+                ],
+                check=False,
+            )
+            if rc != 0 or out.strip() != "Running":
+                self.logger.error(
+                    f"✗ PostgreSQL pod is not Running in '{self.namespace}' "
+                    f"(got: '{out.strip() or 'no output'}')"
+                )
+                return self._record("Phase 1: Preflight", False)
+            self.logger.success(f"✓ PostgreSQL pod is Running in '{self.namespace}'")
 
         return self._record("Phase 1: Preflight", True)
 
@@ -338,11 +344,20 @@ class MailHogDeployer:
             self.logger.error(f"✗ Manifest not found: {manifest}")
             return self._record("Phase 3: Apply Manifest", False)
 
-        # The -n flag overrides the namespace in the manifest metadata,
-        # allowing the same manifest to serve both uvote-dev and uvote-test.
+        # Strip the hardcoded namespace field before applying so the same
+        # manifest works for both uvote-dev and uvote-test. kubectl rejects
+        # `apply -f <file> -n <ns>` when the file's metadata.namespace differs
+        # from -n; piping filtered content via stdin sidesteps that check.
+        with open(manifest, "r") as fh:
+            filtered = "\n".join(
+                line for line in fh.read().splitlines()
+                if not line.strip().startswith("namespace:")
+            )
+
         rc, out, err = self.run_cmd(
-            ["kubectl", "apply", "-f", str(manifest), "-n", self.namespace],
+            ["kubectl", "apply", "-f", "-", "-n", self.namespace],
             check=False,
+            stdin_data=filtered.encode("utf-8"),
         )
         if rc != 0:
             self.logger.error(
@@ -369,10 +384,18 @@ class MailHogDeployer:
             self.logger.error(f"✗ Network policy not found: {policy}")
             return self._record("Phase 4: Network Policy", False)
 
-        # Same namespace-override approach as Phase 3
+        # Strip the hardcoded namespace field before applying — same approach
+        # as Phase 3 to avoid the namespace mismatch error on uvote-test.
+        with open(policy, "r") as fh:
+            filtered = "\n".join(
+                line for line in fh.read().splitlines()
+                if not line.strip().startswith("namespace:")
+            )
+
         rc, out, err = self.run_cmd(
-            ["kubectl", "apply", "-f", str(policy), "-n", self.namespace],
+            ["kubectl", "apply", "-f", "-", "-n", self.namespace],
             check=False,
+            stdin_data=filtered.encode("utf-8"),
         )
         if rc != 0:
             self.logger.error(
@@ -488,64 +511,74 @@ class MailHogDeployer:
         return self._record("Phase 6: Secret Verification", all_ok)
 
     # -----------------------------------------------------------------------
-    # Phase 7 — Verify MailHog HTTP API is reachable from within the cluster
+    # Phase 7 — Verify MailHog HTTP API is reachable via host-side port-forward
     # -----------------------------------------------------------------------
     def phase7_verify_connectivity(self) -> bool:
+        import socket
+        import urllib.error
+        import urllib.request
+
         self.logger.header(
             f"[{self.namespace}] Phase 7: Verify MailHog HTTP API Connectivity"
         )
 
-        # Pod name must be unique across namespaces (K8s name limit: 253 chars)
-        ns_short = self.namespace.replace("uvote-", "")   # "dev" or "test"
-        pod_name = f"mailhog-test-{ns_short}"
+        self.logger.info("  Testing MailHog HTTP API via port-forward...")
 
-        self.logger.info(f"  Launching temporary curl pod '{pod_name}'...")
-        self.logger.info(
-            "  Testing: http://mailhog:8025/api/v2/messages (ClusterIP)"
-        )
+        # Grab a free local port without leaving the socket open
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            local_port = s.getsockname()[1]
 
-        # --rm cleans up the pod automatically after it exits.
-        # -i keeps stdin open; we pass empty bytes to prevent blocking.
-        rc, out, err = self.run_cmd(
+        pf_proc = subprocess.Popen(
             [
-                "kubectl", "run", pod_name,
-                "--image=curlimages/curl:latest",
-                "--restart=Never",
-                "--rm",
-                "-i",
+                "kubectl", "port-forward",
+                "svc/mailhog",
+                f"{local_port}:8025",
                 "-n", self.namespace,
-                "--",
-                "curl", "-s", "--max-time", "5",
-                "http://mailhog:8025/api/v2/messages",
             ],
-            check=False,
-            timeout=60,
-            stdin_data=b"",   # empty stdin — prevents -i from blocking
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
-        if rc != 0:
-            self.logger.error(
-                f"✗ Connectivity test failed (rc={rc}): "
-                f"{(err or out).strip()[:300]}"
-            )
-            return self._record("Phase 7: HTTP API Connectivity", False)
+        try:
+            time.sleep(5)
 
-        response = out.strip()
-        self.logger.debug(f"Response: {response[:300]}")
+            url = f"http://localhost:{local_port}/api/v2/messages"
+            self.logger.debug(f"GET {url}")
 
-        # MailHog API v2 always returns {"total": <n>, ...} even with 0 messages
-        if '"total"' not in response:
-            self.logger.error(
-                f"✗ Unexpected API response — 'total' key not found. "
-                f"Got: {response[:200]}"
-            )
-            return self._record("Phase 7: HTTP API Connectivity", False)
+            try:
+                resp = urllib.request.urlopen(url, timeout=10)
+                body = resp.read().decode("utf-8", errors="replace")
+            except urllib.error.URLError as exc:
+                self.logger.error(
+                    f"✗ MailHog HTTP API did not respond as expected: {exc}"
+                )
+                return self._record("Phase 7: HTTP API Connectivity", False)
 
-        self.logger.success(
-            "✓ MailHog HTTP API reachable in-cluster "
-            "(response contains 'total' — messages API OK)"
-        )
-        return self._record("Phase 7: HTTP API Connectivity", True)
+            self.logger.debug(f"Response: {body[:300]}")
+
+            # MailHog API v2 always returns {"total": <n>, ...} even with 0 messages
+            try:
+                data = json.loads(body)
+            except ValueError:
+                data = {}
+
+            if "total" not in data:
+                self.logger.error(
+                    f"✗ MailHog HTTP API did not respond as expected — "
+                    f"'total' key not found. Got: {body[:200]}"
+                )
+                return self._record("Phase 7: HTTP API Connectivity", False)
+
+            self.logger.success("✓ MailHog HTTP API is reachable and responding")
+            return self._record("Phase 7: HTTP API Connectivity", True)
+
+        finally:
+            pf_proc.terminate()
+            try:
+                pf_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pf_proc.kill()
 
     # -----------------------------------------------------------------------
     # Orchestration

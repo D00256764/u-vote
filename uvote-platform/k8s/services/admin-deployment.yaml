@@ -76,10 +76,46 @@ spec:
               name: flask-secret
               key: secret
         # Email configuration (aiosmtplib for sending voting tokens)
+        # All SMTP values come from the smtp-credentials Secret (ADR011).
+        # The manifest is environment-agnostic — dev points to MailHog,
+        # production points to a real SMTP provider. No inline values here.
         - name: SMTP_HOST
-          value: "smtp.gmail.com"
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_HOST
         - name: SMTP_PORT
-          value: "587"
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PORT
+        - name: SMTP_USE_TLS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USE_TLS
+        - name: SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_FROM
+        - name: SMTP_USER
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USER
+              optional: true
+        - name: SMTP_PASS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PASS
+              optional: true
+        - name: FRONTEND_URL
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: FRONTEND_URL
         livenessProbe:
           httpGet:
             path: /health
