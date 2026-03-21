@@ -366,17 +366,103 @@ def apply_database_schema(k8s_dir: Path) -> bool:
         return False
     
     print_success("Database schema applied")
-    
+
+    # Apply create_roles.sql
+    roles_file = k8s_dir / "database" / "create_roles.sql"
+    if not roles_file.exists():
+        print_error(f"Roles file not found: {roles_file}")
+        return False
+
+    print_info("Applying database roles (create_roles.sql)...")
+    with open(roles_file, 'r') as f:
+        roles_content = f.read()
+
+    process = subprocess.Popen(
+        ['kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+         'psql', '-U', 'uvote_admin', '-d', 'uvote'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    stdout, stderr = process.communicate(input=roles_content)
+
+    if process.returncode != 0:
+        print_error("Failed to apply database roles")
+        print(stderr)
+        return False
+
+    print_success("Database roles applied successfully")
+
+    # Apply seed_data.sql
+    seed_file = k8s_dir / "database" / "seed_data.sql"
+    if not seed_file.exists():
+        print_error(f"Seed data file not found: {seed_file}")
+        return False
+
+    print_info("Applying seed data (seed_data.sql)...")
+    with open(seed_file, 'r') as f:
+        seed_content = f.read()
+
+    process = subprocess.Popen(
+        ['kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+         'psql', '-U', 'uvote_admin', '-d', 'uvote'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    stdout, stderr = process.communicate(input=seed_content)
+
+    if process.returncode != 0:
+        print_error("Failed to apply seed data")
+        print(stderr)
+        return False
+
+    print_success("Seed data applied successfully")
+
     # Verify tables
     print_info("Verifying tables...")
     success, stdout, _ = run_command([
         'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
         'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c', '\\dt'
     ], capture_output=True, check=False)
-    
+
     if success:
         print(stdout)
-    
+
+    # Verify roles
+    print_info("Verifying database roles...")
+    success, stdout, _ = run_command([
+        'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+        'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c', '\\du'
+    ], capture_output=True, check=False)
+
+    if success:
+        print(stdout)
+
+    # Verify seed data
+    print_info("Verifying seed data...")
+    success, stdout, _ = run_command([
+        'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+        'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c',
+        'SELECT COUNT(*) FROM organisers;'
+    ], capture_output=True, check=False)
+
+    if success:
+        count = 0
+        for line in stdout.strip().splitlines():
+            stripped = line.strip()
+            if stripped.isdigit():
+                count = int(stripped)
+                break
+        if count == 0:
+            print_warning("Seed data verification: organisers table is empty")
+        else:
+            print_success(f"Seed data verified: {count} organiser(s) found")
+
     return True
 
 def apply_network_policies(k8s_dir: Path) -> bool:
