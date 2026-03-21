@@ -1,0 +1,112 @@
+# MailHog — In-Cluster Fake SMTP Server
+# =======================================
+#
+# LOCAL DEVELOPMENT TOOL ONLY
+# This manifest must NEVER be applied to uvote-test or uvote-prod.
+# MailHog has no authentication and stores messages in memory only.
+# It exists solely to capture email traffic in uvote-dev without
+# requiring an external SMTP relay.
+#
+# Why it is here:
+#   The cluster's default-deny egress policy (00-default-deny.yaml) blocks
+#   all outbound traffic, including port 587 to smtp.gmail.com. MailHog
+#   replaces that external relay for local development. In uvote-test and
+#   uvote-prod, admin-service is pointed at a real SMTP server via the
+#   smtp-credentials Kubernetes Secret supplied at deploy time — MailHog
+#   is not present in those environments.
+#
+# SMTP port 1025:
+#   Receives emails from admin-service (voter-service image) during local
+#   development. aiosmtplib in shared/email_util.py connects here when
+#   SMTP_HOST=mailhog and SMTP_PORT=1025 are set in the admin-service
+#   Deployment env vars (dev environment only).
+#
+# HTTP port 8025 — MailHog Web UI:
+#   Access captured emails in a browser during local development:
+#     kubectl port-forward svc/mailhog 8025:8025 -n uvote-dev
+#   then open http://localhost:8025
+#
+# Network policy: 05-allow-mailhog.yaml grants admin-service egress to
+# mailhog:1025 and mailhog ingress from admin-service:1025.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mailhog
+  namespace: uvote-dev
+  labels:
+    app: mailhog
+    tier: infrastructure
+    component: mail-testing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mailhog
+  template:
+    metadata:
+      labels:
+        app: mailhog
+        tier: infrastructure
+        component: mail-testing
+    spec:
+      containers:
+      - name: mailhog
+        image: mailhog/mailhog:latest
+        imagePullPolicy: IfNotPresent  # Kind cluster — loaded via kind load docker-image
+        ports:
+        - name: smtp
+          containerPort: 1025
+          protocol: TCP
+        - name: http-ui
+          containerPort: 8025
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8025
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8025
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mailhog
+  namespace: uvote-dev
+  labels:
+    app: mailhog
+    tier: infrastructure
+spec:
+  type: ClusterIP
+  selector:
+    app: mailhog
+  ports:
+  - name: smtp
+    port: 1025
+    targetPort: 1025
+    protocol: TCP
+  - name: http-ui
+    port: 8025
+    targetPort: 8025
+    protocol: TCP
+
+# Quick Commands:
+# Deploy:   kubectl apply -f mailhog-deployment.yaml
+# Status:   kubectl get pods -n uvote-dev -l app=mailhog
+# Logs:     kubectl logs -n uvote-dev -l app=mailhog --tail=100 -f
+# Web UI:   kubectl port-forward svc/mailhog 8025:8025 -n uvote-dev
+# Delete:   kubectl delete -f mailhog-deployment.yaml

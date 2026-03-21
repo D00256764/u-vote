@@ -1,0 +1,170 @@
+# =============================================================================
+# U-Vote MailHog Mail Testing Policy (Bidirectional) — uvote-dev ONLY
+# =============================================================================
+#
+# Why this policy is needed
+# -------------------------
+# The default-deny egress policy (00-default-deny.yaml) blocks ALL outbound
+# traffic from every pod in uvote-dev — including port 587 to smtp.gmail.com.
+# MailHog replaces that external relay with an in-cluster fake SMTP server
+# that captures emails in memory without delivering them. Without this policy,
+# admin-service pods cannot reach mailhog:1025 even within the same namespace.
+#
+# A connection must be allowed in BOTH directions:
+#
+#   1. EGRESS from admin-service  — admin-service must be allowed to SEND to
+#                                   mailhog on port 1025/TCP
+#   2. INGRESS to mailhog         — mailhog must be allowed to RECEIVE from
+#                                   admin-service on port 1025/TCP
+#
+# Only admin-service sends email
+# ------------------------------
+# Email delivery is handled exclusively by shared/email_util.py, called only
+# from voter-service/ (deployed as admin-service). The function uses
+# aiosmtplib to open an SMTP connection to SMTP_HOST:SMTP_PORT, which is
+# supplied at runtime via the smtp-credentials Secret. No other service in
+# the cluster sends email directly.
+#
+# uvote-dev ONLY
+# --------------
+# MailHog is a local development tool. It does NOT exist in uvote-test or
+# uvote-prod — those namespaces use a real SMTP provider via the same
+# smtp-credentials Secret (with production values). This policy therefore
+# only needs to exist in uvote-dev. If applied elsewhere it is harmless
+# (the mailhog pod selector matches nothing), but it should not be applied
+# to production namespaces.
+#
+# Two-policy pattern
+# ------------------
+# This file follows the established pattern from 02-allow-to-database.yaml
+# and 04-allow-audit.yaml: one policy governing egress from the sending pod,
+# and a matching policy governing ingress to the receiving pod. Both are
+# required for traffic to flow under a default-deny architecture.
+#
+# Traffic flow:
+#   admin-service:* → mailhog:1025/TCP (SMTP — this policy)
+#   Web UI inspection: kubectl port-forward svc/mailhog 8025:8025 -n uvote-dev
+#   (port-forward is a host-side tunnel; it is not subject to NetworkPolicy)
+#
+# References:
+#   uvote-platform/k8s/mailhog/mailhog-deployment.yaml
+#   voter-service/shared/email_util.py
+#   uvote-platform/k8s/network-policies/02-allow-to-database.yaml
+#   uvote-platform/k8s/network-policies/04-allow-audit.yaml
+#
+# =============================================================================
+
+
+# =============================================================================
+# POLICY 1 of 2: EGRESS FROM ADMIN-SERVICE TO MAILHOG (05a)
+# =============================================================================
+# Targets admin-service pods and allows outbound SMTP connections to mailhog
+# on port 1025/TCP, plus DNS so the hostname "mailhog" resolves to a
+# cluster IP before the connection is attempted.
+#
+# NOTE: voter-service/ source code is deployed as a Kubernetes Deployment
+# named admin-service with label app: admin-service. This is the pod that
+# calls shared/email_util.py to send voting token emails via aiosmtplib.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mailhog-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: mail-testing
+    policy-order: "05a"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets admin-service pods.
+  # Label app=admin-service matches the Deployment and pod template labels
+  # defined in admin-deployment.yaml. Only this service sends email.
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: admin-service
+
+  policyTypes:
+  - Egress
+
+  egress:
+  # ---------------------------------------------------------------------------
+  # Rule 1: Allow egress to mailhog on port 1025/TCP (SMTP)
+  # admin-service connects here via aiosmtplib. MailHog accepts the
+  # connection and stores the message in memory for web UI inspection.
+  # ---------------------------------------------------------------------------
+  - to:
+    - podSelector:
+        matchLabels:
+          app: mailhog
+    ports:
+    - protocol: TCP
+      port: 1025
+
+  # ---------------------------------------------------------------------------
+  # Rule 2: Allow egress to kube-dns on port 53 (UDP + TCP)
+  # admin-service must resolve "mailhog" to a cluster IP before connecting.
+  # Belt-and-suspenders with 01-allow-dns.yaml — matching the pattern used
+  # in 02-allow-to-database.yaml and 04-allow-audit.yaml.
+  # ---------------------------------------------------------------------------
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+---
+
+# =============================================================================
+# POLICY 2 of 2: INGRESS TO MAILHOG FROM ADMIN-SERVICE (05b)
+# =============================================================================
+# Targets mailhog pods and allows inbound SMTP connections from admin-service
+# on port 1025/TCP only.
+#
+# Port 8025 (web UI) is intentionally excluded: access to the MailHog web UI
+# is via kubectl port-forward from the host, which is a tunnelled connection
+# and is not subject to NetworkPolicy. No ingress rule is needed for it.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mailhog-ingress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: mail-testing
+    policy-order: "05b"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets the mailhog pod.
+  # Label app=mailhog from mailhog-deployment.yaml.
+  # This policy defines who may deliver SMTP traffic to mailhog.
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: mailhog
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 1025 from admin-service only.
+  # No other service in the cluster is permitted to send email.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: admin-service
+    ports:
+    - protocol: TCP
+      port: 1025
