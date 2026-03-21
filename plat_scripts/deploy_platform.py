@@ -394,6 +394,19 @@ class PlatformDeployer:
         _db_password = secrets.token_urlsafe(24)
 
         secret_specs = {
+            # -------------------------------------------------------------------------
+            # Database credentials — shared superuser (current design)
+            #
+            # All six services currently connect as uvote_admin (PostgreSQL superuser)
+            # via the shared db-credentials secret. Per-service least-privilege roles
+            # (auth_service, voting_service, etc.) are defined in create_roles.sql and
+            # exist in the database, but no per-service Kubernetes Secrets are created
+            # for them here.
+            #
+            # This is an accepted gap for Stage 1. The roles are in place for Stage 2
+            # when per-service secrets will be added and deployment manifests updated
+            # to reference them.
+            # -------------------------------------------------------------------------
             "db-credentials": {
                 "type": "generic",
                 "literals": {
@@ -413,6 +426,28 @@ class PlatformDeployer:
                 "type": "generic",
                 "literals": {
                     "secret": secrets.token_urlsafe(48),
+                },
+            },
+            # -----------------------------------------------------------------------
+            # SMTP credentials — DEV/LOCAL ONLY (MailHog)
+            # This secret points to the in-cluster MailHog fake SMTP server.
+            # MailHog is a local development testing tool — it is NOT deployed in
+            # uvote-test or uvote-prod.
+            # For production namespaces, replace these values with real SMTP provider
+            # credentials before creating this secret.
+            # The admin-deployment.yaml manifest is environment-agnostic — it always
+            # reads SMTP config from this secret via secretKeyRef, regardless of env.
+            # -----------------------------------------------------------------------
+            "smtp-credentials": {
+                "type": "generic",
+                "literals": {
+                    "SMTP_HOST": "mailhog",
+                    "SMTP_PORT": "1025",
+                    "SMTP_USE_TLS": "false",
+                    "SMTP_FROM": "uvote@test.local",
+                    "SMTP_USER": "",
+                    "SMTP_PASS": "",
+                    "FRONTEND_URL": "http://frontend-service:5000",
                 },
             },
         }
@@ -1097,7 +1132,7 @@ class PlatformDeployer:
                 self.logger.success(f"✓ {info['deploy_name']} deleted")
 
         # Delete secrets (but preserve db-credentials since DB is still running)
-        for secret_name in ["jwt-secret", "flask-secret"]:
+        for secret_name in ["jwt-secret", "flask-secret", "smtp-credentials"]:
             self.logger.info(f"Deleting secret '{secret_name}'...")
             self.run_cmd(
                 ["kubectl", "delete", "secret", secret_name,
