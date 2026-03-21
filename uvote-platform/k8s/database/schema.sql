@@ -1,194 +1,305 @@
--- Drop tables if they exist (for clean reinstall)
+-- ============================================================================
+-- U-Vote Combined Database Schema
+-- ============================================================================
+--
+-- Design principle: ANONYMITY vs ACCOUNTABILITY
+--   We can prove a voter voted (prevent double-voting via voting_tokens)
+--   We CANNOT determine how they voted (ballot secrecy)
+--   encrypted_ballots has NO voter_id / user_id foreign key
+--   Linkage between identity and choice is broken by blind ballot tokens
+--
+-- Table groups:
+--   1. Tenancy      - organisations (who deployed the system)
+--   2. Identity     - organisers, voters, voter_mfa
+--   3. Election     - elections, election_options (source data created by admins)
+--   4. Ballot Auth  - voting_tokens, blind_tokens (the anonymity bridge)
+--   5. The Ledger   - encrypted_ballots, vote_receipts, tallied_votes (immutable)
+--   6. Audit        - audit_log (immutable, hash-chained event trail)
+--
+-- This file contains ONLY: extensions, table definitions, indexes, triggers.
+-- CREATE USER / GRANT statements → create_roles.sql
+-- Baseline INSERT data          → seed_data.sql
+--
+-- Apply order: schema.sql → create_roles.sql → seed_data.sql
+-- ============================================================================
+
+-- ============================================================================
+-- CLEAN REINSTALL — drop all tables in dependency order (child tables first)
+-- ============================================================================
+-- Previous schema tables (admins, candidates, votes, audit_logs) are dropped
+-- here to allow clean migration from the old Luke/schema.sql layout.
 DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS votes CASCADE;
-DROP TABLE IF EXISTS voting_tokens CASCADE;
-DROP TABLE IF EXISTS voters CASCADE;
 DROP TABLE IF EXISTS candidates CASCADE;
-DROP TABLE IF EXISTS elections CASCADE;
 DROP TABLE IF EXISTS admins CASCADE;
 
--- Admins table
-CREATE TABLE admins (
-    admin_id SERIAL PRIMARY KEY,
-    email VARCHAR(255) UNIQUE NOT NULL,
+-- Current combined schema — strict dependency order
+DROP TABLE IF EXISTS tallied_votes CASCADE;
+DROP TABLE IF EXISTS vote_receipts CASCADE;
+DROP TABLE IF EXISTS encrypted_ballots CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS blind_tokens CASCADE;
+DROP TABLE IF EXISTS voter_mfa CASCADE;
+DROP TABLE IF EXISTS voting_tokens CASCADE;
+DROP TABLE IF EXISTS election_options CASCADE;
+DROP TABLE IF EXISTS voters CASCADE;
+DROP TABLE IF EXISTS elections CASCADE;
+DROP TABLE IF EXISTS organisers CASCADE;
+DROP TABLE IF EXISTS organisations CASCADE;
+
+-- ============================================================================
+-- EXTENSIONS
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ============================================================================
+-- 1. TENANCY
+-- ============================================================================
+
+CREATE TABLE organisations (
+    id         SERIAL PRIMARY KEY,
+    name       VARCHAR(255) NOT NULL,
+    org_type   VARCHAR(50) CHECK (org_type IN ('government', 'university', 'corporate', 'other')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 2. IDENTITY
+-- ============================================================================
+
+CREATE TABLE organisers (
+    id            SERIAL PRIMARY KEY,
+    org_id        INTEGER REFERENCES organisations(id) ON DELETE CASCADE,
+    email         VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    last_login TIMESTAMP
+    role          VARCHAR(20) DEFAULT 'admin' CHECK (role IN ('admin', 'super_admin')),
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Elections table
+-- ============================================================================
+-- 3. ELECTION METADATA (source data created by admins)
+-- ============================================================================
+
 CREATE TABLE elections (
-    election_id SERIAL PRIMARY KEY,
-    admin_id INT REFERENCES admins(admin_id),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    status VARCHAR(20) DEFAULT 'draft',
-    created_at TIMESTAMP DEFAULT NOW(),
-    activated_at TIMESTAMP,
-    closed_at TIMESTAMP,
-    CHECK (status IN ('draft', 'active', 'closed'))
+    id             SERIAL PRIMARY KEY,
+    organiser_id   INTEGER REFERENCES organisers(id) ON DELETE CASCADE,
+    org_id         INTEGER REFERENCES organisations(id) ON DELETE SET NULL,
+    title          VARCHAR(255) NOT NULL,
+    description    TEXT,
+    status         VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
+    encryption_key TEXT,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    opened_at      TIMESTAMP,
+    closed_at      TIMESTAMP
 );
 
--- Candidates table
-CREATE TABLE candidates (
-    candidate_id SERIAL PRIMARY KEY,
-    election_id INT REFERENCES elections(election_id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    photo_url VARCHAR(500),
-    display_order INT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Voters table
 CREATE TABLE voters (
-    voter_id SERIAL PRIMARY KEY,
-    election_id INT REFERENCES elections(election_id) ON DELETE CASCADE,
-    email VARCHAR(255) NOT NULL,
-    first_name VARCHAR(100),
-    last_name VARCHAR(100),
-    created_at TIMESTAMP DEFAULT NOW(),
+    id          SERIAL PRIMARY KEY,
+    election_id INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    email       VARCHAR(255) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    has_voted   BOOLEAN DEFAULT FALSE,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(election_id, email)
 );
 
--- Voting tokens table
+CREATE TABLE voter_mfa (
+    id          SERIAL PRIMARY KEY,
+    token       VARCHAR(255) NOT NULL,
+    verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE election_options (
+    id            SERIAL PRIMARY KEY,
+    election_id   INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    option_text   VARCHAR(255) NOT NULL,
+    display_order INTEGER DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 4. BALLOT AUTHORISATION (the anonymity bridge)
+--
+-- Flow:
+--   1. Voter clicks email link      -> voting_token validated (identity-linked)
+--   2. Voter passes DOB MFA         -> auth-service issues a BLIND ballot_token
+--   3. Auth-service marks voter.has_voted = TRUE
+--      but does NOT record which ballot_token was given to which voter
+--   4. Voter uses ballot_token to cast encrypted ballot (no identity attached)
+--
+-- blind_tokens has NO voter_id and NO voting_token FK.
+-- This is the critical architectural decision for ballot secrecy.
+-- ============================================================================
+
 CREATE TABLE voting_tokens (
-    token_id SERIAL PRIMARY KEY,
-    token VARCHAR(64) UNIQUE NOT NULL,
-    voter_id INT REFERENCES voters(voter_id) ON DELETE CASCADE,
-    election_id INT REFERENCES elections(election_id) ON DELETE CASCADE,
-    is_used BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    expires_at TIMESTAMP NOT NULL,
-    used_at TIMESTAMP,
-    UNIQUE(voter_id, election_id)
+    id          SERIAL PRIMARY KEY,
+    token       VARCHAR(255) UNIQUE NOT NULL,
+    voter_id    INTEGER REFERENCES voters(id) ON DELETE CASCADE,
+    election_id INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    is_used     BOOLEAN DEFAULT FALSE,
+    expires_at  TIMESTAMP NOT NULL,
+    used_at     TIMESTAMP,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Votes table (anonymous - no voter_id)
-CREATE TABLE votes (
-    vote_id SERIAL PRIMARY KEY,
-    election_id INT REFERENCES elections(election_id),
-    candidate_id INT REFERENCES candidates(candidate_id),
-    vote_hash VARCHAR(64),
-    previous_hash VARCHAR(64),
-    cast_at TIMESTAMP DEFAULT NOW()
+ALTER TABLE voter_mfa
+    ADD CONSTRAINT fk_voter_mfa_token
+    FOREIGN KEY (token) REFERENCES voting_tokens(token) ON DELETE CASCADE;
+
+CREATE TABLE blind_tokens (
+    id           SERIAL PRIMARY KEY,
+    ballot_token VARCHAR(255) UNIQUE NOT NULL,
+    election_id  INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    is_used      BOOLEAN DEFAULT FALSE,
+    issued_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used_at      TIMESTAMP
+    -- NO voter_id or voting_token_id  (this is what makes the vote anonymous)
 );
 
--- Audit logs table
-CREATE TABLE audit_logs (
-    log_id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMP DEFAULT NOW(),
-    event_type VARCHAR(50) NOT NULL,
-    user_id INT,
-    election_id INT,
-    details TEXT,
-    ip_address VARCHAR(45),
-    previous_hash VARCHAR(64),
-    current_hash VARCHAR(64)
+-- ============================================================================
+-- 5. THE LEDGER (immutable encrypted vote records)
+--
+-- encrypted_ballots has NO voter_id, NO user_id, NO ballot_token_id.
+-- Once a ballot is cast it is completely detached from identity.
+-- ============================================================================
+
+CREATE TABLE encrypted_ballots (
+    id             SERIAL PRIMARY KEY,
+    election_id    INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    encrypted_vote BYTEA NOT NULL,
+    ballot_hash    VARCHAR(255) NOT NULL,
+    previous_hash  VARCHAR(255),
+    receipt_token  VARCHAR(255) UNIQUE NOT NULL,
+    cast_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    -- NO voter_id, NO user_id, NO ballot_token_id
 );
 
--- Indexes
-CREATE INDEX idx_votes_election ON votes(election_id);
-CREATE INDEX idx_votes_candidate ON votes(candidate_id);
-CREATE INDEX idx_tokens_token ON voting_tokens(token);
-CREATE INDEX idx_tokens_election ON voting_tokens(election_id);
-CREATE INDEX idx_audit_timestamp ON audit_logs(timestamp);
-CREATE INDEX idx_audit_event ON audit_logs(event_type);
-CREATE INDEX idx_elections_status ON elections(status);
+CREATE TABLE vote_receipts (
+    id            SERIAL PRIMARY KEY,
+    election_id   INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    receipt_token VARCHAR(255) UNIQUE NOT NULL,
+    ballot_hash   VARCHAR(255) NOT NULL,
+    cast_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Trigger: Prevent vote modification (immutability)
-CREATE OR REPLACE FUNCTION prevent_vote_modification()
+CREATE TABLE tallied_votes (
+    id          SERIAL PRIMARY KEY,
+    election_id INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    option_id   INTEGER REFERENCES election_options(id) ON DELETE CASCADE,
+    vote_count  INTEGER NOT NULL DEFAULT 0,
+    tallied_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- 6. AUDIT (immutable, hash-chained event trail)
+-- ============================================================================
+
+CREATE TABLE audit_log (
+    id            SERIAL PRIMARY KEY,
+    event_type    VARCHAR(50) NOT NULL,
+    election_id   INTEGER REFERENCES elections(id) ON DELETE SET NULL,
+    actor_type    VARCHAR(20) CHECK (actor_type IN ('organiser', 'voter', 'system')),
+    actor_id      INTEGER,
+    detail        JSONB,
+    event_hash    VARCHAR(255),
+    previous_hash VARCHAR(255),
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+CREATE INDEX idx_organisers_org      ON organisers(org_id);
+CREATE INDEX idx_elections_organiser ON elections(organiser_id);
+CREATE INDEX idx_elections_org       ON elections(org_id);
+CREATE INDEX idx_elections_status    ON elections(status);
+CREATE INDEX idx_voters_election     ON voters(election_id);
+CREATE INDEX idx_voters_has_voted    ON voters(election_id, has_voted);
+CREATE INDEX idx_tokens_election     ON voting_tokens(election_id);
+CREATE INDEX idx_tokens_token        ON voting_tokens(token);
+CREATE INDEX idx_blind_election      ON blind_tokens(election_id);
+CREATE INDEX idx_blind_token         ON blind_tokens(ballot_token);
+CREATE INDEX idx_ballots_election    ON encrypted_ballots(election_id);
+CREATE INDEX idx_ballots_receipt     ON encrypted_ballots(receipt_token);
+CREATE INDEX idx_receipts_token      ON vote_receipts(receipt_token);
+CREATE INDEX idx_tallied_election    ON tallied_votes(election_id);
+CREATE INDEX idx_audit_election      ON audit_log(election_id);
+CREATE INDEX idx_audit_type          ON audit_log(event_type);
+CREATE INDEX idx_mfa_token           ON voter_mfa(token);
+
+-- ============================================================================
+-- TRIGGERS — immutability and automatic hashing
+-- ============================================================================
+
+-- Encrypted ballots are IMMUTABLE
+CREATE OR REPLACE FUNCTION prevent_ballot_modification()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION 'Votes cannot be modified or deleted';
+    RAISE EXCEPTION 'Encrypted ballots are immutable and cannot be modified or deleted';
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER prevent_vote_update
-    BEFORE UPDATE ON votes
-    FOR EACH ROW EXECUTE FUNCTION prevent_vote_modification();
+CREATE TRIGGER immutable_ballots
+    BEFORE UPDATE OR DELETE ON encrypted_ballots
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_ballot_modification();
 
-CREATE TRIGGER prevent_vote_delete
-    BEFORE DELETE ON votes
-    FOR EACH ROW EXECUTE FUNCTION prevent_vote_modification();
-
--- Trigger: Automatic vote hash generation
-CREATE OR REPLACE FUNCTION generate_vote_hash()
+-- Audit log entries are IMMUTABLE
+CREATE OR REPLACE FUNCTION prevent_audit_modification()
 RETURNS TRIGGER AS $$
-DECLARE
-    prev_hash VARCHAR(64);
 BEGIN
-    SELECT vote_hash INTO prev_hash
-    FROM votes
-    WHERE election_id = NEW.election_id
-    ORDER BY cast_at DESC
-    LIMIT 1;
-    
-    NEW.previous_hash := COALESCE(prev_hash, REPEAT('0', 64));
-    
-    NEW.vote_hash := encode(
+    RAISE EXCEPTION 'Audit log entries are immutable and cannot be modified or deleted';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER immutable_audit
+    BEFORE UPDATE OR DELETE ON audit_log
+    FOR EACH ROW
+    EXECUTE FUNCTION prevent_audit_modification();
+
+-- Auto-generate ballot hash on insert
+CREATE OR REPLACE FUNCTION generate_ballot_hash()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.ballot_hash := encode(
         digest(
-            NEW.election_id::text || 
-            NEW.candidate_id::text || 
-            NEW.cast_at::text || 
-            NEW.previous_hash,
+            NEW.election_id::text || NEW.encrypted_vote::text ||
+            NEW.cast_at::text || gen_random_uuid()::text,
             'sha256'
         ),
         'hex'
     );
-    
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER generate_vote_hash_trigger
-    BEFORE INSERT ON votes
-    FOR EACH ROW EXECUTE FUNCTION generate_vote_hash();
+CREATE TRIGGER auto_ballot_hash
+    BEFORE INSERT ON encrypted_ballots
+    FOR EACH ROW
+    EXECUTE FUNCTION generate_ballot_hash();
 
--- Create database users with limited permissions
-CREATE USER auth_service WITH PASSWORD 'auth_pass_CHANGE_ME';
-CREATE USER voting_service WITH PASSWORD 'voting_pass_CHANGE_ME';
-CREATE USER election_service WITH PASSWORD 'election_pass_CHANGE_ME';
-CREATE USER results_service WITH PASSWORD 'results_pass_CHANGE_ME';
-CREATE USER audit_service WITH PASSWORD 'audit_pass_CHANGE_ME';
-CREATE USER admin_service WITH PASSWORD 'admin_pass_CHANGE_ME';
+-- Auto-generate audit event hash on insert
+CREATE OR REPLACE FUNCTION generate_audit_hash()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.event_hash := encode(
+        digest(
+            NEW.event_type ||
+            COALESCE(NEW.election_id::text, '') ||
+            COALESCE(NEW.actor_id::text, '') ||
+            NEW.created_at::text ||
+            gen_random_uuid()::text,
+            'sha256'
+        ),
+        'hex'
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- Grant permissions: Auth Service
-GRANT SELECT, INSERT, UPDATE ON admins TO auth_service;
-GRANT USAGE, SELECT ON SEQUENCE admins_admin_id_seq TO auth_service;
-
--- Grant permissions: Voting Service
-GRANT INSERT ON votes TO voting_service;
-GRANT SELECT ON elections, candidates TO voting_service;
-GRANT SELECT, UPDATE ON voting_tokens TO voting_service;
-GRANT USAGE, SELECT ON SEQUENCE votes_vote_id_seq TO voting_service;
-
--- Grant permissions: Election Service
-GRANT SELECT, INSERT, UPDATE, DELETE ON elections TO election_service;
-GRANT USAGE, SELECT ON SEQUENCE elections_election_id_seq TO election_service;
-
--- Grant permissions: Results Service (READ ONLY)
-GRANT SELECT ON votes, elections, candidates TO results_service;
-
--- Grant permissions: Audit Service
-GRANT INSERT, SELECT ON audit_logs TO audit_service;
-GRANT USAGE, SELECT ON SEQUENCE audit_logs_log_id_seq TO audit_service;
-
--- Grant permissions: Admin Service
-GRANT SELECT, INSERT, UPDATE, DELETE ON voters, candidates, voting_tokens TO admin_service;
-GRANT USAGE, SELECT ON SEQUENCE voters_voter_id_seq TO admin_service;
-GRANT USAGE, SELECT ON SEQUENCE candidates_candidate_id_seq TO admin_service;
-GRANT USAGE, SELECT ON SEQUENCE voting_tokens_token_id_seq TO admin_service;
-
--- Insert sample data for testing
-INSERT INTO admins (email, password_hash) VALUES 
-('admin@uvote.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5GyWVxKfF8.WO'); 
--- password: admin123
-
-INSERT INTO elections (admin_id, title, description, status) VALUES
-(1, 'Student Council 2026', 'Annual student council election', 'draft');
-
-INSERT INTO candidates (election_id, name, description, display_order) VALUES
-(1, 'Alice Johnson', 'Experienced leader focused on student welfare', 1),
-(1, 'Bob Smith', 'Passionate about campus sustainability', 2),
-(1, 'Carol White', 'Advocate for improved facilities', 3);
+CREATE TRIGGER auto_audit_hash
+    BEFORE INSERT ON audit_log
+    FOR EACH ROW
+    EXECUTE FUNCTION generate_audit_hash();
