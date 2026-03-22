@@ -18,7 +18,7 @@ async def get_latest_voting_token(voter_email: str) -> str:
     Query the MailHog API, find the most recent email sent to voter_email,
     and extract the voting token from the /vote/{token} URL in the body.
 
-    The voter-service sends emails containing a URL in the format:
+    The admin-service sends emails containing a URL in the format:
       {FRONTEND_URL}/vote/{token}
 
     There is no OTP — the token embedded in the URL IS the credential.

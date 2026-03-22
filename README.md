@@ -172,7 +172,7 @@ u-vote/
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── voter-service/                  # Voter list & token management
+├── admin-service/                  # Voter list & token management (deployed as admin-service)
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt

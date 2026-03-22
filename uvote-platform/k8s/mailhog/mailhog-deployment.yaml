@@ -16,7 +16,7 @@
 #   is not present in those environments.
 #
 # SMTP port 1025:
-#   Receives emails from admin-service (voter-service image) during local
+#   Receives emails from admin-service during local
 #   development. aiosmtplib in shared/email_util.py connects here when
 #   SMTP_HOST=mailhog and SMTP_PORT=1025 are set in the admin-service
 #   Deployment env vars (dev environment only).
