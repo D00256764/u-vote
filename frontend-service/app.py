@@ -86,6 +86,13 @@ def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
         return fallback or {}
 
 
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "frontend"}
+
+
 # ── Public pages ─────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)

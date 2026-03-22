@@ -81,7 +81,7 @@ def get_flashed_messages(request: Request) -> list[dict]:
 @app.get("/health", response_model=HealthResponse)
 async def health(request: Request):
     logger.info('Request received: %s %s', request.method, request.url.path)
-    return {"status": "healthy", "service": "voter"}
+    return {"status": "healthy", "service": "admin"}
 
 
 @app.post("/elections/{election_id}/voters/upload", status_code=201)
