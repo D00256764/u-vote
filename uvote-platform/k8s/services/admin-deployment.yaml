@@ -1,6 +1,6 @@
-# U-Vote Kubernetes Manifest: Admin Service (voter-service code)
+# U-Vote Kubernetes Manifest: Admin Service
 # CRITICAL: Network policy 03-allow-from-ingress-to-admin uses label "app: admin-service"
-#           Code lives in voter-service/ directory, image is voter-service:latest
+#           Code lives in admin-service/ directory, image is admin-service:latest
 #           Deployment name and labels use "admin-service" to match network policies
 #
 # Scanned Port: 5002 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5002)
@@ -12,7 +12,7 @@
 # Framework: FastAPI + Uvicorn + Jinja2
 # Database Access: Yes (asyncpg — voters, voting_tokens, voter_mfa)
 # External Access: Via Ingress Controller
-# Health Endpoint: GET /health → {"status": "healthy", "service": "voter"}
+# Health Endpoint: GET /health → {"status": "healthy", "service": "admin"}
 # Templates: Yes (Jinja2 — /elections/{id}/voters)
 # Special: CSV voter import, token generation, email sending (aiosmtplib)
 # Generated: 2026-02-16
@@ -45,7 +45,7 @@ spec:
     spec:
       containers:
       - name: admin-service
-        image: voter-service:latest  # Built from voter-service/ directory
+        image: admin-service:latest  # Built from admin-service/ directory
         imagePullPolicy: Never  # Kind cluster — local images
         ports:
         - containerPort: 5002

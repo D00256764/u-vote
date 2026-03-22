@@ -42,10 +42,10 @@ services:
       - voting-network
     restart: unless-stopped
 
-  voter-service:
+  admin-service:
     build:
       context: .
-      dockerfile: voter-service/Dockerfile
+      dockerfile: admin-service/Dockerfile
     container_name: voting-voter
     environment:
       DB_HOST: postgres
@@ -138,7 +138,7 @@ services:
     container_name: voting-frontend
     environment:
       AUTH_SERVICE_URL: http://auth-service:5001
-      VOTER_SERVICE_URL: http://voter-service:5002
+      VOTER_SERVICE_URL: http://admin-service:5002
       VOTING_SERVICE_URL: http://voting-service:5003
       RESULTS_SERVICE_URL: http://results-service:5004
       ELECTION_SERVICE_URL: http://election-service:5005
@@ -147,7 +147,7 @@ services:
       - "8080:5000"
     depends_on:
       - auth-service
-      - voter-service
+      - admin-service
       - voting-service
       - results-service
       - election-service

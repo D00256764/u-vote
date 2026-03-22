@@ -20,7 +20,7 @@
 # Only admin-service sends email
 # ------------------------------
 # Email delivery is handled exclusively by shared/email_util.py, called only
-# from voter-service/ (deployed as admin-service). The function uses
+# from admin-service/. The function uses
 # aiosmtplib to open an SMTP connection to SMTP_HOST:SMTP_PORT, which is
 # supplied at runtime via the smtp-credentials Secret. No other service in
 # the cluster sends email directly.
@@ -48,7 +48,7 @@
 #
 # References:
 #   uvote-platform/k8s/mailhog/mailhog-deployment.yaml
-#   voter-service/shared/email_util.py
+#   admin-service/shared/email_util.py
 #   uvote-platform/k8s/network-policies/02-allow-to-database.yaml
 #   uvote-platform/k8s/network-policies/04-allow-audit.yaml
 #
@@ -62,7 +62,7 @@
 # on port 1025/TCP, plus DNS so the hostname "mailhog" resolves to a
 # cluster IP before the connection is attempted.
 #
-# NOTE: voter-service/ source code is deployed as a Kubernetes Deployment
+# NOTE: admin-service/ source code is deployed as a Kubernetes Deployment
 # named admin-service with label app: admin-service. This is the pod that
 # calls shared/email_util.py to send voting token emails via aiosmtplib.
 # =============================================================================

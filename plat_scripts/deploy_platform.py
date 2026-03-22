@@ -75,7 +75,7 @@ SERVICE_REGISTRY: Dict[str, dict] = {
         "health_path": "/health",
         "db_access": True,
     },
-    "voter-service": {
+    "admin-service": {
         "deploy_name": "admin-service",
         "manifest": "admin-deployment.yaml",
         "port": 5002,
