@@ -77,6 +77,9 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
+
 
 # -- Helpers ------------------------------------------------------------------
 

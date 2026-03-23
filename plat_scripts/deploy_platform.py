@@ -641,6 +641,57 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
+    # Apply Network Policies
+    # -----------------------------------------------------------------------
+    def apply_network_policies(self) -> bool:
+        """Apply all network policy YAML files in sorted order.
+
+        Files are applied from uvote-platform/k8s/network-policies/ in
+        filename order (00-default-deny first … 06-allow-prometheus-scrape
+        last).  test-pods.yaml is skipped — it contains test Pod definitions,
+        not NetworkPolicy objects.
+
+        Called between phase5_deploy_services and phase6_apply_ingress so
+        network isolation is in place before services receive real traffic.
+        """
+        self.logger.header("Applying Network Policies")
+        netpol_dir = (
+            self.project_root / "uvote-platform" / "k8s" / "network-policies"
+        )
+
+        if not netpol_dir.exists():
+            self.logger.warning(
+                f"⚠ Network policy directory not found: {netpol_dir} — skipping"
+            )
+            return True
+
+        policy_files = sorted(
+            f for f in netpol_dir.glob("*.yaml") if f.name != "test-pods.yaml"
+        )
+
+        if not policy_files:
+            self.logger.warning("⚠ No network policy YAML files found — skipping")
+            return True
+
+        all_ok = True
+        for policy_file in policy_files:
+            self.logger.info(f"  Applying {policy_file.name}...")
+            rc, _, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(policy_file)],
+                check=False,
+                mutating=True,
+            )
+            if rc != 0:
+                self.logger.error(
+                    f"✗ Failed to apply {policy_file.name}: {err.strip()}"
+                )
+                all_ok = False
+            else:
+                self.logger.success(f"✓ {policy_file.name} applied")
+
+        return all_ok
+
+    # -----------------------------------------------------------------------
     # Phase 6: Apply Ingress
     # -----------------------------------------------------------------------
     def phase6_apply_ingress(self) -> bool:
@@ -1200,6 +1251,9 @@ class PlatformDeployer:
 
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
+
+        # Apply Network Policies (00-default-deny … 06-allow-prometheus-scrape)
+        self.apply_network_policies()
 
         # Phase 6: Apply Ingress
         self.phase6_apply_ingress()
