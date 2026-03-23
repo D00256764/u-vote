@@ -328,6 +328,21 @@ async def create_election_form(request: Request):
     description = form.get("description", "")
     options = form.getlist("options[]")
 
+    if not title or not title.strip():
+        flash(request, "Election title is required", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
+    valid_options = [o for o in options if o and o.strip()]
+    if len(valid_options) < 2:
+        flash(request, "At least 2 election options are required", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
     async with Database.transaction() as conn:
         row = await conn.fetchrow(
             """

@@ -355,24 +355,12 @@ def test_create_election_form_success(client, mock_db):
 
 
 def test_create_election_form_missing_title(client, mock_db):
-    """HTML form POST with missing title proceeds without server-side validation.
+    """HTML form POST with missing title renders flash error (status 200).
 
-    OBSERVATION — MISSING VALIDATION BUG:
-        create_election_form has no server-side title validation. It inserts
-        whatever the form provides, including None, without checking.
-        Compare: the JSON API endpoint enforces min_length=1 via Pydantic.
-
-        With the DB mocked (fetchrow returns {"id": 1}), the endpoint treats
-        a missing title as success and redirects to /elections/1.
-
-        In production (real DB), a NOT NULL constraint on elections.title
-        would cause the INSERT to fail → unhandled 500.
-
-        This test documents the missing form validation rather than asserting
-        the behaviour that should exist.
+    create_election_form now validates title before any DB call.
+    A missing or blank title flashes "Election title is required" and
+    re-renders the create form — no DB INSERT is attempted.
     """
-    mock_db.fetchrow.return_value = {"id": 1}
-
     session_cookie = make_session_cookie(ORGANISER_SESSION)
     tc = client["client"]
     resp = tc.post(
@@ -381,6 +369,24 @@ def test_create_election_form_missing_title(client, mock_db):
         cookies={"session": session_cookie},
         follow_redirects=False,
     )
-    # No server-side title validation — mock DB "succeeds" and returns 303.
-    # A real DB with a NOT NULL constraint would return 500 instead.
-    assert resp.status_code == 303
+    assert resp.status_code == 200
+    assert "Election title is required" in resp.text
+
+
+def test_create_election_form_too_few_options(client, mock_db):
+    """HTML form POST with fewer than 2 valid options renders flash error.
+
+    create_election_form validates that at least 2 non-blank options are
+    provided before any DB call. Submitting only 1 option flashes
+    "At least 2 election options are required" and re-renders the form.
+    """
+    session_cookie = make_session_cookie(ORGANISER_SESSION)
+    tc = client["client"]
+    resp = tc.post(
+        "/elections/create",
+        data={"title": "Test Election", "options[]": ["Option A"]},
+        cookies={"session": session_cookie},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert "At least 2 election options are required" in resp.text
