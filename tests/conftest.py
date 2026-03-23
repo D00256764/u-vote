@@ -163,3 +163,44 @@ def clear_mailhog(mailhog):
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(scope="session")
+def db_pod():
+    """
+    Session-scoped fixture that resolves the PostgreSQL pod name in
+    uvote-dev and returns it as a string for use in database tests.
+
+    Skips all tests if no PostgreSQL pod is found (cluster not running).
+    """
+    import os
+    namespace = os.getenv("UVOTE_NAMESPACE", "uvote-dev")
+    result = subprocess.run(
+        ["kubectl", "get", "pods", "-n", namespace,
+         "-l", "app=postgresql",
+         "-o", "jsonpath={.items[0].metadata.name}"],
+        capture_output=True, text=True
+    )
+    pod_name = result.stdout.strip()
+    if not pod_name:
+        pytest.skip("No PostgreSQL pod found — is the cluster running?")
+    return pod_name
+
+
+def pytest_collection_modifyitems(items):
+    """
+    Remove legacy standalone test functions from test_db.py that are not
+    pytest-compatible.  The original functions (test_pod_running, test_connection,
+    etc.) take non-fixture arguments (pod, results) and are run via the standalone
+    CLI runner.  Only the pytest wrapper functions (test_1_* … test_10_*) should
+    be collected by pytest.
+    """
+    keep = []
+    for item in items:
+        if "test_db.py" in str(getattr(item, "fspath", "")):
+            # Keep only the numbered pytest wrappers (test_1_*, test_2_*, …)
+            import re
+            if not re.match(r"test_\d+_", item.name):
+                continue
+        keep.append(item)
+    items[:] = keep

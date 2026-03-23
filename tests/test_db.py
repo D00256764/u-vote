@@ -1229,3 +1229,73 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+
+# =============================================================================
+# pytest wrappers — thin adapters so pytest can discover and run these tests
+# The original test functions above are used by the standalone CLI runner.
+# =============================================================================
+
+def test_1_db_pod_running(db_pod):
+    """pytest: Test 1 — Database Pod Running."""
+    assert db_pod is not None and len(db_pod) > 0
+
+
+def test_2_db_connection(db_pod):
+    """pytest: Test 2 — Database Connection."""
+    success, stdout, _ = exec_psql(db_pod, "SELECT version();")
+    assert success, "Database connection failed"
+    assert "PostgreSQL" in stdout
+
+
+def test_3_tables_exist(db_pod):
+    """pytest: Test 3 — Required Tables Exist."""
+    results = TestResults()
+    assert test_tables_exist(db_pod, results), "Required tables missing"
+
+
+def test_4_sample_data(db_pod):
+    """pytest: Test 4 — Sample Data Loaded."""
+    results = TestResults()
+    assert test_sample_data(db_pod, results), "Seed data missing"
+
+
+def test_5_vote_immutability(db_pod):
+    """pytest: Test 5 — Ballot Immutability."""
+    results = TestResults()
+    assert test_vote_immutability(db_pod, results), \
+        "Immutability triggers not working"
+
+
+def test_6_hash_generation(db_pod):
+    """pytest: Test 6 — Hash Generation."""
+    results = TestResults()
+    assert test_hash_generation(db_pod, results), \
+        "Hash generation triggers not found"
+
+
+def test_7_user_permissions(db_pod):
+    """pytest: Test 7 — User Permissions."""
+    results = TestResults()
+    assert test_user_permissions(db_pod, results), \
+        "Permission checks failed"
+
+
+def test_8_complex_queries(db_pod):
+    """pytest: Test 8 — Complex Queries."""
+    results = TestResults()
+    assert test_complex_queries(db_pod, results), \
+        "Complex query failed"
+
+
+def test_9_indexes(db_pod):
+    """pytest: Test 9 — Database Indexes."""
+    results = TestResults()
+    assert test_indexes(db_pod, results), "Required indexes missing"
+
+
+def test_10_foreign_keys(db_pod):
+    """pytest: Test 10 — Foreign Key Constraints."""
+    results = TestResults()
+    assert test_foreign_keys(db_pod, results), \
+        "Foreign key constraints missing"
