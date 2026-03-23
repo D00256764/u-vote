@@ -8,6 +8,7 @@ Run with:
     .venv/bin/python -m pytest frontend-service/tests/ -v
 """
 import base64
+import importlib.util
 import json
 import os
 import sys
@@ -25,8 +26,6 @@ import pytest
 _frontend_dir = Path(__file__).parent.parent   # u-vote/frontend-service/
 _shared_dir = _frontend_dir.parent / "shared"  # u-vote/shared/
 
-os.chdir(str(_frontend_dir))
-
 # Set SESSION_SECRET before app.py is imported so SessionMiddleware uses
 # the same secret we use when signing test session cookies below.
 os.environ["SESSION_SECRET"] = "test-secret"
@@ -34,6 +33,43 @@ os.environ["SESSION_SECRET"] = "test-secret"
 for _p in [str(_shared_dir), str(_frontend_dir)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Load app.py under a unique module name to avoid sys.modules['app']
+# collision when multiple service test suites run in the same process.
+_SERVICE_MODULE_NAME = "frontend_service_app"
+_APP_PATH = Path(__file__).parent.parent / "app.py"
+
+if _SERVICE_MODULE_NAME not in sys.modules:
+    _spec = importlib.util.spec_from_file_location(_SERVICE_MODULE_NAME, _APP_PATH)
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules[_SERVICE_MODULE_NAME] = _module
+    # StaticFiles(directory="static") calls os.path.isdir at __init__ time.
+    # Bypass the check so app.py imports cleanly regardless of CWD; the route
+    # is replaced with an absolute-path StaticFiles immediately below.
+    with patch.object(os.path, "isdir", return_value=True):
+        _spec.loader.exec_module(_module)
+
+_app_module = sys.modules[_SERVICE_MODULE_NAME]
+
+# Jinja2Templates stores "templates" as a relative path, which breaks when
+# os.chdir() from another service conftest changes CWD during a combined run.
+# Replace the FileSystemLoader with one that uses an absolute path so template
+# rendering works regardless of CWD at request time.
+import jinja2 as _jinja2
+_app_module.templates.env.loader = _jinja2.FileSystemLoader(
+    str(_frontend_dir / "templates")
+)
+
+# Replace relative static path with an absolute-path StaticFiles so the
+# mount works regardless of CWD at request time.
+from starlette.staticfiles import StaticFiles as _StaticFiles
+for _route in _app_module.app.routes:
+    if getattr(_route, "name", None) == "static":
+        _route.app = _StaticFiles(
+            directory=str(_frontend_dir / "static"),
+            check_dir=False,
+        )
+        break
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +114,24 @@ def _make_session_cookie(session_data: dict, secret: str = "test-secret") -> str
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _set_app_in_sys_modules():
+    """
+    Set sys.modules["app"] to this service's module for the duration of each
+    test so that bare `import app` statements inside test functions resolve to
+    the correct service module rather than whatever was last registered by
+    another service's conftest.
+    Restores the previous value after each test.
+    """
+    previous = sys.modules.get("app")
+    sys.modules["app"] = _app_module
+    yield
+    if previous is None:
+        sys.modules.pop("app", None)
+    else:
+        sys.modules["app"] = previous
+
+
 @pytest.fixture
 def mock_auth():
     """
@@ -112,9 +166,8 @@ def client(mock_auth):
     may configure either reference interchangeably.
     """
     from starlette.testclient import TestClient
-    import app as frontend_app  # frontend-service/app.py
 
-    with TestClient(frontend_app.app, raise_server_exceptions=False) as c:
+    with TestClient(_app_module.app, raise_server_exceptions=False) as c:
         yield {"client": c, "auth": mock_auth}
 
 
@@ -141,9 +194,8 @@ def authed_client(mock_auth):
         {"client": TestClient, "auth": mock_auth}
     """
     from starlette.testclient import TestClient
-    import app as frontend_app  # frontend-service/app.py
 
-    with TestClient(frontend_app.app, raise_server_exceptions=False) as c:
+    with TestClient(_app_module.app, raise_server_exceptions=False) as c:
         mock_auth.post.return_value = mock_auth_response(
             200, {"token": "test.jwt.token", "organiser_id": 1}
         )

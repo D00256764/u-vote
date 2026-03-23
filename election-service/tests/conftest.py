@@ -6,6 +6,7 @@ All tests run against a fully mocked database; no live cluster is required.
 Run with:
     .venv/bin/python -m pytest election-service/tests/ -v
 """
+import importlib.util
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -23,8 +24,6 @@ import pytest
 _election_dir = Path(__file__).parent.parent   # u-vote/election-service/
 _shared_dir = _election_dir.parent / "shared"  # u-vote/shared/
 
-os.chdir(str(_election_dir))
-
 # SESSION_SECRET must be set before app.py is imported, because the
 # FastAPI app constructs SessionMiddleware at module level:
 #   app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me"))
@@ -35,6 +34,43 @@ os.environ["SESSION_SECRET"] = "test-secret-key"
 for _p in [str(_shared_dir), str(_election_dir)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Load app.py under a unique module name to avoid sys.modules['app']
+# collision when multiple service test suites run in the same process.
+_SERVICE_MODULE_NAME = "election_service_app"
+_APP_PATH = Path(__file__).parent.parent / "app.py"
+
+if _SERVICE_MODULE_NAME not in sys.modules:
+    _spec = importlib.util.spec_from_file_location(_SERVICE_MODULE_NAME, _APP_PATH)
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules[_SERVICE_MODULE_NAME] = _module
+    # StaticFiles(directory="static") calls os.path.isdir at __init__ time.
+    # Bypass the check so app.py imports cleanly regardless of CWD; the route
+    # is replaced with an absolute-path StaticFiles immediately below.
+    with patch.object(os.path, "isdir", return_value=True):
+        _spec.loader.exec_module(_module)
+
+_app_module = sys.modules[_SERVICE_MODULE_NAME]
+
+# Jinja2Templates stores "templates" as a relative path, which breaks when
+# os.chdir() from another service conftest changes CWD during a combined run.
+# Replace the FileSystemLoader with one that uses an absolute path so template
+# rendering works regardless of CWD at request time.
+import jinja2 as _jinja2
+_app_module.templates.env.loader = _jinja2.FileSystemLoader(
+    str(_election_dir / "templates")
+)
+
+# Replace relative static path with an absolute-path StaticFiles so the
+# mount works regardless of CWD at request time.
+from starlette.staticfiles import StaticFiles as _StaticFiles
+for _route in _app_module.app.routes:
+    if getattr(_route, "name", None) == "static":
+        _route.app = _StaticFiles(
+            directory=str(_election_dir / "static"),
+            check_dir=False,
+        )
+        break
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +149,8 @@ def client(mock_db):
     configure either reference interchangeably.
     """
     from starlette.testclient import TestClient
-    import app as election_app  # election-service/app.py
 
-    with TestClient(election_app.app, raise_server_exceptions=False) as c:
+    with TestClient(_app_module.app, raise_server_exceptions=False) as c:
         yield {"client": c, "conn": mock_db}
 
 

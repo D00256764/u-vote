@@ -3,6 +3,7 @@ auth-service/tests/conftest.py — fixtures for auth-service unit tests.
 
 All tests run against a fully mocked database; no live cluster is required.
 """
+import importlib.util
 import sys
 from contextlib import asynccontextmanager
 from datetime import date, datetime
@@ -21,6 +22,19 @@ _shared_dir = _auth_dir.parent / "shared"         # u-vote/shared/
 for _p in [str(_shared_dir), str(_auth_dir)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Load app.py under a unique module name to avoid sys.modules['app']
+# collision when multiple service test suites run in the same process.
+_SERVICE_MODULE_NAME = "auth_service_app"
+_APP_PATH = Path(__file__).parent.parent / "app.py"
+
+if _SERVICE_MODULE_NAME not in sys.modules:
+    _spec = importlib.util.spec_from_file_location(_SERVICE_MODULE_NAME, _APP_PATH)
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules[_SERVICE_MODULE_NAME] = _module
+    _spec.loader.exec_module(_module)
+
+_app_module = sys.modules[_SERVICE_MODULE_NAME]
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +97,8 @@ def client(mock_db):
     configure either reference interchangeably.
     """
     from starlette.testclient import TestClient
-    import app as auth_app  # auth-service/app.py
 
-    with TestClient(auth_app.app, raise_server_exceptions=False) as c:
+    with TestClient(_app_module.app, raise_server_exceptions=False) as c:
         yield {"client": c, "conn": mock_db}
 
 
