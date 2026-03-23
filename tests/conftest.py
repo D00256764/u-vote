@@ -24,6 +24,7 @@ import os
 import socket
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -187,20 +188,87 @@ def db_pod():
     return pod_name
 
 
+@pytest.fixture(scope="session")
+def api_session():
+    """
+    Session-scoped fixture that runs the full test_api.py suite once as a
+    subprocess and returns the captured output for individual pytest tests to
+    assert against.
+
+    Subprocess approach is used because main() calls sys.exit() and cannot be
+    called programmatically. The entire sequential run (all 8 stages) executes
+    inside this fixture; port-forwards are managed by PortForwardManager inside
+    test_api.py.
+
+    Skips all API tests if the cluster is not reachable.
+    """
+    check = subprocess.run(
+        [
+            "kubectl", "cluster-info", "--context",
+            f"kind-{os.getenv('KIND_CLUSTER_NAME', 'uvote')}",
+        ],
+        capture_output=True, text=True,
+    )
+    if check.returncode != 0:
+        pytest.skip("Kubernetes cluster not accessible — is it running?")
+
+    # Verify that at least the auth-service pod is Running (proxy for "all
+    # services deployed"). If not, skip rather than time out on port-forwards.
+    namespace = os.getenv("UVOTE_NAMESPACE", "uvote-dev")
+    svc_check = subprocess.run(
+        [
+            "kubectl", "get", "pods", "-n", namespace,
+            "-l", "app=auth-service,tier=backend",
+            "-o", "jsonpath={.items[0].status.phase}",
+        ],
+        capture_output=True, text=True,
+    )
+    if svc_check.stdout.strip() != "Running":
+        pytest.skip(
+            "U-Vote services not deployed — run deploy_platform.py first"
+        )
+
+    project_root = str(Path(__file__).parent.parent)
+    env = {**os.environ, "PYTHONPATH": project_root}
+    result = subprocess.run(
+        [
+            "python3", "tests/test_api.py",
+            "--namespace", os.getenv("UVOTE_NAMESPACE", "uvote-dev"),
+            "--keep-data",
+        ],
+        capture_output=True, text=True,
+        cwd=project_root,
+        env=env,
+        timeout=300,
+    )
+    return {
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "passed": result.returncode == 0,
+    }
+
+
 def pytest_collection_modifyitems(items):
     """
-    Remove legacy standalone test functions from test_db.py that are not
-    pytest-compatible.  The original functions (test_pod_running, test_connection,
-    etc.) take non-fixture arguments (pod, results) and are run via the standalone
-    CLI runner.  Only the pytest wrapper functions (test_1_* … test_10_*) should
-    be collected by pytest.
+    Filter legacy standalone test functions so pytest only runs thin wrapper
+    functions that are pytest-compatible:
+
+      test_db.py  — keep only test_{digit}_* (pytest wrappers added in CV-9a)
+      test_api.py — keep only test_stage_*   (pytest wrappers added in CV-9b)
+
+    The original functions in both files are used by their standalone CLI
+    runners and are not compatible with pytest fixture injection.
     """
+    import re
     keep = []
     for item in items:
-        if "test_db.py" in str(getattr(item, "fspath", "")):
-            # Keep only the numbered pytest wrappers (test_1_*, test_2_*, …)
-            import re
+        path = str(getattr(item, "fspath", ""))
+        if "test_db.py" in path:
             if not re.match(r"test_\d+_", item.name):
+                continue
+        elif "test_api.py" in path:
+            if not item.name.startswith("test_stage_"):
                 continue
         keep.append(item)
     items[:] = keep

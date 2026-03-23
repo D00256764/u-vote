@@ -6,12 +6,12 @@ WORKDIR /app
 COPY shared /app/shared
 
 # Copy service files
-COPY voter-service/requirements.txt .
+COPY admin-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY voter-service/app.py .
-COPY voter-service/templates ./templates
-COPY voter-service/static ./static
+COPY admin-service/app.py .
+COPY admin-service/templates ./templates
+COPY admin-service/static ./static
 
 EXPOSE 5002
 
