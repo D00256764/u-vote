@@ -112,18 +112,17 @@ async def get_results(request: Request, election_id: int):
         results = await conn.fetch(
             """
             SELECT eo.id, eo.option_text, eo.display_order,
-                   COUNT(v.id) AS vote_count
+                   COALESCE(tv.vote_count, 0) AS vote_count
             FROM election_options eo
-            LEFT JOIN votes v ON v.option_id = eo.id
+            LEFT JOIN tallied_votes tv ON tv.option_id = eo.id
             WHERE eo.election_id = $1
-            GROUP BY eo.id, eo.option_text, eo.display_order
             ORDER BY vote_count DESC, eo.display_order
             """,
             election_id,
         )
 
         total_votes = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
+            "SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id
         )
         total_voters = await conn.fetchval(
             "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
@@ -174,8 +173,8 @@ async def get_audit_trail(request: Request, election_id: int):
 
         votes = await conn.fetch(
             """
-            SELECT id, vote_hash, previous_hash, cast_at
-            FROM votes
+            SELECT id, ballot_hash AS vote_hash, previous_hash, cast_at
+            FROM encrypted_ballots
             WHERE election_id = $1
             ORDER BY id ASC
             """,
@@ -224,7 +223,7 @@ async def get_statistics(request: Request, election_id: int):
             raise HTTPException(status_code=404, detail="Election not found")
 
         total_votes = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
+            "SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id
         )
         total_voters = await conn.fetchval(
             "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
@@ -245,7 +244,7 @@ async def get_statistics(request: Request, election_id: int):
             timeline = await conn.fetch(
                 """
                 SELECT DATE_TRUNC('hour', cast_at) AS hour, COUNT(*) AS vote_count
-                FROM votes
+                FROM encrypted_ballots
                 WHERE election_id = $1
                 GROUP BY hour
                 ORDER BY hour

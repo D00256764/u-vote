@@ -228,7 +228,7 @@ async def verify_identity(request: Request, token: str, date_of_birth: str):
 
         if row["date_of_birth"] != submitted_dob:
             raise HTTPException(
-                status_code=403,
+                status_code=401,
                 detail="Date of birth does not match our records",
             )
 

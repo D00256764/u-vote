@@ -784,3 +784,90 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# =============================================================================
+# pytest wrappers — thin adapters so pytest can discover and run these tests.
+# The original stage functions above are used by the standalone CLI runner.
+# The api_session fixture (tests/conftest.py) runs the full suite once as a
+# subprocess; these wrappers parse individual stage outcomes from stdout.
+#
+# Approach: subprocess (not programmatic) because main() calls sys.exit() and
+# accepts no parameters — it cannot be called as a library function.
+# =============================================================================
+
+import pytest as _pytest
+
+
+def _stage_passed(stdout: str, section: str) -> bool:
+    """Return True if the named stage section completed with no [FAIL] checks.
+
+    Searches for `section` in stdout, then scans the text up to the next known
+    section header for any [FAIL] markers (which appear in Results.check() as
+    the literal string [FAIL] regardless of surrounding ANSI colour codes).
+    """
+    _ALL_SECTIONS = [
+        "[HEALTH]", "[AUTH]", "[FRONTEND]", "[ELECTIONS]",
+        "[VOTING]", "[RECEIPT]", "[RESULTS]", "[CLEANUP]",
+    ]
+    idx = stdout.find(section)
+    if idx == -1:
+        return False
+    end_idx = len(stdout)
+    for other in _ALL_SECTIONS:
+        if other == section:
+            continue
+        pos = stdout.find(other, idx + len(section))
+        if pos != -1 and pos < end_idx:
+            end_idx = pos
+    return "[FAIL]" not in stdout[idx:end_idx]
+
+
+def test_stage_0_health(api_session):
+    """pytest: Stage 0 — All 6 services healthy."""
+    assert _stage_passed(api_session["stdout"], "[HEALTH]"), \
+        "Health checks failed — see stdout for details"
+
+
+def test_stage_1_auth(api_session):
+    """pytest: Stage 1 — Organiser authentication."""
+    assert _stage_passed(api_session["stdout"], "[AUTH]"), \
+        "Auth stage failed — see stdout for details"
+
+
+def test_stage_6_frontend(api_session):
+    """pytest: Stage 6 — Frontend serving home page."""
+    assert _stage_passed(api_session["stdout"], "[FRONTEND]"), \
+        "Frontend health check failed"
+
+
+def test_stage_2_elections(api_session):
+    """pytest: Stage 2 — Election creation and listing."""
+    assert _stage_passed(api_session["stdout"], "[ELECTIONS]"), \
+        "Elections stage failed — see stdout for details"
+
+
+def test_stage_3_voting(api_session):
+    """pytest: Stage 3 — Full voter journey including MailHog token."""
+    assert _stage_passed(api_session["stdout"], "[VOTING]"), \
+        "Voting stage failed — see stdout for details"
+
+
+def test_stage_4_receipt(api_session):
+    """pytest: Stage 4 — Receipt verification."""
+    stdout = api_session["stdout"]
+    if "[RECEIPT]" not in stdout:
+        _pytest.skip("No receipt token captured — receipt stage was skipped")
+    assert _stage_passed(stdout, "[RECEIPT]"), "Receipt verification failed"
+
+
+def test_stage_5_results(api_session):
+    """pytest: Stage 5 — Results and audit trail."""
+    assert _stage_passed(api_session["stdout"], "[RESULTS]"), \
+        "Results stage failed — see stdout for details"
+
+
+def test_stage_7_cleanup(api_session):
+    """pytest: Stage 7 — Cleanup (--keep-data: data preserved)."""
+    assert _stage_passed(api_session["stdout"], "[CLEANUP]"), \
+        "Cleanup stage failed — see stdout for details"

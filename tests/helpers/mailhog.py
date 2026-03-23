@@ -8,6 +8,8 @@ MailHog must be running and accessible at MAILHOG_API before calling any
 function in this module. In the Kubernetes cluster, open a port-forward first:
   kubectl port-forward svc/mailhog 8025:8025 -n uvote-dev
 """
+import quopri
+
 import httpx
 
 MAILHOG_API = "http://localhost:8025/api/v2/messages"
@@ -53,7 +55,13 @@ async def get_latest_voting_token(voter_email: str) -> str:
             for r in msg.get("To", [])
         ]
         if voter_email in recipients:
-            body = msg["Content"]["Body"]
+            raw_body = msg["Content"]["Body"]
+            # Decode quoted-printable soft line breaks (=\r\n or =\n) so that
+            # URLs spanning a wrapped line are reassembled into one string.
+            try:
+                body = quopri.decodestring(raw_body.encode()).decode("utf-8", errors="replace")
+            except Exception:
+                body = raw_body
             if "/vote/" not in body:
                 raise AssertionError(
                     f"Email found for {voter_email} but body contains no "

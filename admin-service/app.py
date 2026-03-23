@@ -175,7 +175,7 @@ async def get_voters(request: Request, election_id: int):
     }
 
 
-@app.post("/elections/{election_id}/tokens/generate", status_code=201)
+@app.post("/elections/{election_id}/tokens/generate", status_code=200)
 async def generate_tokens(request: Request, election_id: int, data: TokenGenerateRequest | None = None):
     """Generate voting tokens for all voters without an active token, then email each voter."""
     logger.info('Request received: %s %s', request.method, request.url.path)

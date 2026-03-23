@@ -9,6 +9,7 @@ This service owns the election bounded context end-to-end:
 Runs on port 5005, exposed to browsers on port 8082.
 """
 import os
+import secrets
 import sys
 import logging
 from contextlib import asynccontextmanager
@@ -122,13 +123,14 @@ async def create_election(request: Request, organiser_id: int, data: ElectionCre
     """Create a new election with options."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
+        enc_key = secrets.token_hex(32)
         row = await conn.fetchrow(
             """
-            INSERT INTO elections (organiser_id, title, description, status)
-            VALUES ($1, $2, $3, 'draft')
+            INSERT INTO elections (organiser_id, title, description, status, encryption_key)
+            VALUES ($1, $2, $3, 'draft', $4)
             RETURNING id
             """,
-            organiser_id, data.title, data.description,
+            organiser_id, data.title, data.description, enc_key,
         )
         election_id = row["id"]
 
@@ -179,7 +181,7 @@ async def get_election(request: Request, election_id: int, organiser_id: int | N
             "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
         )
         vote_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
+            "SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id
         )
 
     return {
@@ -373,7 +375,7 @@ async def election_detail_page(request: Request, election_id: int):
             election_id,
         )
         voter_count = await conn.fetchval("SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id)
-        vote_count = await conn.fetchval("SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id)
+        vote_count = await conn.fetchval("SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id)
 
     return templates.TemplateResponse("election_detail.html", {
         "request": request,
