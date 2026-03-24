@@ -53,13 +53,16 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-      SMTP_HOST: mailhog          # dev override — production uses real SMTP host via Secret
-      SMTP_PORT: "1025"           # dev override — production uses 587
-      SMTP_USE_TLS: "false"       # dev override — production uses true
-      SMTP_FROM: "uvote@test.local"
-      SMTP_USER: ""               # no auth required for local MailHog
-      SMTP_PASS: ""               # no auth required for local MailHog
-      FRONTEND_URL: http://frontend-service:5000
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM: ${SENDGRID_FROM:-}
+      FRONTEND_URL: http://localhost:5003
     ports:
       - "5002:5002"
     depends_on:
@@ -87,6 +90,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      auth-service:
+        condition: service_started
     networks:
       - voting-network
     restart: unless-stopped
@@ -102,6 +107,7 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
+      ELECTION_SERVICE_URL: http://localhost:5005
     ports:
       - "5004:5004"
     depends_on:
@@ -142,9 +148,10 @@ services:
       VOTING_SERVICE_URL: http://voting-service:5003
       RESULTS_SERVICE_URL: http://results-service:5004
       ELECTION_SERVICE_URL: http://election-service:5005
+      ELECTION_DASHBOARD_URL: http://localhost:5005/dashboard
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
     ports:
-      - "8080:5000"
+      - "8082:5000"
     depends_on:
       - auth-service
       - admin-service

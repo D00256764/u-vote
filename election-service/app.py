@@ -150,6 +150,66 @@ async def create_election(request: Request, organiser_id: int, data: ElectionCre
     return {"message": "Election created successfully", "election_id": election_id}
 
 
+@app.get("/elections/create", response_class=HTMLResponse)
+async def create_election_page(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+    return templates.TemplateResponse("create_election.html", {
+        "request": request, "messages": get_flashed_messages(request),
+    })
+
+
+@app.post("/elections/create", response_class=HTMLResponse)
+async def create_election_form(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+
+    form = await request.form()
+    title = form.get("title")
+    description = form.get("description", "")
+    options = form.getlist("options[]")
+
+    if not title or not title.strip():
+        flash(request, "Election title is required", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
+    valid_options = [o for o in options if o and o.strip()]
+    if len(valid_options) < 2:
+        flash(request, "At least 2 election options are required", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
+    async with Database.transaction() as conn:
+        enc_key = secrets.token_hex(32)
+        row = await conn.fetchrow(
+            """
+            INSERT INTO elections (organiser_id, title, description, status, encryption_key)
+            VALUES ($1, $2, $3, 'draft', $4) RETURNING id
+            """,
+            request.session["organiser_id"], title, description, enc_key,
+        )
+        election_id = row["id"]
+
+        for i, opt in enumerate(options):
+            if opt.strip():
+                await conn.execute(
+                    "INSERT INTO election_options (election_id, option_text, display_order) VALUES ($1, $2, $3)",
+                    election_id, opt.strip(), i,
+                )
+
+    flash(request, "Election created successfully!", "success")
+    return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
+
 @app.get("/elections/{election_id}")
 async def get_election(request: Request, election_id: int, organiser_id: int | None = None):
     """Get election details, options, voter count, and vote count."""
@@ -243,13 +303,37 @@ async def close_election(request: Request, election_id: int, organiser_id: int):
             election_id, organiser_id,
         )
 
-    if result == "UPDATE 0":
-        raise HTTPException(
-            status_code=400,
-            detail="Election not found, not yours, or not in open status",
-        )
+        if result == "UPDATE 0":
+            raise HTTPException(
+                status_code=400,
+                detail="Election not found, not yours, or not in open status",
+            )
+
+        await _tally_votes(conn, election_id)
 
     return {"message": "Election closed successfully"}
+
+
+# ── Vote tallying ─────────────────────────────────────────────────────────────
+
+async def _tally_votes(conn, election_id: int):
+    """Decrypt and tally votes into tallied_votes when an election closes."""
+    await conn.execute("DELETE FROM tallied_votes WHERE election_id = $1", election_id)
+    await conn.execute(
+        """
+        INSERT INTO tallied_votes (election_id, option_id, vote_count)
+        SELECT
+            eb.election_id,
+            pgp_sym_decrypt(eb.encrypted_vote, e.encryption_key)::integer AS option_id,
+            COUNT(*) AS vote_count
+        FROM encrypted_ballots eb
+        JOIN elections e ON e.id = eb.election_id
+        WHERE eb.election_id = $1
+        GROUP BY eb.election_id,
+                 pgp_sym_decrypt(eb.encrypted_vote, e.encryption_key)::integer
+        """,
+        election_id,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -259,7 +343,7 @@ async def close_election(request: Request, election_id: int, organiser_id: int):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+        return RedirectResponse(url="http://localhost:8082/login", status_code=303)
     return None
 
 
@@ -308,68 +392,20 @@ async def dashboard_page(request: Request):
     })
 
 
-@app.get("/elections/create", response_class=HTMLResponse)
-async def create_election_page(request: Request):
-    logger.info('Request received: %s %s', request.method, request.url.path)
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
-    return templates.TemplateResponse("create_election.html", {
-        "request": request, "messages": get_flashed_messages(request),
-    })
-
-
-@app.post("/elections/create", response_class=HTMLResponse)
-async def create_election_form(request: Request):
-    logger.info('Request received: %s %s', request.method, request.url.path)
-    redirect = _require_login(request)
-    if redirect:
-        return redirect
-
-    form = await request.form()
-    title = form.get("title")
-    description = form.get("description", "")
-    options = form.getlist("options[]")
-
-    if not title or not title.strip():
-        flash(request, "Election title is required", "error")
-        return templates.TemplateResponse(
-            "create_election.html",
-            {"request": request, "messages": get_flashed_messages(request)},
-        )
-
-    valid_options = [o for o in options if o and o.strip()]
-    if len(valid_options) < 2:
-        flash(request, "At least 2 election options are required", "error")
-        return templates.TemplateResponse(
-            "create_election.html",
-            {"request": request, "messages": get_flashed_messages(request)},
-        )
-
-    async with Database.transaction() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO elections (organiser_id, title, description, status)
-            VALUES ($1, $2, $3, 'draft') RETURNING id
-            """,
-            request.session["organiser_id"], title, description,
-        )
-        election_id = row["id"]
-
-        for i, opt in enumerate(options):
-            if opt.strip():
-                await conn.execute(
-                    "INSERT INTO election_options (election_id, option_text, display_order) VALUES ($1, $2, $3)",
-                    election_id, opt.strip(), i,
-                )
-
-    flash(request, "Election created successfully!", "success")
-    return RedirectResponse(url=f"/elections/{election_id}", status_code=303)
-
 
 @app.get("/elections/{election_id}/detail", response_class=HTMLResponse)
 async def election_detail_page(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
+    qp_token = request.query_params.get("token")
+    qp_oid = request.query_params.get("organiser_id")
+    if qp_token and qp_oid:
+        try:
+            request.session["token"] = qp_token
+            request.session["organiser_id"] = int(qp_oid)
+        except (ValueError, TypeError):
+            pass
+        return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -445,6 +481,9 @@ async def close_election_form(request: Request, election_id: int):
             "UPDATE elections SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = $1 AND organiser_id = $2 AND status = 'open'",
             election_id, organiser_id,
         )
+
+        if result != "UPDATE 0":
+            await _tally_votes(conn, election_id)
 
     if result == "UPDATE 0":
         flash(request, "Cannot close election", "danger")
