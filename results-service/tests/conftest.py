@@ -17,6 +17,7 @@ DB methods used by results-service/app.py:
 Run with:
     .venv/bin/python -m pytest results-service/tests/ -v
 """
+import importlib.util
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -24,7 +25,27 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import prometheus_client
+from prometheus_client import CollectorRegistry
+
 import pytest
+
+# Patch REGISTRY.register to be idempotent so that multiple service test suites
+# can run in the same pytest process without crashing on duplicate metric names.
+# prometheus_fastapi_instrumentator registers metrics at TestClient startup
+# (middleware stack build), not at import time, so this must be a permanent
+# module-level patch rather than a context manager around exec_module.
+if not getattr(prometheus_client.REGISTRY, "_uvote_test_patched", False):
+    _orig_registry_register = prometheus_client.REGISTRY.register
+
+    def _idempotent_register(collector, _orig=_orig_registry_register):
+        try:
+            _orig(collector)
+        except ValueError:
+            pass  # Duplicate metric name — already registered by another service
+
+    prometheus_client.REGISTRY.register = _idempotent_register
+    prometheus_client.REGISTRY._uvote_test_patched = True
 
 # ---------------------------------------------------------------------------
 # CWD must be results-service/ so that:
@@ -44,6 +65,19 @@ os.environ["SESSION_SECRET"] = "test-secret-key"
 for _p in [str(_shared_dir), str(_results_dir)]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Load app.py under a unique module name to avoid sys.modules['app']
+# collision when multiple service test suites run in the same process.
+_SERVICE_MODULE_NAME = "results_service_app"
+_APP_PATH = _results_dir / "app.py"
+
+if _SERVICE_MODULE_NAME not in sys.modules:
+    _spec = importlib.util.spec_from_file_location(_SERVICE_MODULE_NAME, _APP_PATH)
+    _module = importlib.util.module_from_spec(_spec)
+    sys.modules[_SERVICE_MODULE_NAME] = _module
+    _spec.loader.exec_module(_module)
+
+_app_module = sys.modules[_SERVICE_MODULE_NAME]
 
 
 # ---------------------------------------------------------------------------
@@ -112,9 +146,8 @@ def client(mock_db):
         }
     """
     from starlette.testclient import TestClient
-    import app as results_app  # results-service/app.py
 
-    with TestClient(results_app.app, raise_server_exceptions=False) as c:
+    with TestClient(_app_module.app, raise_server_exceptions=False) as c:
         yield {"client": c, "conn": mock_db}
 
 
