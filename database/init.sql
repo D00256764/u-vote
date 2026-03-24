@@ -49,11 +49,13 @@ CREATE TABLE elections (
     org_id         INTEGER REFERENCES organisations(id) ON DELETE SET NULL,
     title          VARCHAR(255) NOT NULL,
     description    TEXT,
-    status         VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
-    encryption_key TEXT,
-    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    opened_at      TIMESTAMP,
-    closed_at      TIMESTAMP
+    status              VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
+    encryption_key      TEXT,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    opened_at           TIMESTAMP,
+    closed_at           TIMESTAMP,
+    scheduled_open_at   TIMESTAMP,
+    scheduled_close_at  TIMESTAMP
 );
 
 CREATE TABLE voters (
