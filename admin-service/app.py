@@ -36,7 +36,7 @@ for p in [
 
 from logging_config import configure_logging
 configure_logging()
-logger = logging.getLogger('voter-service')
+logger = logging.getLogger('admin-service')
 
 from database import Database
 from security import generate_voting_token, generate_token_expiry

@@ -15,4 +15,4 @@ COPY results-service/static ./static
 
 EXPOSE 5004
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5004"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5004", "--no-access-log"]
