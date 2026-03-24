@@ -15,4 +15,4 @@ COPY admin-service/static ./static
 
 EXPOSE 5002
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5002"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "5002", "--no-access-log"]
