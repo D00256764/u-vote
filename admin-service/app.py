@@ -358,14 +358,25 @@ async def mfa_status(request: Request, token: str):
 
 def _require_login(request: Request):
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+        return RedirectResponse(url="http://localhost:8082/login", status_code=303)
     return None
 
 
-@app.get("/elections/{election_id}/voters", response_class=HTMLResponse)
+@app.get("/elections/{election_id}/voters/manage", response_class=HTMLResponse)
 async def manage_voters_page(request: Request, election_id: int):
     """Render the voter management page — owned by this service."""
     logger.info('Request received: %s %s', request.method, request.url.path)
+    # Auth handoff: accept token & organiser_id as query params (same pattern as election-service dashboard)
+    qp_token = request.query_params.get("token")
+    qp_oid = request.query_params.get("organiser_id")
+    if qp_token and qp_oid:
+        try:
+            request.session["token"] = qp_token
+            request.session["organiser_id"] = int(qp_oid)
+        except (ValueError, TypeError):
+            pass
+        return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
+
     redirect = _require_login(request)
     if redirect:
         return redirect
@@ -417,11 +428,11 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
 
     if reader.fieldnames is None or "email" not in reader.fieldnames:
         flash(request, 'CSV must have an "email" column', "danger")
-        return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+        return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
     if "date_of_birth" not in reader.fieldnames:
         flash(request, 'CSV must have a "date_of_birth" column (YYYY-MM-DD)', "danger")
-        return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+        return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
     voters_added = 0
     voters_skipped = 0
@@ -444,7 +455,7 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
                 voters_skipped += 1
 
     flash(request, f"Uploaded {voters_added} voters (skipped {voters_skipped} duplicates)", "success")
-    return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+    return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
 
 @app.post("/elections/{election_id}/tokens/generate/form")
@@ -461,7 +472,7 @@ async def generate_tokens_form(request: Request, election_id: int):
         )
         if not election_row:
             flash(request, "Election not found", "danger")
-            return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+            return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
         election_title = election_row["title"]
 
@@ -511,4 +522,4 @@ async def generate_tokens_form(request: Request, election_id: int):
         msg += f" ({emails_failed} failed)"
     flash(request, msg, "success")
 
-    return RedirectResponse(url=f"/elections/{election_id}/voters", status_code=303)
+    return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
