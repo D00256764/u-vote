@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Results - {{ data.election.title }}{% endblock %}
+{% block title %}Results - {{ election.title }}{% endblock %}
 
 {% block content %}
 <div class="row">
     <div class="col-12">
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="http://localhost:8082/dashboard">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="http://localhost:8082/elections/{{ data.election.id }}/detail">{{ data.election.title }}</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="http://localhost:5005/elections/{{ election.id }}/detail?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">{{ election.title }}</a></li>
                 <li class="breadcrumb-item active">Results</li>
             </ol>
         </nav>
@@ -19,29 +19,29 @@
             <div class="col-md-8">
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <h4 class="card-title">{{ data.election.title }}</h4>
+                        <h4 class="card-title">{{ election.title }}</h4>
                         <p class="text-muted">
-                            <i class="bi bi-lock"></i> 
-                            Closed: {{ data.election.closed_at }}
+                            <i class="bi bi-lock"></i>
+                            Closed: {{ election.closed_at }}
                         </p>
 
                         <div class="mb-4">
                             <div class="row">
                                 <div class="col-md-4">
                                     <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ data.summary.total_votes }}</h5>
+                                        <h5 class="mb-0">{{ summary.total_votes }}</h5>
                                         <small class="text-muted">Total Votes</small>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
                                     <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ data.summary.total_voters }}</h5>
+                                        <h5 class="mb-0">{{ summary.total_voters }}</h5>
                                         <small class="text-muted">Eligible Voters</small>
                                     </div>
                                 </div>
                                 <div class="col-md-4">
                                     <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ data.summary.turnout_percentage }}%</h5>
+                                        <h5 class="mb-0">{{ summary.turnout_percentage }}%</h5>
                                         <small class="text-muted">Turnout</small>
                                     </div>
                                 </div>
@@ -49,16 +49,16 @@
                         </div>
 
                         <h5 class="mb-3">Vote Distribution</h5>
-                        {% for result in data.results %}
+                        {% for result in results %}
                             <div class="mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <strong>{{ result.option_text }}</strong>
                                     <span class="badge bg-primary">{{ result.vote_count }} votes ({{ result.percentage }}%)</span>
                                 </div>
                                 <div class="progress" style="height: 30px;">
-                                    <div class="progress-bar" role="progressbar" 
+                                    <div class="progress-bar" role="progressbar"
                                          style="width: {{ result.percentage }}%"
-                                         aria-valuenow="{{ result.percentage }}" 
+                                         aria-valuenow="{{ result.percentage }}"
                                          aria-valuemin="0" aria-valuemax="100">
                                         {{ result.percentage }}%
                                     </div>
@@ -73,8 +73,8 @@
                 <div class="card shadow-sm mb-3">
                     <div class="card-body">
                         <h5 class="card-title">Winner</h5>
-                        {% if data.results %}
-                            {% set winner = data.results[0] %}
+                        {% if results %}
+                            {% set winner = results[0] %}
                             <div class="text-center p-3 bg-success bg-opacity-10 rounded">
                                 <i class="bi bi-trophy-fill text-success" style="font-size: 2rem;"></i>
                                 <h4 class="mt-2 mb-0">{{ winner.option_text }}</h4>
@@ -101,7 +101,7 @@
         </div>
 
         <div class="text-center">
-            <a href="http://localhost:8082/elections/{{ data.election.id }}/detail" class="btn btn-secondary">
+            <a href="http://localhost:5005/elections/{{ election.id }}/detail?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}" class="btn btn-secondary">
                 <i class="bi bi-arrow-left"></i> Back to Election
             </a>
         </div>

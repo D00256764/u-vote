@@ -82,7 +82,7 @@ def get_flashed_messages(request: Request):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+        return RedirectResponse(url="http://localhost:8082/login", status_code=303)
     return None
 
 
@@ -281,13 +281,25 @@ async def get_statistics(request: Request, election_id: int):
 # ── Web (HTML) routes ────────────────────────────────────────────────────────
 # These render the results page directly in this service.
 
-ELECTION_SERVICE = os.getenv("ELECTION_SERVICE_URL", "http://localhost:8082")
+ELECTION_SERVICE = os.getenv("ELECTION_SERVICE_URL", "http://localhost:5005")
 
 
 @app.get("/elections/{election_id}/results/view", response_class=HTMLResponse)
 async def results_page(request: Request, election_id: int):
     """Render the results page for a closed election."""
     logger.info('Request received: %s %s', request.method, request.url.path)
+    qp_token = request.query_params.get("token")
+    qp_oid = request.query_params.get("organiser_id")
+    if qp_token and qp_oid:
+        try:
+            request.session["token"] = qp_token
+            request.session["organiser_id"] = int(qp_oid)
+        except (ValueError, TypeError):
+            pass
+        return RedirectResponse(
+            url=f"/elections/{election_id}/results/view", status_code=303
+        )
+
     redirect = _require_login(request)
     if redirect:
         return redirect

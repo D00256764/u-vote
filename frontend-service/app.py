@@ -44,7 +44,7 @@ logger = logging.getLogger('frontend-service')
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
 
 # After login, redirect organiser to the Election Service dashboard
-ELECTION_DASHBOARD = os.getenv("ELECTION_DASHBOARD_URL", "http://localhost:8082/dashboard")
+ELECTION_DASHBOARD = os.getenv("ELECTION_DASHBOARD_URL", "http://localhost:5005/dashboard")
 
 # ── Shared async HTTP client ────────────────────────────────────────────────
 http_client: httpx.AsyncClient | None = None
