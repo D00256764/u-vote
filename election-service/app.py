@@ -15,6 +15,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
