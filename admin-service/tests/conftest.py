@@ -18,7 +18,27 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import prometheus_client
+from prometheus_client import CollectorRegistry
+
 import pytest
+
+# Patch REGISTRY.register to be idempotent so that multiple service test suites
+# can run in the same pytest process without crashing on duplicate metric names.
+# prometheus_fastapi_instrumentator registers metrics at TestClient startup
+# (middleware stack build), not at import time, so this must be a permanent
+# module-level patch rather than a context manager around exec_module.
+if not getattr(prometheus_client.REGISTRY, "_uvote_test_patched", False):
+    _orig_registry_register = prometheus_client.REGISTRY.register
+
+    def _idempotent_register(collector, _orig=_orig_registry_register):
+        try:
+            _orig(collector)
+        except ValueError:
+            pass  # Duplicate metric name — already registered by another service
+
+    prometheus_client.REGISTRY.register = _idempotent_register
+    prometheus_client.REGISTRY._uvote_test_patched = True
 
 # ---------------------------------------------------------------------------
 # CWD must be admin-service/ so that:
