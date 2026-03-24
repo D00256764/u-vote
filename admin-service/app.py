@@ -14,10 +14,10 @@ import csv
 import logging
 from io import StringIO
 from contextlib import asynccontextmanager
-from datetime import datetime, date
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -87,9 +87,20 @@ async def health(request: Request):
     return {"status": "healthy", "service": "admin"}
 
 
+@app.get("/elections/{election_id}/voters/csv-template")
+async def csv_template(election_id: int):
+    """Download a blank CSV template for voter upload."""
+    content = "email,phone_number\nexample@university.edu,+353871234567\n"
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=voters-template.csv"},
+    )
+
+
 @app.post("/elections/{election_id}/voters/upload", status_code=201)
 async def upload_voters(request: Request, election_id: int, file: UploadFile = File(...)):
-    """Upload voter list from CSV (requires email and date_of_birth columns)."""
+    """Upload voter list from CSV (requires email column; phone_number optional)."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     contents = await file.read()
     csv_data = contents.decode("utf-8")
@@ -98,24 +109,20 @@ async def upload_voters(request: Request, election_id: int, file: UploadFile = F
     if reader.fieldnames is None or "email" not in reader.fieldnames:
         raise HTTPException(status_code=400, detail='CSV must have an "email" column')
 
-    if "date_of_birth" not in reader.fieldnames:
-        raise HTTPException(status_code=400, detail='CSV must have a "date_of_birth" column (YYYY-MM-DD)')
-
     voters_added = 0
     voters_skipped = 0
 
     async with Database.transaction() as conn:
         for row in reader:
             email = row.get("email", "").strip()
-            dob_str = row.get("date_of_birth", "").strip()
-            if not email or not dob_str:
+            phone = row.get("phone_number", "").strip() or None
+            if not email:
                 voters_skipped += 1
                 continue
             try:
-                dob = date.fromisoformat(dob_str)
                 await conn.execute(
-                    "INSERT INTO voters (election_id, email, date_of_birth) VALUES ($1, $2, $3)",
-                    election_id, email, dob,
+                    "INSERT INTO voters (election_id, email, phone_number) VALUES ($1, $2, $3)",
+                    election_id, email, phone,
                 )
                 voters_added += 1
             except Exception:
@@ -133,11 +140,10 @@ async def add_voter(request: Request, election_id: int, data: VoterAddRequest):
     """Add a single voter."""
     logger.info('Request received: %s %s', request.method, request.url.path)
     try:
-        dob = date.fromisoformat(data.date_of_birth) if isinstance(data.date_of_birth, str) else data.date_of_birth
         async with Database.transaction() as conn:
             row = await conn.fetchrow(
-                "INSERT INTO voters (election_id, email, date_of_birth) VALUES ($1, $2, $3) RETURNING id",
-                election_id, data.email, dob,
+                "INSERT INTO voters (election_id, email, phone_number) VALUES ($1, $2, $3) RETURNING id",
+                election_id, data.email, data.phone_number or None,
             )
     except Exception as e:
         if "unique" in str(e).lower():
@@ -155,7 +161,7 @@ async def get_voters(request: Request, election_id: int):
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
-            SELECT v.id, v.email, v.date_of_birth, v.created_at,
+            SELECT v.id, v.email, v.phone_number, v.created_at,
                    EXISTS(SELECT 1 FROM voting_tokens WHERE voter_id = v.id) AS has_token
             FROM voters v
             WHERE v.election_id = $1
@@ -169,7 +175,7 @@ async def get_voters(request: Request, election_id: int):
             {
                 "id": r["id"],
                 "email": r["email"],
-                "date_of_birth": r["date_of_birth"].isoformat(),
+                "phone_number": r["phone_number"] or "",
                 "created_at": r["created_at"].isoformat(),
                 "has_token": r["has_token"],
             }
@@ -290,68 +296,6 @@ async def validate_token(request: Request, token: str):
     }
 
 
-# ── MFA Endpoints (Date of Birth Verification) ──────────────────────────────
-
-@app.post("/mfa/verify", status_code=200)
-async def verify_identity(request: Request, token: str, date_of_birth: str):
-    """Verify voter identity by checking date of birth against stored value."""
-    logger.info('Request received: %s %s', request.method, request.url.path)
-    try:
-        submitted_dob = date.fromisoformat(date_of_birth)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format (expected YYYY-MM-DD)")
-
-    async with Database.transaction() as conn:
-        # Look up the voter linked to this token and compare DOB
-        row = await conn.fetchrow(
-            """
-            SELECT v.date_of_birth, vt.is_used, vt.expires_at, e.status
-            FROM voting_tokens vt
-            JOIN voters v ON v.id = vt.voter_id
-            JOIN elections e ON e.id = vt.election_id
-            WHERE vt.token = $1
-            """,
-            token,
-        )
-
-        if not row:
-            raise HTTPException(status_code=404, detail="Invalid token")
-        if row["is_used"]:
-            raise HTTPException(status_code=400, detail="Token already used")
-        if datetime.now() > row["expires_at"]:
-            raise HTTPException(status_code=400, detail="Token expired")
-        if row["status"] != "open":
-            raise HTTPException(status_code=400, detail="Election is not open")
-
-        # Compare dates
-        if row["date_of_birth"] != submitted_dob:
-            logger.warning('Auth failure: %s', 'Date of birth does not match')
-            raise HTTPException(status_code=403, detail="Date of birth does not match our records")
-
-        # Check if already verified
-        existing = await conn.fetchrow(
-            "SELECT id FROM voter_mfa WHERE token = $1", token,
-        )
-        if not existing:
-            await conn.execute(
-                "INSERT INTO voter_mfa (token) VALUES ($1)", token,
-            )
-
-    return {"verified": True}
-
-
-@app.get("/mfa/status")
-async def mfa_status(request: Request, token: str):
-    """Check if a token has passed MFA (DOB verified)."""
-    logger.info('Request received: %s %s', request.method, request.url.path)
-    async with Database.connection() as conn:
-        row = await conn.fetchrow(
-            "SELECT id FROM voter_mfa WHERE token = $1", token,
-        )
-
-    return {"mfa_verified": row is not None}
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # HTML PAGES — served directly by this service (service-owned templates)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -384,7 +328,7 @@ async def manage_voters_page(request: Request, election_id: int):
     async with Database.connection() as conn:
         rows = await conn.fetch(
             """
-            SELECT v.id, v.email, v.date_of_birth, v.created_at,
+            SELECT v.id, v.email, v.phone_number, v.created_at,
                    EXISTS(SELECT 1 FROM voting_tokens WHERE voter_id = v.id) AS has_token
             FROM voters v WHERE v.election_id = $1 ORDER BY v.created_at DESC
             """,
@@ -398,7 +342,7 @@ async def manage_voters_page(request: Request, election_id: int):
     voters = [
         {
             "id": r["id"], "email": r["email"],
-            "date_of_birth": r["date_of_birth"].isoformat(),
+            "phone_number": r["phone_number"] or "",
             "created_at": r["created_at"].isoformat(),
             "has_token": r["has_token"],
         }
@@ -430,25 +374,20 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
         flash(request, 'CSV must have an "email" column', "danger")
         return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
-    if "date_of_birth" not in reader.fieldnames:
-        flash(request, 'CSV must have a "date_of_birth" column (YYYY-MM-DD)', "danger")
-        return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
-
     voters_added = 0
     voters_skipped = 0
 
     async with Database.transaction() as conn:
         for row in reader:
             email = row.get("email", "").strip()
-            dob_str = row.get("date_of_birth", "").strip()
-            if not email or not dob_str:
+            phone = row.get("phone_number", "").strip() or None
+            if not email:
                 voters_skipped += 1
                 continue
             try:
-                dob = date.fromisoformat(dob_str)
                 await conn.execute(
-                    "INSERT INTO voters (election_id, email, date_of_birth) VALUES ($1, $2, $3)",
-                    election_id, email, dob,
+                    "INSERT INTO voters (election_id, email, phone_number) VALUES ($1, $2, $3)",
+                    election_id, email, phone,
                 )
                 voters_added += 1
             except Exception:

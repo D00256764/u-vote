@@ -120,8 +120,31 @@ async def register_page(request: Request):
 async def register(request: Request, email: str = Form(...), password: str = Form(...),
                    confirm_password: str = Form(...)):
     logger.info('Request received: %s %s', request.method, request.url.path)
+
     if password != confirm_password:
         flash(request, "Passwords do not match", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+
+    import re
+    if len(password) < 8:
+        flash(request, "Password must be at least 8 characters", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[A-Z]', password):
+        flash(request, "Password must contain at least one uppercase letter", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[a-z]', password):
+        flash(request, "Password must contain at least one lowercase letter", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[0-9]', password):
+        flash(request, "Password must contain at least one number", "danger")
         return templates.TemplateResponse("register.html", {
             "request": request, "messages": get_flashed_messages(request),
         })

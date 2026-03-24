@@ -1,103 +1,196 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Voters - {{ election_title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        body { background: #f5f6fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .page-header { background: #fff; border-bottom: 1px solid #e8eaed; padding: 1rem 2rem; }
+        .back-link { color: #6b7280; text-decoration: none; font-size: 0.875rem; display: inline-flex; align-items: center; gap: 0.3rem; }
+        .back-link:hover { color: #2563eb; }
+        .page-title { font-size: 1.25rem; font-weight: 700; color: #1a1a2e; margin: 0.5rem 0 0; }
 
-{% block title %}Manage Voters - {{ election_title }}{% endblock %}
+        /* Tab bar */
+        .tab-bar { display: flex; background: #fff; border: 1px solid #e8eaed; border-radius: 10px; overflow: hidden; }
+        .tab-btn { flex: 1; padding: 0.85rem 1.5rem; border: none; background: none; font-size: 0.875rem; font-weight: 500; color: #6b7280; cursor: pointer; transition: all 0.15s; border-bottom: 2px solid transparent; }
+        .tab-btn.active { color: #2563eb; background: #eff6ff; border-bottom: 2px solid #2563eb; }
+        .tab-btn:hover:not(.active) { background: #f9fafb; }
 
-{% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="http://localhost:5005/elections/{{ election_id }}/detail?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">{{ election_title }}</a></li>
-                <li class="breadcrumb-item active">Manage Voters</li>
-            </ol>
-        </nav>
+        /* Upload tab */
+        .drop-zone {
+            border: 2px dashed #d1d5db; border-radius: 12px; padding: 3rem 2rem;
+            text-align: center; cursor: pointer; transition: all 0.2s; background: #fafafa;
+        }
+        .drop-zone:hover, .drop-zone.drag-over { border-color: #2563eb; background: #eff6ff; }
+        .drop-zone .upload-icon { font-size: 2.5rem; color: #9ca3af; margin-bottom: 1rem; }
+        .drop-zone p { color: #6b7280; font-size: 0.875rem; margin: 0.5rem 0; }
+        .drop-zone .or { color: #9ca3af; font-size: 0.8rem; }
 
-        <h2 class="mb-4"><i class="bi bi-people"></i> Manage Voters</h2>
+        /* Voters table */
+        .voters-table th { font-size: 0.78rem; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #e8eaed; padding: 0.75rem 1rem; }
+        .voters-table td { font-size: 0.875rem; color: #374151; padding: 0.85rem 1rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+        .voters-table tr:last-child td { border-bottom: none; }
+        .badge-active { background: #dcfce7; color: #16a34a; font-size: 0.72rem; font-weight: 500; padding: 0.2rem 0.55rem; border-radius: 20px; }
+        .badge-inactive { background: #f3f4f6; color: #6b7280; font-size: 0.72rem; font-weight: 500; padding: 0.2rem 0.55rem; border-radius: 20px; }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="page-header">
+        <a href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}" class="back-link">
+            <i class="bi bi-chevron-left"></i> Back to Dashboard
+        </a>
+        <h1 class="page-title">Manage Voters for {{ election_title }}</h1>
+    </div>
 
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <h5 class="card-title">Upload Voter List (CSV)</h5>
-                        <p class="card-text small text-muted">
-                            Upload a CSV file with <strong>email</strong> and <strong>date_of_birth</strong> (YYYY-MM-DD) columns.
-                        </p>
-                        <form method="POST" action="/elections/{{ election_id }}/voters/upload/form" enctype="multipart/form-data">
-                            <div class="mb-3">
-                                <input type="file" class="form-control" name="file" accept=".csv" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-upload"></i> Upload CSV
-                            </button>
-                        </form>
-                    </div>
+    <div class="container-fluid p-4" style="max-width: 900px;">
+        {% if messages %}
+            {% for msg in messages %}
+                <div class="alert alert-{{ 'danger' if msg.category == 'error' else msg.category }} alert-dismissible fade show mb-3" role="alert">
+                    {{ msg.message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
-            </div>
+            {% endfor %}
+        {% endif %}
 
-            <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <h5 class="card-title">Generate Voting Tokens</h5>
-                        <p class="card-text small text-muted">
-                            Generate one-time voting tokens for all voters who don't have tokens yet.
-                        </p>
-                        <form method="POST" action="/elections/{{ election_id }}/tokens/generate/form"
-                              onsubmit="return confirm('Generate tokens for all voters without tokens?')">
-                            <button type="submit" class="btn btn-success">
-                                <i class="bi bi-key"></i> Generate Tokens
-                            </button>
-                        </form>
+        <!-- Tab bar -->
+        <div class="tab-bar mb-4">
+            <button class="tab-btn active" id="tab-upload" onclick="switchTab('upload')">Upload CSV</button>
+            <button class="tab-btn" id="tab-voters" onclick="switchTab('voters')">
+                View Voters ({{ voters|length }})
+            </button>
+        </div>
+
+        <!-- Upload CSV tab -->
+        <div id="panel-upload">
+            <div class="bg-white rounded-3 border border-light-subtle p-4">
+                <a href="/elections/{{ election_id }}/voters/csv-template"
+                   style="color:#2563eb;font-size:0.875rem;text-decoration:none;display:inline-flex;align-items:center;gap:0.3rem;margin-bottom:1.25rem;">
+                    <i class="bi bi-download"></i> Download CSV Template
+                </a>
+
+                <form method="POST" action="/elections/{{ election_id }}/voters/upload/form"
+                      enctype="multipart/form-data" id="uploadForm">
+                    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                        <div class="upload-icon"><i class="bi bi-upload"></i></div>
+                        <p class="fw-semibold" style="color:#1a1a2e;">Drag and drop your CSV file here</p>
+                        <p class="or">or</p>
+                        <button type="button" class="btn btn-primary px-4 py-2 mt-2"
+                                style="border-radius:8px;font-weight:600;"
+                                onclick="event.stopPropagation();document.getElementById('fileInput').click()">
+                            Browse Files
+                        </button>
+                        <p id="fileName" class="mt-2 text-muted" style="font-size:0.8rem;"></p>
                     </div>
-                </div>
+                    <input type="file" id="fileInput" name="file" accept=".csv" style="display:none;" onchange="handleFile(this)">
+                    <button type="submit" id="submitBtn" class="btn btn-success mt-3" style="display:none;border-radius:8px;">
+                        <i class="bi bi-upload"></i> Upload
+                    </button>
+                </form>
             </div>
         </div>
 
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <h5 class="card-title">Voter List ({{ voters|length }})</h5>
-                
+        <!-- View Voters tab -->
+        <div id="panel-voters" style="display:none;">
+            <div class="bg-white rounded-3 border border-light-subtle p-4">
+                <div class="d-flex gap-3 mb-4">
+                    <input type="text" id="searchInput" class="form-control"
+                           placeholder="Search by email or phone..."
+                           style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;"
+                           oninput="filterVoters()">
+                    <form method="POST" action="/elections/{{ election_id }}/tokens/generate/form"
+                          onsubmit="return confirm('Generate and email tokens to all voters without one?')">
+                        <button type="submit" class="btn btn-success text-nowrap"
+                                style="border-radius:8px;font-size:0.875rem;">
+                            <i class="bi bi-send"></i> Send Tokens to All
+                        </button>
+                    </form>
+                </div>
+
                 {% if voters %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Email</th>
-                                    <th>Date of Birth</th>
-                                    <th>Added</th>
-                                    <th>Token Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for voter in voters %}
-                                    <tr>
-                                        <td>{{ voter.email }}</td>
-                                        <td class="small">{{ voter.date_of_birth }}</td>
-                                        <td class="small text-muted">{{ voter.created_at[:19] }}</td>
-                                        <td>
-                                            {% if voter.has_token %}
-                                                <span class="badge bg-success">
-                                                    <i class="bi bi-check-circle"></i> Has Token
-                                                </span>
-                                            {% else %}
-                                                <span class="badge bg-warning">
-                                                    <i class="bi bi-exclamation-circle"></i> No Token
-                                                </span>
-                                            {% endif %}
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                <table class="voters-table w-100" id="votersTable">
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>Phone Number</th>
+                            <th>Status</th>
+                            <th>Token Sent?</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for voter in voters %}
+                        <tr>
+                            <td>{{ voter.email }}</td>
+                            <td style="color:#9ca3af;">{{ voter.phone_number or '—' }}</td>
+                            <td>
+                                {% if voter.has_token %}
+                                    <span class="badge-active">Active</span>
+                                {% else %}
+                                    <span class="badge-inactive">No Token</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if voter.has_token %}
+                                    <i class="bi bi-check-lg" style="color:#16a34a;font-size:1rem;"></i>
+                                {% else %}
+                                    <i class="bi bi-x-lg" style="color:#9ca3af;font-size:0.9rem;"></i>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
                 {% else %}
-                    <div class="alert alert-info mb-0">
-                        <i class="bi bi-info-circle"></i> 
-                        No voters added yet. Upload a CSV file to add voters.
-                    </div>
+                <div class="text-center py-5">
+                    <i class="bi bi-people" style="font-size:2.5rem;color:#d1d5db;"></i>
+                    <p class="text-muted mt-3 mb-0" style="font-size:0.875rem;">No voters yet. Upload a CSV to add voters.</p>
+                </div>
                 {% endif %}
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function switchTab(tab) {
+            document.getElementById('panel-upload').style.display = tab === 'upload' ? 'block' : 'none';
+            document.getElementById('panel-voters').style.display = tab === 'voters' ? 'block' : 'none';
+            document.getElementById('tab-upload').className = 'tab-btn' + (tab === 'upload' ? ' active' : '');
+            document.getElementById('tab-voters').className = 'tab-btn' + (tab === 'voters' ? ' active' : '');
+        }
+
+        function handleFile(input) {
+            if (input.files[0]) {
+                document.getElementById('fileName').textContent = input.files[0].name;
+                document.getElementById('submitBtn').style.display = 'inline-block';
+            }
+        }
+
+        // Drag and drop
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault(); dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files[0]) {
+                fileInput.files = e.dataTransfer.files;
+                handleFile(fileInput);
+            }
+        });
+
+        function filterVoters() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            document.querySelectorAll('#votersTable tbody tr').forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        }
+
+        // If redirected back after upload failure, stay on upload tab (default)
+        // If there are voters and no message, could default to voters tab — keep upload as default
+    </script>
+</body>
+</html>

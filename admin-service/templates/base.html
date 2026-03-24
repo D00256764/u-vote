@@ -21,10 +21,10 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="http://localhost:8082/dashboard">Dashboard</a>
+                        <a class="nav-link" href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="http://localhost:8080/logout">Logout</a>
+                        <a class="nav-link" href="http://localhost:8082/logout">Logout</a>
                     </li>
                 </ul>
             </div>

@@ -1,61 +1,67 @@
 {% extends "base.html" %}
 
-{% block title %}Vote — {{ election.title }}{% endblock %}
+{% block title %}Cast Your Vote — {{ election.title }}{% endblock %}
+
+{% block head %}
+<style>
+    .vote-card { background: #fff; border-radius: 16px; padding: 2rem; box-shadow: 0 4px 24px rgba(0,0,0,0.07); }
+    .verified-badge { display: inline-flex; align-items: center; gap: 0.4rem; background: #dcfce7; color: #15803d; border-radius: 20px; padding: 0.25rem 0.75rem; font-size: 0.78rem; font-weight: 600; margin-bottom: 1rem; }
+    .option-label {
+        display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 1rem;
+        border: 2px solid #e5e7eb; border-radius: 10px; cursor: pointer;
+        transition: all 0.15s; font-size: 0.9rem; font-weight: 500; color: #1a1a2e; margin-bottom: 0.6rem;
+    }
+    .option-label:hover { border-color: #2563eb; background: #eff6ff; }
+    .option-radio { display: none; }
+    .option-radio:checked + .option-label { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
+    .option-dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d1d5db; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .option-radio:checked + .option-label .option-dot { border-color: #2563eb; background: #2563eb; }
+    .option-radio:checked + .option-label .option-dot::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: white; display: block; }
+    .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 0.875rem 1rem; font-size: 0.825rem; color: #1e40af; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row mt-5">
-    <div class="col-lg-6 mx-auto">
-        <div class="card shadow">
-            <div class="card-body p-4">
-                <div class="text-center mb-4">
-                    <i class="bi bi-check-circle-fill text-success" style="font-size: 2rem;"></i>
-                    <span class="badge bg-success ms-2">Identity Verified</span>
-                    <h3 class="mt-3">{{ election.title }}</h3>
-                    {% if election.description %}
-                        <p class="text-muted">{{ election.description }}</p>
-                    {% endif %}
-                </div>
-
-                <div class="alert alert-info">
-                    <i class="bi bi-info-circle"></i>
-                    <strong>Important:</strong> Your vote is anonymous and encrypted.
-                    Once submitted, it cannot be changed or linked to your identity.
-                </div>
-
-                <form method="POST" action="/vote/submit" id="voteForm">
-                    <input type="hidden" name="ballot_token" value="{{ ballot_token }}">
-                    <input type="hidden" name="election_id" value="{{ election.id }}">
-
-                    <div class="mb-4">
-                        <label class="form-label fw-bold">Select your choice:</label>
-                        {% for option in options %}
-                            <div class="form-check mb-3 p-3 border rounded">
-                                <input class="form-check-input" type="radio"
-                                       name="option_id" id="option{{ option.id }}"
-                                       value="{{ option.id }}" required>
-                                <label class="form-check-label w-100" for="option{{ option.id }}">
-                                    <strong>{{ option.text }}</strong>
-                                </label>
-                            </div>
-                        {% endfor %}
-                    </div>
-
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-primary btn-lg"
-                                onclick="return confirm('Are you sure? Your vote cannot be changed.')">
-                            <i class="bi bi-check-circle"></i> Cast Vote
-                        </button>
-                    </div>
-                </form>
-
-                <div class="text-center mt-3">
-                    <small class="text-muted">
-                        <i class="bi bi-shield-check"></i>
-                        Your vote is encrypted with pgp_sym_encrypt and stored anonymously
-                    </small>
-                </div>
-            </div>
+<div class="vote-card">
+    <div class="text-center mb-4">
+        <div class="verified-badge">
+            <i class="bi bi-check-circle-fill"></i> Identity Verified
         </div>
+        <h2 style="font-weight:700;color:#1a1a2e;font-size:1.4rem;margin-bottom:0.4rem;">{{ election.title }}</h2>
+        {% if election.description %}
+            <p style="color:#6b7280;font-size:0.875rem;margin:0;">{{ election.description }}</p>
+        {% endif %}
     </div>
+
+    <div class="info-box mb-4">
+        <i class="bi bi-shield-fill-check me-1"></i>
+        <strong>Anonymous &amp; Encrypted.</strong> Your vote cannot be linked to your identity once cast.
+    </div>
+
+    <form method="POST" action="/vote/submit" id="voteForm">
+        <input type="hidden" name="ballot_token" value="{{ ballot_token }}">
+        <input type="hidden" name="election_id" value="{{ election.id }}">
+
+        <p style="font-size:0.875rem;font-weight:600;color:#374151;margin-bottom:0.875rem;">Select your choice:</p>
+
+        {% for option in options %}
+            <input class="option-radio" type="radio"
+                   name="option_id" id="option{{ option.id }}"
+                   value="{{ option.id }}" required>
+            <label class="option-label" for="option{{ option.id }}">
+                <span class="option-dot"></span>
+                {{ option.text }}
+            </label>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary w-100 mt-3" style="border-radius:8px;padding:0.65rem;font-weight:600;font-size:0.875rem;"
+                onclick="return confirm('Are you sure? Your vote cannot be changed.')">
+            <i class="bi bi-check-circle me-1"></i> Cast My Vote
+        </button>
+    </form>
+
+    <p class="text-center mt-3 mb-0" style="font-size:0.75rem;color:#9ca3af;">
+        <i class="bi bi-lock me-1"></i> Your vote is encrypted and stored anonymously
+    </p>
 </div>
 {% endblock %}

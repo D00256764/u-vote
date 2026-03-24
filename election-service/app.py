@@ -368,10 +368,22 @@ async def dashboard_page(request: Request):
 
     organiser_id = request.session["organiser_id"]
     async with Database.connection() as conn:
+        organiser = await conn.fetchrow(
+            "SELECT email FROM organisers WHERE id = $1", organiser_id
+        )
+        if organiser:
+            request.session["organiser_email"] = organiser["email"]
+
         rows = await conn.fetch(
             """
-            SELECT id, title, description, status, created_at, opened_at, closed_at
-            FROM elections WHERE organiser_id = $1 ORDER BY created_at DESC
+            SELECT e.id, e.title, e.description, e.status, e.created_at,
+                   e.opened_at, e.closed_at,
+                   COUNT(v.id) AS voter_count
+            FROM elections e
+            LEFT JOIN voters v ON v.election_id = e.id
+            WHERE e.organiser_id = $1
+            GROUP BY e.id
+            ORDER BY e.created_at DESC
             """,
             organiser_id,
         )
@@ -382,6 +394,7 @@ async def dashboard_page(request: Request):
             "status": r["status"], "created_at": r["created_at"].isoformat(),
             "opened_at": r["opened_at"].isoformat() if r["opened_at"] else None,
             "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
+            "voter_count": r["voter_count"],
         }
         for r in rows
     ]

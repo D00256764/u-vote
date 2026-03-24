@@ -1,109 +1,117 @@
 {% extends "base.html" %}
 
-{% block title %}Results - {{ election.title }}{% endblock %}
+{% block title %}Results — {{ election.title }}{% endblock %}
+{% block page_title %}Election Results{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a></li>
-                <li class="breadcrumb-item"><a href="http://localhost:5005/elections/{{ election.id }}/detail?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">{{ election.title }}</a></li>
-                <li class="breadcrumb-item active">Results</li>
-            </ol>
-        </nav>
+<style>
+    .stat-card { background: #fff; border: 1px solid #e8eaed; border-radius: 12px; padding: 1.25rem 1.5rem; text-align: center; }
+    .stat-value { font-size: 1.75rem; font-weight: 800; color: #1a1a2e; line-height: 1; margin-bottom: 0.25rem; }
+    .stat-label { font-size: 0.78rem; color: #9ca3af; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+    .result-row { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 0.625rem; }
+    .result-row.winner { border-color: #bfdbfe; background: #eff6ff; }
+    .progress-bar-track { background: #e8eaed; border-radius: 99px; height: 8px; margin-top: 0.5rem; overflow: hidden; }
+    .progress-bar-fill { height: 8px; border-radius: 99px; background: #2563eb; transition: width 0.6s ease; }
+    .result-row.winner .progress-bar-fill { background: #16a34a; }
+    .winner-badge { display: inline-flex; align-items: center; gap: 0.3rem; background: #dcfce7; color: #15803d; border-radius: 20px; padding: 0.2rem 0.6rem; font-size: 0.72rem; font-weight: 600; }
+    .info-card { background: #fff; border: 1px solid #e8eaed; border-radius: 12px; padding: 1.25rem 1.5rem; }
+    .section-label { font-size: 0.7rem; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.875rem; }
+</style>
 
-        <h2 class="mb-4"><i class="bi bi-bar-chart"></i> Election Results</h2>
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="fw-bold mb-1" style="color:#1a1a2e;">{{ election.title }}</h4>
+        <p class="mb-0" style="font-size:0.825rem;color:#9ca3af;">
+            <i class="bi bi-lock me-1"></i> Closed {{ election.closed_at[:10] if election.closed_at else '' }}
+        </p>
+    </div>
+    <a href="http://localhost:5005/dashboard?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+       class="btn btn-outline-secondary btn-sm" style="border-radius:8px;font-size:0.825rem;">
+        <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
+    </a>
+</div>
 
-        <div class="row mb-4">
-            <div class="col-md-8">
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <h4 class="card-title">{{ election.title }}</h4>
-                        <p class="text-muted">
-                            <i class="bi bi-lock"></i>
-                            Closed: {{ election.closed_at }}
-                        </p>
-
-                        <div class="mb-4">
-                            <div class="row">
-                                <div class="col-md-4">
-                                    <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ summary.total_votes }}</h5>
-                                        <small class="text-muted">Total Votes</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ summary.total_voters }}</h5>
-                                        <small class="text-muted">Eligible Voters</small>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="text-center p-3 bg-light rounded">
-                                        <h5 class="mb-0">{{ summary.turnout_percentage }}%</h5>
-                                        <small class="text-muted">Turnout</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <h5 class="mb-3">Vote Distribution</h5>
-                        {% for result in results %}
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <strong>{{ result.option_text }}</strong>
-                                    <span class="badge bg-primary">{{ result.vote_count }} votes ({{ result.percentage }}%)</span>
-                                </div>
-                                <div class="progress" style="height: 30px;">
-                                    <div class="progress-bar" role="progressbar"
-                                         style="width: {{ result.percentage }}%"
-                                         aria-valuenow="{{ result.percentage }}"
-                                         aria-valuemin="0" aria-valuemax="100">
-                                        {{ result.percentage }}%
-                                    </div>
-                                </div>
-                            </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="card shadow-sm mb-3">
-                    <div class="card-body">
-                        <h5 class="card-title">Winner</h5>
-                        {% if results %}
-                            {% set winner = results[0] %}
-                            <div class="text-center p-3 bg-success bg-opacity-10 rounded">
-                                <i class="bi bi-trophy-fill text-success" style="font-size: 2rem;"></i>
-                                <h4 class="mt-2 mb-0">{{ winner.option_text }}</h4>
-                                <p class="mb-0 mt-2">
-                                    <span class="badge bg-success">{{ winner.vote_count }} votes</span>
-                                </p>
-                            </div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <h5 class="card-title">Security</h5>
-                        <ul class="list-unstyled small mb-0">
-                            <li><i class="bi bi-check-circle text-success"></i> Anonymous voting</li>
-                            <li><i class="bi bi-check-circle text-success"></i> Immutable vote records</li>
-                            <li><i class="bi bi-check-circle text-success"></i> Cryptographic hashing</li>
-                            <li><i class="bi bi-check-circle text-success"></i> One vote per token</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+<!-- Summary stats -->
+<div class="row g-3 mb-4">
+    <div class="col-4">
+        <div class="stat-card">
+            <div class="stat-value">{{ summary.total_votes }}</div>
+            <div class="stat-label">Total Votes</div>
         </div>
+    </div>
+    <div class="col-4">
+        <div class="stat-card">
+            <div class="stat-value">{{ summary.total_voters }}</div>
+            <div class="stat-label">Eligible Voters</div>
+        </div>
+    </div>
+    <div class="col-4">
+        <div class="stat-card">
+            <div class="stat-value">{{ summary.turnout_percentage }}%</div>
+            <div class="stat-label">Turnout</div>
+        </div>
+    </div>
+</div>
 
-        <div class="text-center">
-            <a href="http://localhost:5005/elections/{{ election.id }}/detail?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}" class="btn btn-secondary">
-                <i class="bi bi-arrow-left"></i> Back to Election
-            </a>
+<div class="row g-3">
+    <!-- Vote distribution -->
+    <div class="col-lg-8">
+        <div class="info-card">
+            <div class="section-label">Vote Distribution</div>
+
+            {% for result in results %}
+                <div class="result-row {% if loop.first %}winner{% endif %}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div style="font-size:0.9rem;font-weight:600;color:#1a1a2e;">
+                            {{ result.option_text }}
+                            {% if loop.first %}
+                                <span class="winner-badge ms-2"><i class="bi bi-trophy-fill"></i> Winner</span>
+                            {% endif %}
+                        </div>
+                        <div style="font-size:0.825rem;color:#6b7280;white-space:nowrap;">
+                            {{ result.vote_count }} votes &middot; <strong>{{ result.percentage }}%</strong>
+                        </div>
+                    </div>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" style="width:{{ result.percentage }}%;"></div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Sidebar info -->
+    <div class="col-lg-4">
+        <!-- Winner card -->
+        {% if results %}
+        <div class="info-card mb-3 text-center">
+            <div class="section-label">Winner</div>
+            <div style="width:56px;height:56px;background:#dcfce7;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 0.75rem;">
+                <i class="bi bi-trophy-fill" style="color:#16a34a;font-size:1.4rem;"></i>
+            </div>
+            <div style="font-weight:700;font-size:1rem;color:#1a1a2e;margin-bottom:0.25rem;">{{ results[0].option_text }}</div>
+            <div style="font-size:0.825rem;color:#6b7280;">{{ results[0].vote_count }} votes ({{ results[0].percentage }}%)</div>
+        </div>
+        {% endif %}
+
+        <!-- Security assurances -->
+        <div class="info-card">
+            <div class="section-label">Integrity</div>
+            <ul class="list-unstyled mb-0" style="font-size:0.825rem;color:#374151;">
+                <li style="padding:0.3rem 0;display:flex;align-items:center;gap:0.5rem;">
+                    <i class="bi bi-check-circle-fill" style="color:#16a34a;"></i> Anonymous voting
+                </li>
+                <li style="padding:0.3rem 0;display:flex;align-items:center;gap:0.5rem;">
+                    <i class="bi bi-check-circle-fill" style="color:#16a34a;"></i> Immutable vote records
+                </li>
+                <li style="padding:0.3rem 0;display:flex;align-items:center;gap:0.5rem;">
+                    <i class="bi bi-check-circle-fill" style="color:#16a34a;"></i> Cryptographic hash chain
+                </li>
+                <li style="padding:0.3rem 0;display:flex;align-items:center;gap:0.5rem;">
+                    <i class="bi bi-check-circle-fill" style="color:#16a34a;"></i> One vote per token
+                </li>
+            </ul>
         </div>
     </div>
 </div>
