@@ -1,0 +1,53 @@
+# =============================================================================
+# U-Vote Kibana Configuration
+# Connects to Elasticsearch in the monitoring namespace via HTTPS.
+# Security is enabled on ES (xpack.security default-on in 8.x).
+#
+# The Kibana Helm chart (8.x) automatically creates a Kibana service account
+# token, stores it in the kibana-kibana-es-token Secret, and injects it as
+# ELASTICSEARCH_SERVICEACCOUNTTOKEN — no manual token management required.
+#
+# Access Kibana via:
+#   kubectl port-forward -n monitoring svc/kibana-kibana 5601:5601
+#   http://localhost:5601
+# =============================================================================
+
+elasticsearchHosts: "https://elasticsearch-master:9200"
+
+kibanaConfig:
+  kibana.yml: |
+    elasticsearch.ssl.verificationMode: "none"
+    server.host: "0.0.0.0"
+    server.publicBaseUrl: "http://localhost:5601"
+    xpack.encryptedSavedObjects.encryptionKey: "uvote-kibana-dev-key-32-chars-ok"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+# Single replica for Kind development
+replicas: 1
+
+# Service for port-forwarding
+service:
+  type: ClusterIP
+  port: 5601
+
+# Reduce startup time for Kind
+readinessProbe:
+  failureThreshold: 20
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 5
+
+# No anti-affinity needed on single-worker-node setup
+antiAffinity: "soft"
+
+# Pod disruption budget — disable for single replica
+podDisruptionBudget:
+  enabled: false

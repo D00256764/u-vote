@@ -595,6 +595,127 @@ class PlatformDeployer:
             return False
 
     # -----------------------------------------------------------------------
+    # Kibana Service Account Token
+    # -----------------------------------------------------------------------
+    def create_kibana_service_token(self) -> bool:
+        """Generate a fresh Elasticsearch service account token for Kibana.
+
+        Deletes any existing token, creates a new one inside the
+        elasticsearch-master-0 pod, then stores it in the
+        kibana-service-account-token Secret in the monitoring namespace.
+
+        Safe to call on every deploy — the delete/create cycle is idempotent.
+        The token value is never written to any file; it lives only in the
+        cluster Secret and is injected into Kibana via extraEnvs.
+
+        Returns True on success, False on failure (non-fatal — caller decides
+        whether to abort the overall deploy).
+        """
+        monitoring_ns = "monitoring"
+        es_pod = "elasticsearch-master-0"
+        secret_name = "kibana-service-account-token"
+
+        # Step 1: Confirm Elasticsearch is ready before exec-ing into it
+        self.logger.info("Checking Elasticsearch pod readiness for token creation...")
+        rc, _, _ = self.run_cmd(
+            [
+                "kubectl", "wait", f"pod/{es_pod}",
+                "-n", monitoring_ns,
+                "--for=condition=Ready",
+                "--timeout=60s",
+            ],
+            check=False,
+            timeout=90,
+        )
+        if rc != 0:
+            self.logger.warning(
+                f"⚠ Elasticsearch pod {es_pod} not ready — skipping Kibana token creation"
+            )
+            return False
+
+        # Step 2: Delete any existing token (idempotent — safe on first run)
+        self.logger.info("Removing existing Kibana service account token (if present)...")
+        self.run_cmd(
+            [
+                "kubectl", "exec", "-n", monitoring_ns, es_pod, "--",
+                "elasticsearch-service-tokens", "delete",
+                "elastic/kibana", "uvote-kibana-token",
+            ],
+            check=False,
+            timeout=30,
+            mutating=True,
+        )
+
+        # Step 3: Create a fresh token and capture stdout
+        self.logger.info("Creating fresh Kibana service account token...")
+        rc, token_out, err = self.run_cmd(
+            [
+                "kubectl", "exec", "-n", monitoring_ns, es_pod, "--",
+                "elasticsearch-service-tokens", "create",
+                "elastic/kibana", "uvote-kibana-token",
+            ],
+            check=False,
+            timeout=30,
+            mutating=True,
+        )
+        if rc != 0:
+            self.logger.error(
+                f"✗ Failed to create Kibana service account token: {err.strip()}"
+            )
+            return False
+
+        # Parse: "SERVICE_TOKEN elastic/kibana/uvote-kibana-token = <token>"
+        token_value = None
+        for line in token_out.splitlines():
+            if line.strip().startswith("SERVICE_TOKEN"):
+                parts = line.split("= ", 1)
+                if len(parts) == 2:
+                    token_value = parts[1].strip()
+                    break
+
+        if not token_value:
+            self.logger.error(
+                "✗ Could not parse token from elasticsearch-service-tokens output"
+            )
+            return False
+
+        # Step 4: Store token in Kubernetes Secret (idempotent via dry-run | apply)
+        self.logger.info(f"Storing Kibana token in Secret '{secret_name}' (monitoring)...")
+        rc, yaml_out, err = self.run_cmd(
+            [
+                "kubectl", "create", "secret", "generic", secret_name,
+                f"--from-literal=token={token_value}",
+                "--namespace", monitoring_ns,
+                "--dry-run=client", "-o", "yaml",
+            ],
+            check=False,
+        )
+        if rc != 0:
+            self.logger.error(f"✗ Failed to render Secret YAML: {err.strip()}")
+            return False
+
+        if self.dry_run:
+            self.logger.info(f"  [DRY-RUN] kubectl apply -f - ({secret_name})")
+        else:
+            proc = subprocess.run(
+                ["kubectl", "apply", "-f", "-"],
+                input=yaml_out,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                self.logger.error(
+                    f"✗ Failed to apply Secret '{secret_name}': {proc.stderr.strip()}"
+                )
+                return False
+
+        self.logger.success(
+            f"✓ Secret '{secret_name}' created/updated in namespace '{monitoring_ns}'"
+        )
+        return True
+
+    # -----------------------------------------------------------------------
     # Phase 5: Deploy Services
     # -----------------------------------------------------------------------
     def phase5_deploy_services(self, services: List[str]) -> bool:
@@ -1248,6 +1369,12 @@ class PlatformDeployer:
         if not self.phase4_manage_secrets():
             self.logger.error("Secret management failed. Aborting.")
             return False
+
+        # Kibana service account token — runs after secrets on every deploy.
+        # Requires Elasticsearch to be running in the monitoring namespace.
+        # If Elasticsearch is not yet up, logs a warning and continues — the
+        # main uvote-dev deploy is not blocked by the monitoring stack.
+        self.create_kibana_service_token()
 
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
