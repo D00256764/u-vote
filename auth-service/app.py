@@ -49,7 +49,7 @@ from security import (
 )
 from schemas import (
     RegisterRequest, LoginRequest, TokenVerifyRequest,
-    AuthResponse, TokenVerifyResponse, BallotTokenResponse,
+    AuthResponse, TokenVerifyResponse, TokenValidateResponse, BallotTokenResponse,
     HealthResponse, ErrorResponse,
 )
 
@@ -158,7 +158,7 @@ async def verify_token(request: Request, data: TokenVerifyRequest):
 # Voting-token validation  (was in voter-service)
 # ==========================================================================
 
-@app.get("/tokens/{token}/validate", response_model=TokenVerifyResponse)
+@app.get("/tokens/{token}/validate", response_model=TokenValidateResponse)
 async def validate_voting_token(request: Request, token: str):
     """Validate an identity-linked voting token (from the voter's email)."""
     logger.info('Request received: %s %s', request.method, request.url.path)
