@@ -7,6 +7,9 @@
 # Services emit pure JSON stdout (python-json-logger + --no-access-log).
 # Elasticsearch is running with HTTPS enforced; TLS verify is Off
 # (self-signed cert acceptable for local Kind development).
+#
+# The elastic password is never hardcoded — it is read at runtime from the
+# elasticsearch-master-credentials Secret via the ES_PASSWORD env var.
 # =============================================================================
 
 image:
@@ -21,6 +24,14 @@ resources:
   limits:
     cpu: 200m
     memory: 128Mi
+
+# Inject elastic password from the auto-generated ES credentials Secret
+env:
+  - name: ES_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: elasticsearch-master-credentials
+        key: password
 
 # Mount host log directory so Fluent Bit can tail container logs
 volumeMounts:
@@ -75,7 +86,7 @@ config:
         Port            9200
         Index           uvote-logs
         HTTP_User       elastic
-        HTTP_Passwd     CF3e43dbHOTMvR8t
+        HTTP_Passwd     ${ES_PASSWORD}
         tls             On
         tls.verify      Off
         Suppress_Type_Name On
