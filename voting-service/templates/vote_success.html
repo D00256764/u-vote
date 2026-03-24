@@ -1,45 +1,54 @@
 {% extends "base.html" %}
 
-{% block title %}Vote Submitted — Secure Voting System{% endblock %}
+{% block title %}Vote Submitted Successfully{% endblock %}
+
+{% block head %}
+<style>
+    .success-card { background: #fff; border-radius: 16px; padding: 2.5rem 2rem; box-shadow: 0 4px 24px rgba(0,0,0,0.07); text-align: center; }
+    .success-icon { width: 72px; height: 72px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; }
+    .receipt-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; text-align: left; margin: 1.25rem 0; }
+    .receipt-label { font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
+    .receipt-value { font-family: monospace; font-size: 0.78rem; color: #1a1a2e; word-break: break-all; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.5rem 0.75rem; }
+    .what-next { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1rem; text-align: left; font-size: 0.825rem; }
+    .what-next li { padding: 0.2rem 0; color: #15803d; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row mt-5">
-    <div class="col-lg-6 mx-auto">
-        <div class="card shadow text-center">
-            <div class="card-body p-5">
-                <i class="bi bi-check-circle-fill text-success" style="font-size: 5rem;"></i>
-                <h2 class="mt-4 mb-3">Vote Successfully Cast!</h2>
-                <p class="lead mb-4">Your vote has been encrypted and securely recorded.</p>
+<div class="success-card">
+    <div class="success-icon">
+        <i class="bi bi-check-lg" style="color:#16a34a;font-size:2rem;"></i>
+    </div>
+    <h2 style="font-weight:700;color:#1a1a2e;font-size:1.4rem;margin-bottom:0.5rem;">Vote Submitted!</h2>
+    <p style="color:#6b7280;font-size:0.875rem;margin-bottom:1.5rem;">Your vote has been encrypted and securely recorded.</p>
 
-                <div class="alert alert-secondary">
-                    <h6 class="mb-2"><i class="bi bi-receipt"></i> Vote Receipt Token</h6>
-                    <code class="text-break d-block mb-2" style="font-size: 0.85rem;">{{ receipt_token }}</code>
-                    <hr>
-                    <h6 class="mb-2"><i class="bi bi-hash"></i> Ballot Hash</h6>
-                    <code class="text-break d-block">{{ ballot_hash }}</code>
-                    <p class="small mt-2 mb-0">
-                        Save these for your records. The receipt token lets you verify
-                        your encrypted ballot was included in the final tally.
-                    </p>
-                </div>
-
-                <div class="mt-4">
-                    <a href="/vote/verify/{{ receipt_token }}" class="btn btn-outline-primary">
-                        <i class="bi bi-search"></i> Verify My Vote Now
-                    </a>
-                </div>
-
-                <div class="mt-4">
-                    <h6>What happens next?</h6>
-                    <ul class="list-unstyled">
-                        <li><i class="bi bi-lock text-success"></i> Your vote is encrypted with a per-election key</li>
-                        <li><i class="bi bi-eye-slash text-success"></i> It cannot be linked to your identity</li>
-                        <li><i class="bi bi-link-45deg text-success"></i> It is part of an immutable hash chain</li>
-                        <li><i class="bi bi-bar-chart text-success"></i> Results will be available after the election closes</li>
-                    </ul>
-                </div>
-            </div>
+    <div class="receipt-box">
+        <div class="mb-3">
+            <div class="receipt-label"><i class="bi bi-receipt me-1"></i>Vote Receipt Token</div>
+            <div class="receipt-value">{{ receipt_token }}</div>
         </div>
+        <hr style="border-color:#e5e7eb;margin:0.75rem 0;">
+        <div>
+            <div class="receipt-label"><i class="bi bi-hash me-1"></i>Ballot Hash</div>
+            <div class="receipt-value">{{ ballot_hash }}</div>
+        </div>
+        <p style="font-size:0.775rem;color:#6b7280;margin-top:0.75rem;margin-bottom:0;">
+            Save these for your records — use the receipt token to verify your vote was counted.
+        </p>
+    </div>
+
+    <a href="/vote/verify/{{ receipt_token }}" class="btn btn-outline-primary w-100 mb-3" style="border-radius:8px;font-size:0.875rem;font-weight:500;">
+        <i class="bi bi-search me-1"></i> Verify My Vote
+    </a>
+
+    <div class="what-next">
+        <p style="font-weight:600;color:#1a1a2e;font-size:0.825rem;margin-bottom:0.5rem;">What happens next?</p>
+        <ul class="list-unstyled mb-0">
+            <li><i class="bi bi-lock-fill me-2"></i>Your vote is encrypted with a per-election key</li>
+            <li><i class="bi bi-eye-slash-fill me-2"></i>It cannot be linked back to your identity</li>
+            <li><i class="bi bi-link-45deg me-2"></i>It is part of an immutable hash chain</li>
+            <li><i class="bi bi-bar-chart-fill me-2"></i>Results available after the election closes</li>
+        </ul>
     </div>
 </div>
 {% endblock %}

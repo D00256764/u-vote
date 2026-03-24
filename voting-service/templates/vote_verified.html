@@ -1,46 +1,54 @@
 {% extends "base.html" %}
 
-{% block title %}Receipt Verified — Secure Voting System{% endblock %}
+{% block title %}Receipt Verified{% endblock %}
+
+{% block head %}
+<style>
+    .verified-card { background: #fff; border-radius: 16px; padding: 2.5rem 2rem; box-shadow: 0 4px 24px rgba(0,0,0,0.07); text-align: center; }
+    .verified-icon { width: 72px; height: 72px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; }
+    .election-badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border-radius: 20px; padding: 0.3rem 1rem; font-size: 0.8rem; font-weight: 600; margin-bottom: 1.25rem; }
+    .receipt-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; text-align: left; }
+    .receipt-row { margin-bottom: 0.875rem; }
+    .receipt-row:last-child { margin-bottom: 0; }
+    .receipt-label { font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.4rem; }
+    .receipt-value { font-family: monospace; font-size: 0.78rem; color: #1a1a2e; word-break: break-all; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.4rem 0.65rem; }
+    .integrity-note { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 0.875rem 1rem; font-size: 0.8rem; color: #15803d; text-align: left; margin-top: 1.25rem; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row mt-5">
-    <div class="col-lg-6 mx-auto">
-        <div class="card shadow text-center">
-            <div class="card-body p-5">
-                <i class="bi bi-patch-check-fill text-success" style="font-size: 5rem;"></i>
-                <h2 class="mt-4 mb-3">Vote Receipt Verified</h2>
-                <p class="lead mb-4">Your encrypted ballot is confirmed in the system.</p>
+<div class="verified-card">
+    <div class="verified-icon">
+        <i class="bi bi-patch-check-fill" style="color:#16a34a;font-size:1.75rem;"></i>
+    </div>
+    <h2 style="font-weight:700;color:#1a1a2e;font-size:1.4rem;margin-bottom:0.5rem;">Vote Receipt Verified</h2>
+    <p style="color:#6b7280;font-size:0.875rem;margin-bottom:1rem;">Your encrypted ballot is confirmed in the system.</p>
 
-                <div class="alert alert-success">
-                    <h6 class="mb-1">Election</h6>
-                    <strong>{{ election_title }}</strong>
-                </div>
+    <div class="election-badge">
+        <i class="bi bi-card-checklist me-1"></i>{{ election_title }}
+    </div>
 
-                <div class="alert alert-secondary text-start">
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-receipt"></i> Receipt Token</h6>
-                        <code class="text-break" style="font-size: 0.8rem;">{{ receipt_token }}</code>
-                    </div>
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-hash"></i> Ballot Hash</h6>
-                        <code class="text-break" style="font-size: 0.8rem;">{{ ballot_hash }}</code>
-                    </div>
-                    <div>
-                        <h6 class="mb-1"><i class="bi bi-clock"></i> Cast At</h6>
-                        <span>{{ cast_at }}</span>
-                    </div>
-                </div>
-
-                <div class="mt-4">
-                    <p class="text-muted small">
-                        <i class="bi bi-info-circle"></i>
-                        This confirms your ballot was recorded. The ballot hash is part
-                        of an immutable hash chain — any tampering would break the chain
-                        and be detected during tallying.
-                    </p>
-                </div>
-            </div>
+    <div class="receipt-box">
+        <div class="receipt-row">
+            <div class="receipt-label"><i class="bi bi-receipt"></i> Receipt Token</div>
+            <div class="receipt-value">{{ receipt_token }}</div>
         </div>
+        <hr style="border-color:#e5e7eb;margin:0.75rem 0;">
+        <div class="receipt-row">
+            <div class="receipt-label"><i class="bi bi-hash"></i> Ballot Hash</div>
+            <div class="receipt-value">{{ ballot_hash }}</div>
+        </div>
+        <hr style="border-color:#e5e7eb;margin:0.75rem 0;">
+        <div class="receipt-row">
+            <div class="receipt-label"><i class="bi bi-clock"></i> Cast At</div>
+            <div style="font-size:0.875rem;color:#374151;">{{ cast_at }}</div>
+        </div>
+    </div>
+
+    <div class="integrity-note">
+        <i class="bi bi-info-circle me-1"></i>
+        The ballot hash is part of an immutable hash chain — any tampering would break the chain
+        and be detected during tallying.
     </div>
 </div>
 {% endblock %}

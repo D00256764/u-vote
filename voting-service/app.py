@@ -137,8 +137,8 @@ async def verify_receipt(request: Request, receipt_token: str):
 # ==========================================================================
 # VOTER-FACING WEB PAGES - the complete voting journey
 #
-#   GET  /vote/{token}           -> validate token -> show identity form
-#   POST /vote/verify-identity   -> verify DOB via auth-service -> get ballot token -> show ballot
+#   GET  /vote/{token}           -> validate token -> auto-send OTP -> show OTP entry form
+#   POST /vote/verify-identity   -> verify OTP via auth-service -> get ballot token -> show ballot
 #   POST /vote/submit            -> encrypt vote -> store in encrypted_ballots -> show receipt
 #   GET  /vote/verify/{receipt}  -> verify receipt page
 # ==========================================================================
@@ -174,6 +174,12 @@ async def vote_landing(request: Request, token: str):
         election_id = safe_json(resp).get("election_id")
         return await _acquire_ballot_and_show(request, token, election_id)
 
+    # Auto-send OTP to voter's registered phone
+    try:
+        await http_client.post(f"{AUTH_SERVICE}/mfa/send-otp", params={"token": token})
+    except httpx.RequestError as e:
+        logger.error('Could not auto-send OTP: %s', e)
+
     return templates.TemplateResponse("verify_identity.html", {
         "request": request, "token": token, "messages": [],
     })
@@ -181,15 +187,15 @@ async def vote_landing(request: Request, token: str):
 
 @app.post("/vote/verify-identity", response_class=HTMLResponse)
 async def verify_identity(request: Request, token: str = Form(...),
-                          date_of_birth: str = Form(...)):
-    """Step 2 - Verify DOB via auth-service, acquire ballot token, show ballot."""
+                          otp: str = Form(...)):
+    """Step 2 - Verify OTP via auth-service, acquire ballot token, show ballot."""
     logger.info('Request received: %s %s', request.method, request.url.path)
 
-    # Verify identity via auth-service
+    # Verify OTP via auth-service
     try:
         verify_resp = await http_client.post(
             f"{AUTH_SERVICE}/mfa/verify",
-            params={"token": token, "date_of_birth": date_of_birth},
+            params={"token": token, "otp": otp},
         )
     except httpx.RequestError as e:
         logger.error('External service call failed: %s %s — %s',

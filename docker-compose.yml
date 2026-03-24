@@ -33,6 +33,9 @@ services:
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
     ports:
       - "5001:5001"
     depends_on:
@@ -53,6 +56,7 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
@@ -108,6 +112,7 @@ services:
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
       ELECTION_SERVICE_URL: http://localhost:5005
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
     ports:
       - "5004:5004"
     depends_on:
@@ -128,6 +133,7 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
     ports:
       - "5005:5005"
     depends_on:
