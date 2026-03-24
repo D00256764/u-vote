@@ -1442,10 +1442,12 @@ def main(cluster_name, namespace, skip_build, skip_tests, services, timeout, ver
       # Rollback
       python plat_scripts/deploy_platform.py --rollback
     """
-    # Set up log file in project root
+    # Set up log file in logs/ directory
     project_root = Path(__file__).resolve().parent.parent
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_file = project_root / f"deploy-{timestamp}.log"
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    log_file = logs_dir / f"deploy-{timestamp}.log"
     logger = DeploymentLogger(log_file, verbose=verbose)
 
     logger.info(f"U-Vote Platform Deployer v1.0")

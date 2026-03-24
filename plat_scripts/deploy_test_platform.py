@@ -739,10 +739,12 @@ def main() -> None:
 
     print_banner(target_namespaces)
 
-    # Set up log file in project root (mirrors deploy_platform.py convention)
+    # Set up log file in logs/ directory (mirrors deploy_platform.py convention)
     project_root = Path(__file__).resolve().parent.parent
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_file = project_root / f"deploy-mailhog-{timestamp}.log"
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    log_file = logs_dir / f"deploy-mailhog-{timestamp}.log"
     logger = DeploymentLogger(log_file, verbose=args.verbose)
 
     logger.info("U-Vote Test Platform Deployer — MailHog")

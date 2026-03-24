@@ -10,7 +10,6 @@ build/
 
 # Pytest
 .pytest_cache/
-.pytest_cache/*
 
 # Virtual environments
 .venv/
@@ -35,10 +34,7 @@ credentials.json
 .DS_Store
 Thumbs.db
 
-# Test logs
-plat_scripts/logs/
-
-# Docker
+# Logs
 *.log
 
 # Kubernetes
@@ -46,5 +42,4 @@ kubeconfig
 *.kubeconfig
 
 # Claude
-.claude/
 .claude
