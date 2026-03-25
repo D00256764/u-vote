@@ -49,21 +49,13 @@
                         </a>
 
                         {% if election.status == 'draft' %}
-                            <form method="POST" action="/elections/{{ election.id }}/open/confirm"
-                                  onsubmit="return confirm('Open this election for voting?')" style="margin:0;">
-                                <button type="submit" class="btn btn-success btn-sm"
-                                        style="font-size:0.78rem;border-radius:6px;">
-                                    <i class="bi bi-unlock"></i> Start Election
-                                </button>
-                            </form>
+                            <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
+                                <i class="bi bi-clock"></i> Opens {{ election.scheduled_open_at[:16].replace('T',' ') if election.scheduled_open_at else '—' }}
+                            </span>
                         {% elif election.status == 'open' %}
-                            <form method="POST" action="/elections/{{ election.id }}/close/confirm"
-                                  onsubmit="return confirm('Close this election? This cannot be undone.')" style="margin:0;">
-                                <button type="submit" class="btn btn-danger btn-sm"
-                                        style="font-size:0.78rem;border-radius:6px;">
-                                    <i class="bi bi-lock"></i> Close Election
-                                </button>
-                            </form>
+                            <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
+                                <i class="bi bi-clock"></i> Closes {{ election.scheduled_close_at[:16].replace('T',' ') if election.scheduled_close_at else '—' }}
+                            </span>
                         {% endif %}
 
                         {% if election.status == 'closed' %}

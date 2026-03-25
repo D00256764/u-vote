@@ -134,6 +134,7 @@ services:
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      ADMIN_SERVICE_URL: http://admin-service:5002
     ports:
       - "5005:5005"
     depends_on:

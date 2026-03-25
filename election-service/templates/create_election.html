@@ -44,6 +44,27 @@
             </button>
         </div>
 
+        <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:0.875rem;color:#374151;">
+                Election Schedule <span class="text-danger">*</span>
+            </label>
+            <p class="text-muted mb-2" style="font-size:0.8rem;">
+                The election will open and close automatically at the times you set.
+            </p>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label for="scheduled_open_at" class="form-label" style="font-size:0.8rem;color:#6b7280;">Open at <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="scheduled_open_at" name="scheduled_open_at"
+                           style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+                </div>
+                <div class="col-md-6">
+                    <label for="scheduled_close_at" class="form-label" style="font-size:0.8rem;color:#6b7280;">Close at <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="scheduled_close_at" name="scheduled_close_at"
+                           style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+                </div>
+            </div>
+        </div>
+
         <div class="d-flex gap-2 mt-4">
             <button type="submit" class="btn btn-primary" style="font-size:0.875rem;border-radius:8px;padding:0.55rem 1.25rem;">
                 Save
