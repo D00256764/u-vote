@@ -65,7 +65,7 @@
     </ul>
     <div class="nav-actions">
         {% if request.session.get('token') %}
-            <a href="http://localhost:5005/dashboard" class="btn btn-primary btn-sm" style="border-radius:8px;font-size:0.875rem;">Go to Dashboard</a>
+            <a href="http://localhost/dashboard" class="btn btn-primary btn-sm" style="border-radius:8px;font-size:0.875rem;">Go to Dashboard</a>
         {% else %}
             <a href="/login" style="font-size:0.875rem;color:#374151;text-decoration:none;font-weight:500;">Sign In</a>
             <a href="/register" class="btn btn-primary btn-sm" style="border-radius:8px;font-size:0.875rem;">Get Started</a>
