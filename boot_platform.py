@@ -9,15 +9,23 @@ the following steps in order, stopping on any failure:
   Step 2 — App deployment     (plat_scripts/deploy_platform.py)
   Step 3 — ELK stack          (helm install elasticsearch / kibana / fluent-bit)
   Step 4 — Final health check (kubectl get pods -n uvote-dev / monitoring)
+  Step 5 — Kibana dashboard   (plat_scripts/create_dashboard.py)
+  Step 6 — Kubernetes dashboard reminder (run plat_scripts/k8s_dashboard.py manually)
 
 Usage:
     python boot_platform.py
     python boot_platform.py --skip-cluster
     python boot_platform.py --skip-elk
     python boot_platform.py --skip-cluster --skip-elk
+
+Steps: cluster setup → app deployment → ELK stack → health check →
+       Kibana dashboard → Kubernetes dashboard.
 """
 
 import argparse
+import base64
+import os
+import socket
 import subprocess
 import sys
 import time
@@ -29,9 +37,10 @@ from typing import Tuple
 # Paths
 # ---------------------------------------------------------------------------
 PROJECT_ROOT = Path(__file__).resolve().parent
-SETUP_SCRIPT  = PROJECT_ROOT / "plat_scripts" / "setup_k8s_platform.py"
-DEPLOY_SCRIPT = PROJECT_ROOT / "plat_scripts" / "deploy_platform.py"
-ELK_VALUES_DIR = PROJECT_ROOT / "uvote-platform" / "k8s" / "logging"
+SETUP_SCRIPT      = PROJECT_ROOT / "plat_scripts" / "setup_k8s_platform.py"
+DEPLOY_SCRIPT     = PROJECT_ROOT / "plat_scripts" / "deploy_platform.py"
+ELK_VALUES_DIR    = PROJECT_ROOT / "uvote-platform" / "k8s" / "logging"
+DASHBOARD_SCRIPT  = PROJECT_ROOT / "plat_scripts" / "create_dashboard.py"
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -268,6 +277,115 @@ def step4_health_check(logger: DeploymentLogger) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Step 5 — Kibana dashboard setup
+# ---------------------------------------------------------------------------
+
+def _wait_for_port(port: int, interval: float = 0.5, timeout: float = 30.0) -> bool:
+    """Poll until localhost:port accepts a TCP connection."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                return True
+        except OSError:
+            time.sleep(interval)
+    return False
+
+
+def step5_kibana_dashboard(logger: DeploymentLogger) -> None:
+    logger.header("Step 5 — Kibana Dashboard Setup")
+
+    # 1. Wait for Kibana API to be ready
+    logger.info("Waiting 15s for Kibana API to become ready...")
+    time.sleep(15)
+
+    # 2. Start temporary port-forward
+    logger.info("Starting temporary port-forward: svc/kibana-kibana 5601:5601 -n monitoring")
+    pf_proc = subprocess.Popen(
+        [
+            "kubectl", "port-forward",
+            "-n", "monitoring",
+            "svc/kibana-kibana",
+            "5601:5601",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+
+    try:
+        # 3. Poll port 5601
+        logger.info("Polling port 5601 (0.5s interval, 30s timeout)...")
+        if not _wait_for_port(5601):
+            logger.warning("Port 5601 did not open within 30s — skipping dashboard creation")
+            return
+
+        logger.success("Kibana port-forward established on port 5601")
+
+        # 4. Retrieve elastic password
+        rc, out, err = run_cmd(
+            [
+                "kubectl", "get", "secret", "elasticsearch-master-credentials",
+                "-n", "monitoring",
+                "-o", "jsonpath={.data.password}",
+            ]
+        )
+        if rc != 0 or not out.strip():
+            logger.warning(
+                f"Could not retrieve elastic password: {err.strip() or 'empty output'} "
+                "— skipping dashboard creation"
+            )
+            return
+
+        try:
+            password = base64.b64decode(out.strip()).decode("utf-8")
+        except Exception as exc:
+            logger.warning(f"Could not decode elastic password: {exc} — skipping dashboard creation")
+            return
+
+        # 5. Run create_dashboard.py with ES_PASSWORD injected
+        logger.info(f"Running {DASHBOARD_SCRIPT.name}...")
+        env = {**os.environ, "ES_PASSWORD": password}
+        result = subprocess.run(
+            [sys.executable, str(DASHBOARD_SCRIPT)],
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        # 7. Log outcome (non-fatal)
+        if result.returncode == 0:
+            logger.success("Kibana dashboard created successfully")
+            for line in result.stdout.strip().splitlines():
+                logger.info(f"  {line}")
+        else:
+            logger.warning("Kibana dashboard creation failed (non-fatal)")
+            for line in (result.stdout + result.stderr).strip().splitlines():
+                logger.warning(f"  {line}")
+
+    finally:
+        # 6. Terminate port-forward
+        if pf_proc.poll() is None:
+            pf_proc.terminate()
+            try:
+                pf_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pf_proc.kill()
+        logger.info("Temporary port-forward terminated")
+
+
+# ---------------------------------------------------------------------------
+# Step 6 — Kubernetes Dashboard reminder
+# ---------------------------------------------------------------------------
+def step6_k8s_dashboard(logger: DeploymentLogger) -> None:
+    logger.header("Step 6 — Kubernetes Dashboard")
+    logger.info("To open the Kubernetes dashboard run:")
+    logger.info("  python plat_scripts/k8s_dashboard.py")
+    logger.info("The token will be printed to the terminal when you run it.")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
@@ -276,7 +394,7 @@ def main() -> None:
         description=(
             "Bring up the full U-Vote platform from scratch.\n"
             "\n"
-            "Steps: cluster setup → app deployment → ELK stack → health check."
+            "Steps: cluster setup → app deployment → ELK stack → health check → Kibana dashboard."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -337,6 +455,17 @@ def main() -> None:
     # Step 4 — always run (informational only)
     if ok:
         step4_health_check(logger)
+
+    # Step 5 — non-fatal; skipped when --skip-elk (no ELK stack to connect to)
+    if ok:
+        if not args.skip_elk:
+            step5_kibana_dashboard(logger)
+        else:
+            logger.info("Step 5: Kibana dashboard skipped (--skip-elk)")
+
+    # Step 6 — always run (non-fatal)
+    if ok:
+        step6_k8s_dashboard(logger)
 
     # Final result
     elapsed = logger.elapsed()

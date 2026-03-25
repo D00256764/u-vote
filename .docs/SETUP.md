@@ -65,7 +65,8 @@ python -m pytest tests/test_db.py tests/test_api.py -v
 | `plat_scripts/deploy_platform.py` | Build and deploy all services | YES |
 | `plat_scripts/deploy_test_platform.py` | Deploy MailHog test SMTP | YES |
 | `plat_scripts/port_forward.py` | Forward ingress to localhost:8080 | YES |
-| `plat_scripts/dashboard.py` | Open Kubernetes dashboard | YES |
+| `plat_scripts/k8s_dashboard.py` | Open Kubernetes dashboard | YES |
+| `plat_scripts/kibana_dashboard.py` | Open Kibana log dashboard | YES |
 | `tests/test_db.py` | Database schema and trigger tests | YES |
 | `tests/test_api.py` | End-to-end API integration tests | YES |
 

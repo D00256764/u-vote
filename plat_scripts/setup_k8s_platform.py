@@ -590,8 +590,8 @@ def verify_setup() -> bool:
         'kubectl', 'get', 'namespaces'
     ], capture_output=True, check=False)
     if success:
-        uvote_ns = [line for line in stdout.split('\n') if 'uvote' in line]
-        if len(uvote_ns) >= 3:
+        uvote_ns = [line for line in stdout.split('\n') if 'uvote' in line or 'monitoring' in line]
+        if len(uvote_ns) >= 4:
             print_success(f"{len(uvote_ns)} U-Vote namespaces found")
             for ns in uvote_ns:
                 print(f"  {ns}")

@@ -8,7 +8,7 @@ are not already present, generates a fresh login token, and keeps a
 kubectl proxy running so the dashboard stays accessible.
 
 Usage:
-    python plat_scripts/dashboard.py
+    python plat_scripts/k8s_dashboard.py
 """
 
 import signal
