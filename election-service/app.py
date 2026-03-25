@@ -438,7 +438,7 @@ async def _tally_votes(conn, election_id: int):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8082/login", status_code=303)
+        return RedirectResponse(url="http://localhost/login", status_code=303)
     return None
 
 

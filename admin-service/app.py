@@ -302,7 +302,7 @@ async def validate_token(request: Request, token: str):
 
 def _require_login(request: Request):
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8082/login", status_code=303)
+        return RedirectResponse(url="http://localhost/login", status_code=303)
     return None
 
 

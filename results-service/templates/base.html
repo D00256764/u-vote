@@ -61,12 +61,12 @@
     <aside class="sidebar">
         <div class="sidebar-brand">Election Admin</div>
         <ul class="sidebar-nav">
-            <li><a href="http://localhost:5005/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">
+            <li><a href="http://localhost/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">
                 <i class="bi bi-card-list"></i> Elections
             </a></li>
         </ul>
         <div class="sidebar-footer">
-            <a href="http://localhost:8082/logout">
+            <a href="http://localhost/logout">
                 <i class="bi bi-box-arrow-right"></i> Logout
             </a>
         </div>
@@ -81,7 +81,7 @@
                     <div class="user-name">{{ request.session.get('organiser_email', 'Organiser') }}</div>
                     <div class="user-role">Administrator</div>
                 </div>
-                <a href="http://localhost:8082/logout" class="topbar-logout" title="Logout">
+                <a href="http://localhost/logout" class="topbar-logout" title="Logout">
                     <i class="bi bi-box-arrow-right" style="font-size: 1.1rem;"></i>
                 </a>
             </div>
