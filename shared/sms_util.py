@@ -61,4 +61,4 @@ async def send_otp_sms(phone_number: str, otp_code: str) -> None:
         logger.error("Twilio SMS failed: %s %s", resp.status_code, resp.text)
         raise RuntimeError(f"Failed to send SMS: {resp.status_code}")
 
-    logger.info("OTP SMS sent to %s", phone_number)
+    logger.info("OTP SMS sent to %s***", phone_number[:4])
