@@ -67,7 +67,7 @@ async def _send_via_sendgrid(to: str, subject: str, body_text: str, body_html: O
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.post(url, headers=headers, json=payload)
         if resp.status_code >= 200 and resp.status_code < 300:
-            logger.info("SendGrid accepted message to %s: %s", to, subject)
+            logger.info("SendGrid accepted message to %s: %s", to[:3] + "***", subject)
             return
         else:
             logger.error("SendGrid failed (%s): %s", resp.status_code, resp.text)
@@ -112,14 +112,14 @@ async def send_email(to: str, subject: str, body_text: str, body_html: Optional[
         kwargs["username"] = SMTP_USER
         kwargs["password"] = SMTP_PASSWORD
 
-    logger.info("Sending email to %s via %s:%s (start_tls=%s use_ssl=%s)",
-                to, SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL)
+    logger.info("Sending email via %s:%s (start_tls=%s use_ssl=%s)",
+                SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL)
     try:
         await aiosmtplib.send(msg, **kwargs)
-        logger.info("Email sent to %s: %s", to, subject)
+        logger.info("Email sent: %s", subject)
     except Exception as e:
-        logger.error("Failed to send email to %s via %s:%s (start_tls=%s use_ssl=%s): %s",
-                     to, SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL, e)
+        logger.error("Failed to send email via %s:%s (start_tls=%s use_ssl=%s): %s",
+                     SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL, e)
         raise
 
 

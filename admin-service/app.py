@@ -154,6 +154,63 @@ async def add_voter(request: Request, election_id: int, data: VoterAddRequest):
     return {"message": "Voter added successfully", "voter_id": row["id"]}
 
 
+@app.delete("/elections/{election_id}/voters/pii", status_code=200)
+async def delete_voter_pii(request: Request, election_id: int):
+    """GDPR right-to-erasure: delete all voter PII for a closed election.
+
+    Removes email, phone_number, and all associated voting tokens and MFA records.
+    Only permitted once the election is closed (status='closed') to prevent
+    accidental deletion while voting is in progress.
+    """
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    async with Database.transaction() as conn:
+        election = await conn.fetchrow(
+            "SELECT status FROM elections WHERE id = $1", election_id
+        )
+        if not election:
+            raise HTTPException(status_code=404, detail="Election not found")
+        if election["status"] != "closed":
+            raise HTTPException(
+                status_code=403,
+                detail="Voter PII can only be erased after the election is closed",
+            )
+
+        # Delete MFA records (keyed via voting_tokens → voter_id)
+        await conn.execute(
+            """
+            DELETE FROM voter_mfa
+            WHERE token IN (
+                SELECT token FROM voting_tokens WHERE election_id = $1
+            )
+            """,
+            election_id,
+        )
+
+        # Delete voting tokens
+        await conn.execute(
+            "DELETE FROM voting_tokens WHERE election_id = $1", election_id
+        )
+
+        # Erase PII columns — keep voter row for audit count integrity
+        result = await conn.execute(
+            """
+            UPDATE voters
+            SET email = '[redacted]', phone_number = NULL
+            WHERE election_id = $1
+            """,
+            election_id,
+        )
+
+    # result is "UPDATE N"
+    rows_erased = int(result.split()[-1]) if result else 0
+    logger.info("GDPR erasure completed for election %s: %s voter records redacted", election_id, rows_erased)
+    return {
+        "message": "Voter PII erased",
+        "election_id": election_id,
+        "voters_redacted": rows_erased,
+    }
+
+
 @app.get("/elections/{election_id}/voters")
 async def get_voters(request: Request, election_id: int):
     """Get all voters for an election."""
