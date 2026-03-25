@@ -394,6 +394,17 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
                 voters_skipped += 1
 
     flash(request, f"Uploaded {voters_added} voters (skipped {voters_skipped} duplicates)", "success")
+
+    # If the election is already open, immediately send tokens to the new voters
+    if voters_added > 0:
+        async with Database.connection() as conn:
+            status_row = await conn.fetchrow(
+                "SELECT status FROM elections WHERE id = $1", election_id
+            )
+        if status_row and status_row["status"] == "open":
+            await generate_tokens(request, election_id)
+            flash(request, "Election is already open — tokens sent to new voters automatically.", "info")
+
     return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
 

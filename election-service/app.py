@@ -41,11 +41,68 @@ logger = logging.getLogger('election-service')
 from database import Database
 from schemas import ElectionCreate, ElectionOut, ElectionOptionOut, HealthResponse
 
-# ── Service URLs (for JWT verification) ──────────────────────────────────────
+# ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
+ADMIN_SERVICE = os.getenv("ADMIN_SERVICE_URL", "http://admin-service:5002")
 
 # ── Async HTTP client ────────────────────────────────────────────────────────
 http_client: httpx.AsyncClient | None = None
+
+
+scheduler = AsyncIOScheduler()
+
+
+async def auto_manage_elections():
+    """Open/close elections automatically when their scheduled time arrives."""
+    try:
+        async with Database.connection() as conn:
+            # Open any draft elections whose scheduled_open_at has passed
+            to_open = await conn.fetch(
+                """
+                SELECT id FROM elections
+                WHERE status = 'draft'
+                  AND scheduled_open_at IS NOT NULL
+                  AND scheduled_open_at <= NOW()
+                """
+            )
+            for row in to_open:
+                await conn.execute(
+                    "UPDATE elections SET status = 'open', opened_at = CURRENT_TIMESTAMP WHERE id = $1",
+                    row["id"],
+                )
+                logger.info("Scheduler: auto-opened election %s", row["id"])
+                # Auto-send voting tokens to all voters for this election
+                try:
+                    resp = await http_client.post(
+                        f"{ADMIN_SERVICE}/elections/{row['id']}/tokens/generate",
+                        json={"expiry_hours": 168},
+                    )
+                    data = resp.json()
+                    logger.info(
+                        "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
+                        row["id"], data.get("tokens_generated", 0), data.get("emails_sent", 0),
+                    )
+                except Exception as e:
+                    logger.error("Scheduler: failed to send tokens for election %s: %s", row["id"], e)
+
+            # Close any open elections whose scheduled_close_at has passed
+            to_close = await conn.fetch(
+                """
+                SELECT id FROM elections
+                WHERE status = 'open'
+                  AND scheduled_close_at IS NOT NULL
+                  AND scheduled_close_at <= NOW()
+                """
+            )
+            for row in to_close:
+                await conn.execute(
+                    "UPDATE elections SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = $1",
+                    row["id"],
+                )
+                await _tally_votes(conn, row["id"])
+                logger.info("Scheduler: auto-closed election %s", row["id"])
+    except Exception as e:
+        logger.error("Scheduler error in auto_manage_elections: %s", e)
 
 
 @asynccontextmanager
@@ -53,7 +110,11 @@ async def lifespan(application: FastAPI):
     global http_client
     await Database.get_pool()
     http_client = httpx.AsyncClient(timeout=10.0)
+    scheduler.add_job(auto_manage_elections, "interval", seconds=20, id="auto_manage")
+    scheduler.start()
+    logger.info("Election scheduler started (20s interval)")
     yield
+    scheduler.shutdown(wait=False)
     await http_client.aclose()
     await Database.close()
 
@@ -169,10 +230,14 @@ async def create_election_form(request: Request):
     if redirect:
         return redirect
 
+    from datetime import datetime
+
     form = await request.form()
     title = form.get("title")
     description = form.get("description", "")
     options = form.getlist("options[]")
+    scheduled_open_str = form.get("scheduled_open_at", "").strip()
+    scheduled_close_str = form.get("scheduled_close_at", "").strip()
 
     if not title or not title.strip():
         flash(request, "Election title is required", "error")
@@ -189,14 +254,43 @@ async def create_election_form(request: Request):
             {"request": request, "messages": get_flashed_messages(request)},
         )
 
+    # Both scheduled times are mandatory
+    if not scheduled_open_str or not scheduled_close_str:
+        flash(request, "Both open and close times are required", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
+    # Parse datetime-local values (format: "YYYY-MM-DDTHH:MM")
+    try:
+        scheduled_open_at = datetime.fromisoformat(scheduled_open_str)
+        scheduled_close_at = datetime.fromisoformat(scheduled_close_str)
+    except ValueError:
+        flash(request, "Invalid date format for scheduled times", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
+    if scheduled_close_at <= scheduled_open_at:
+        flash(request, "Close time must be after open time", "error")
+        return templates.TemplateResponse(
+            "create_election.html",
+            {"request": request, "messages": get_flashed_messages(request)},
+        )
+
     async with Database.transaction() as conn:
         enc_key = secrets.token_hex(32)
         row = await conn.fetchrow(
             """
-            INSERT INTO elections (organiser_id, title, description, status, encryption_key)
-            VALUES ($1, $2, $3, 'draft', $4) RETURNING id
+            INSERT INTO elections
+                (organiser_id, title, description, status, encryption_key,
+                 scheduled_open_at, scheduled_close_at)
+            VALUES ($1, $2, $3, 'draft', $4, $5, $6) RETURNING id
             """,
             request.session["organiser_id"], title, description, enc_key,
+            scheduled_open_at, scheduled_close_at,
         )
         election_id = row["id"]
 
@@ -379,6 +473,7 @@ async def dashboard_page(request: Request):
             """
             SELECT e.id, e.title, e.description, e.status, e.created_at,
                    e.opened_at, e.closed_at,
+                   e.scheduled_open_at, e.scheduled_close_at,
                    COUNT(v.id) AS voter_count
             FROM elections e
             LEFT JOIN voters v ON v.election_id = e.id
@@ -395,6 +490,8 @@ async def dashboard_page(request: Request):
             "status": r["status"], "created_at": r["created_at"].isoformat(),
             "opened_at": r["opened_at"].isoformat() if r["opened_at"] else None,
             "closed_at": r["closed_at"].isoformat() if r["closed_at"] else None,
+            "scheduled_open_at": r["scheduled_open_at"].isoformat() if r["scheduled_open_at"] else None,
+            "scheduled_close_at": r["scheduled_close_at"].isoformat() if r["scheduled_close_at"] else None,
             "voter_count": r["voter_count"],
         }
         for r in rows
@@ -429,7 +526,8 @@ async def election_detail_page(request: Request, election_id: int):
         election = await conn.fetchrow(
             """
             SELECT id, title, description, status, created_at,
-                   opened_at, closed_at, organiser_id
+                   opened_at, closed_at, organiser_id,
+                   scheduled_open_at, scheduled_close_at
             FROM elections WHERE id = $1
             """,
             election_id,
@@ -453,6 +551,8 @@ async def election_detail_page(request: Request, election_id: int):
             "created_at": election["created_at"].isoformat(),
             "opened_at": election["opened_at"].isoformat() if election["opened_at"] else None,
             "closed_at": election["closed_at"].isoformat() if election["closed_at"] else None,
+            "scheduled_open_at": election["scheduled_open_at"].isoformat() if election["scheduled_open_at"] else None,
+            "scheduled_close_at": election["scheduled_close_at"].isoformat() if election["scheduled_close_at"] else None,
             "voter_count": voter_count, "vote_count": vote_count,
         },
         "options": [{"id": o["id"], "text": o["option_text"], "order": o["display_order"]} for o in options],
