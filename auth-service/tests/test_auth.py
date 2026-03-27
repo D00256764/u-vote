@@ -9,7 +9,7 @@ Run with:
 """
 import base64
 import json
-from datetime import date, datetime
+from datetime import datetime
 
 
 # =============================================================================
@@ -159,54 +159,50 @@ def test_validate_token_not_found(client, mock_db):
 # POST /mfa/verify
 # =============================================================================
 
-def test_mfa_verify_correct_dob(client, mock_db):
-    """Returns 200 with verified=True on matching date_of_birth.
+def test_mfa_verify_correct_otp(client, mock_db):
+    """Returns 200 with verified=True on matching OTP.
 
-    Two fetchrow calls occur inside the endpoint:
-      1. JOIN query — returns the voter/token/election row
-      2. voter_mfa lookup — returns None (not yet verified → will INSERT)
+    The endpoint does a single JOIN fetchrow that includes voter_mfa fields,
+    then an execute to mark the OTP as verified.
     """
-    mock_db.fetchrow.side_effect = [
-        {
-            "voter_id": 10,
-            "date_of_birth": date(1990, 6, 15),
-            "has_voted": False,
-            "is_used": False,
-            "expires_at": datetime(2030, 1, 1),
-            "status": "open",
-            "election_id": 5,
-        },
-        None,  # voter_mfa row: not found → INSERT will run
-    ]
+    mock_db.fetchrow.return_value = {
+        "voter_id": 10,
+        "has_voted": False,
+        "is_used": False,
+        "expires_at": datetime(2030, 1, 1),
+        "status": "open",
+        "election_id": 5,
+        "otp_code": "123456",
+        "otp_expires_at": datetime(2030, 1, 1),
+        "verified_at": None,
+    }
 
     response = client["client"].post(
         "/mfa/verify",
-        params={"token": "some-token", "date_of_birth": "1990-06-15"},
+        params={"token": "some-token", "otp": "123456"},
     )
 
     assert response.status_code == 200
     assert response.json()["verified"] is True
 
 
-def test_mfa_verify_wrong_dob(client, mock_db):
-    """Returns 401 on wrong date_of_birth.
-
-    BUG-5 fix: app.py was changed from 403 → 401 for DOB mismatch.
-    Asserting 401 here ensures that regression is caught.
-    """
+def test_mfa_verify_wrong_otp(client, mock_db):
+    """Returns 401 on wrong OTP code."""
     mock_db.fetchrow.return_value = {
         "voter_id": 10,
-        "date_of_birth": date(1990, 6, 15),
         "has_voted": False,
         "is_used": False,
         "expires_at": datetime(2030, 1, 1),
         "status": "open",
         "election_id": 5,
+        "otp_code": "123456",
+        "otp_expires_at": datetime(2030, 1, 1),
+        "verified_at": None,
     }
 
     response = client["client"].post(
         "/mfa/verify",
-        params={"token": "some-token", "date_of_birth": "1900-01-01"},
+        params={"token": "some-token", "otp": "999999"},
     )
 
     assert response.status_code == 401
@@ -245,7 +241,7 @@ def test_mfa_verify_db_error_returns_500(client, mock_db):
 
     response = client["client"].post(
         "/mfa/verify",
-        params={"token": "any-token", "date_of_birth": "1990-01-01"},
+        params={"token": "any-token", "otp": "123456"},
     )
 
     assert response.status_code == 500
