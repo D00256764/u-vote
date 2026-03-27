@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException, Request, Form
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -39,7 +39,7 @@ configure_logging()
 logger = logging.getLogger('election-service')
 
 from database import Database
-from schemas import ElectionCreate, ElectionOut, ElectionOptionOut, HealthResponse
+from schemas import ElectionCreate, HealthResponse
 
 # ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -127,6 +127,8 @@ app = FastAPI(
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me"))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+BASE_URL = os.getenv("BASE_URL", "http://localhost")
+templates.env.globals["base_url"] = BASE_URL
 
 from prometheus_fastapi_instrumentator import Instrumentator
 Instrumentator().instrument(app).expose(app)
@@ -438,7 +440,7 @@ async def _tally_votes(conn, election_id: int):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost/login", status_code=303)
+        return RedirectResponse(url=f"{BASE_URL}/login", status_code=303)
     return None
 
 

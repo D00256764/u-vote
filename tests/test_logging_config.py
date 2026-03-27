@@ -112,7 +112,7 @@ def test_log_level_reflected_in_output():
     logger.info('info message')
     logger.warning('warning message')
     buf.seek(0)
-    lines = [l for l in buf.read().strip().splitlines() if l.strip()]
+    lines = [ln for ln in buf.read().strip().splitlines() if ln.strip()]
     assert len(lines) == 2, f"Expected 2 log lines, got {len(lines)}"
     assert json.loads(lines[0])['levelname'] == 'INFO'
     assert json.loads(lines[1])['levelname'] == 'WARNING'

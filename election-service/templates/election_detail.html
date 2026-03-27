@@ -57,7 +57,7 @@
                     <div class="card-body">
                         <h5 class="card-title">Actions</h5>
                         <div class="d-grid gap-2">
-                            <a href="http://localhost/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
+                            <a href="{{ base_url }}/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
                                class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-people"></i> Manage Voters
                             </a>
@@ -73,7 +73,7 @@
                             {% endif %}
                             
                             {% if election.status == 'closed' %}
-                                <a href="http://localhost/elections/{{ election.id }}/results/view?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
+                                <a href="{{ base_url }}/elections/{{ election.id }}/results/view?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
                                    class="btn btn-primary btn-sm">
                                     <i class="bi bi-bar-chart"></i> View Results
                                 </a>

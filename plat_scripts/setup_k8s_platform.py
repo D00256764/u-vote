@@ -9,7 +9,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 
 # ANSI color codes for terminal output
 class Colors:

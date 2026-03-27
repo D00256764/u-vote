@@ -47,13 +47,13 @@ logger = logging.getLogger('auth-service')
 from database import Database
 from security import (
     hash_password, verify_password,
-    generate_blind_ballot_token, generate_election_key,
+    generate_blind_ballot_token,
 )
 from sms_util import send_otp_sms
 from schemas import (
     RegisterRequest, LoginRequest, TokenVerifyRequest,
     AuthResponse, TokenVerifyResponse, TokenValidateResponse, BallotTokenResponse,
-    HealthResponse, ErrorResponse,
+    HealthResponse,
 )
 
 # -- Config -------------------------------------------------------------------

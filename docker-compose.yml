@@ -65,6 +65,7 @@ services:
       SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
       SENDGRID_FROM: ${SENDGRID_FROM:-}
       FRONTEND_URL: http://localhost
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,6 +108,7 @@ services:
       DB_PASSWORD: voting_pass
       ELECTION_SERVICE_URL: http://localhost
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,6 +129,7 @@ services:
       DB_PASSWORD: voting_pass
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
       ADMIN_SERVICE_URL: http://admin-service:5002
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,6 +150,7 @@ services:
       ELECTION_SERVICE_URL: http://election-service:5005
       ELECTION_DASHBOARD_URL: http://localhost/dashboard
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      BASE_URL: http://localhost
     ports:
       - "8082:5000"
     depends_on:

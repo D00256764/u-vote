@@ -7,7 +7,7 @@ on:
     branches: [main, mvp_tests]
 
 jobs:
-  # ── 1. Lint ──────────────────────────────────────────────────────────────────
+  # 1. Lint ──────────────────────────────────────────────────────────────────
   lint:
     name: Lint (ruff)
     runs-on: ubuntu-latest
@@ -24,7 +24,7 @@ jobs:
       - name: Run ruff
         run: ruff check .
 
-  # ── 2. Unit tests — one job per service, all run in parallel ─────────────────
+  # 2. Unit tests — one job per service, all run in parallel ─────────────────
   unit-tests:
     name: Unit Tests — ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
           name: unit-results-${{ matrix.service }}
           path: test-results/unit-${{ matrix.service }}.xml
 
-  # ── 3. Shared-module unit tests (logging_config, security, schemas) ───────────
+  # 3. Shared-module unit tests (logging_config, security, schemas) ───────────
   unit-tests-shared:
     name: Unit Tests — shared
     runs-on: ubuntu-latest
@@ -102,7 +102,7 @@ jobs:
           name: unit-results-shared
           path: test-results/unit-shared.xml
 
-  # ── 4. Integration tests — full stack via Docker Compose + NGINX ─────────────
+  # 4. Integration tests — full stack via Docker Compose + NGINX ─────────────
   integration-tests:
     name: Integration Tests (Docker Compose)
     runs-on: ubuntu-latest
@@ -163,7 +163,7 @@ jobs:
         if: always()
         run: docker compose down -v
 
-  # ── 5. Docker build verification (all Dockerfiles build cleanly) ─────────────
+  # 5. Docker build verification (all Dockerfiles build cleanly) ─────────────
   build:
     name: Docker build
     runs-on: ubuntu-latest
@@ -227,7 +227,7 @@ jobs:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
 
-  # ── 7. Trivy filesystem scan — secrets and misconfigurations in source ────────
+  # 7. Trivy filesystem scan — secrets and misconfigurations in source ────────
   trivy-fs:
     name: Trivy — filesystem
     runs-on: ubuntu-latest

@@ -62,12 +62,12 @@ def _pip_install(venv_pip: Path, req_path: str):
 def _print_pip_error(req_path: str, output: str) -> None:
     print(f"\n  {RED}ERROR:{RESET} Failed to install {req_path}")
     print(f"  Command: pip install -r {req_path}")
-    print(f"  pip output:")
+    print("  pip output:")
     for line in output.splitlines():
         print(f"    {line}")
     print()
-    print(f"  Fix the error above and re-run:")
-    print(f"    python setup_venv.py --clean")
+    print("  Fix the error above and re-run:")
+    print("    python setup_venv.py --clean")
 
 
 def _run_checks(venv_python: Path) -> int:
@@ -191,7 +191,7 @@ def _run_checks(venv_python: Path) -> int:
     print()
     if not all_passed:
         print(f"  {RED}Setup failed.{RESET} Fix the errors above and re-run:")
-        print(f"    python setup_venv.py --clean")
+        print("    python setup_venv.py --clean")
         print()
         return 1
 
@@ -298,7 +298,7 @@ def main() -> int:
             print(f"  {RED}ERROR:{RESET} No .venv found at {venv_dir}")
             print("  Run without --verify-only first to create the environment.")
             return 1
-        print(f"  Skipping install (--verify-only mode)")
+        print("  Skipping install (--verify-only mode)")
         print()
         return _run_checks(venv_python)
 

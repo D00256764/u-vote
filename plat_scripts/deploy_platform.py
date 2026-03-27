@@ -18,14 +18,11 @@ Requirements:
 
 import subprocess
 import sys
-import os
 import time
 import json
 import base64
 import secrets
-import signal
 import socket
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
@@ -1335,7 +1332,7 @@ class PlatformDeployer:
                 self.logger.info(f"Available services: {', '.join(ALL_SERVICES)}")
                 return False
 
-        self.logger.info(f"Starting U-Vote platform deployment")
+        self.logger.info("Starting U-Vote platform deployment")
         self.logger.info(f"Cluster: {self.cluster_name}  Namespace: {self.namespace}")
         self.logger.info(f"Services: {', '.join(target_services)}")
         if self.dry_run:
@@ -1450,7 +1447,7 @@ def main(cluster_name, namespace, skip_build, skip_tests, services, timeout, ver
     log_file = logs_dir / f"deploy-{timestamp}.log"
     logger = DeploymentLogger(log_file, verbose=verbose)
 
-    logger.info(f"U-Vote Platform Deployer v1.0")
+    logger.info("U-Vote Platform Deployer v1.0")
     logger.info(f"Log file: {log_file}")
 
     deployer = PlatformDeployer(cluster_name, namespace, logger, dry_run=dry_run)

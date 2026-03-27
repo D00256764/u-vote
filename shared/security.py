@@ -23,7 +23,6 @@ Anonymity protocol
 import os
 import secrets
 import hashlib
-import hmac
 from datetime import datetime, timedelta
 
 from passlib.context import CryptContext

@@ -40,7 +40,7 @@
 <body>
     <!-- Header -->
     <div class="page-header">
-        <a href="http://localhost/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}" class="back-link">
+        <a href="{{ base_url }}/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}" class="back-link">
             <i class="bi bi-chevron-left"></i> Back to Dashboard
         </a>
         <h1 class="page-title">Manage Voters for {{ election_title }}</h1>
