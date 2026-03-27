@@ -220,7 +220,7 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    print(f"  Service found.")
+    print("  Service found.")
 
     # ------------------------------------------------------------------
     # 3. Handle port conflict

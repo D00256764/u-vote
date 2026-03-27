@@ -64,6 +64,8 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
+BASE_URL = os.getenv("BASE_URL", "http://localhost")
+templates.env.globals["base_url"] = BASE_URL
 
 from prometheus_fastapi_instrumentator import Instrumentator
 Instrumentator().instrument(app).expose(app)
@@ -82,7 +84,7 @@ def get_flashed_messages(request: Request):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost/login", status_code=303)
+        return RedirectResponse(url=f"{BASE_URL}/login", status_code=303)
     return None
 
 

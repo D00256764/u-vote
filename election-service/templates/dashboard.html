@@ -59,14 +59,14 @@
                         {% endif %}
 
                         {% if election.status == 'closed' %}
-                            <a href="http://localhost/elections/{{ election.id }}/results/view?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+                            <a href="{{ base_url }}/elections/{{ election.id }}/results/view?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
                                class="btn btn-primary btn-sm"
                                style="font-size:0.78rem;border-radius:6px;">
                                 <i class="bi bi-bar-chart-line"></i> View Results
                             </a>
                         {% endif %}
 
-                        <a href="http://localhost/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+                        <a href="{{ base_url }}/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
                            class="btn btn-outline-secondary btn-sm"
                            style="font-size:0.78rem;border-radius:6px;">
                             <i class="bi bi-people"></i> Manage Voters

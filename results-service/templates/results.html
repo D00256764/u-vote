@@ -26,7 +26,7 @@
             <i class="bi bi-lock me-1"></i> Closed {{ election.closed_at[:10] if election.closed_at else '' }}
         </p>
     </div>
-    <a href="http://localhost/dashboard?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+    <a href="{{ base_url }}/dashboard?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
        class="btn btn-outline-secondary btn-sm" style="border-radius:8px;font-size:0.825rem;">
         <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
     </a>

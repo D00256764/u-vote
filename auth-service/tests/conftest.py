@@ -6,12 +6,10 @@ All tests run against a fully mocked database; no live cluster is required.
 import importlib.util
 import sys
 from contextlib import asynccontextmanager
-from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import prometheus_client
-from prometheus_client import CollectorRegistry
 
 import pytest
 

@@ -12,7 +12,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="http://localhost/">
+            <a class="navbar-brand" href="{{ base_url }}/">
                 <i class="bi bi-shield-check"></i> Secure Voting
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -21,10 +21,10 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="http://localhost/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a>
+                        <a class="nav-link" href="{{ base_url }}/dashboard?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}">Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="http://localhost/logout">Logout</a>
+                        <a class="nav-link" href="{{ base_url }}/logout">Logout</a>
                     </li>
                 </ul>
             </div>

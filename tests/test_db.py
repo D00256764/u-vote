@@ -440,7 +440,7 @@ def test_connection(pod: str, results: TestResults) -> bool:
         version_line = [line for line in stdout.split('\n') if 'PostgreSQL' in line]
         if version_line:
             version = version_line[0].strip()
-            print_pass(f"Connection successful")
+            print_pass("Connection successful")
             print_info(f"Version: {version}")
             results.add_pass("Connection", version)
             return True
@@ -890,9 +890,9 @@ def test_foreign_keys(pod: str, results: TestResults) -> bool:
         # Heuristic: count mentions of known FK-related table names
         fk_count = stdout.count('_fkey') + stdout.count('elections') + stdout.count('candidates')
         if fk_count > 0:
-            print_pass(f"Foreign key constraints present")
+            print_pass("Foreign key constraints present")
             print_info("Sample constraints:")
-            lines = [l for l in stdout.split('\n') if l.strip() and 'table_name' not in l.lower()][:5]
+            lines = [ln for ln in stdout.split('\n') if ln.strip() and 'table_name' not in ln.lower()][:5]
             for line in lines:
                 if line.strip() and not line.startswith('('):
                     print(f"  {line.strip()}")
@@ -1059,7 +1059,7 @@ def test_load_performance(pod: str, results: TestResults, num_votes: int = 1000)
 
     if success:
         print_info("Vote distribution:")
-        lines = [l for l in stdout.split('\n') if l.strip() and 'name' not in l.lower() and not l.startswith('(')]
+        lines = [ln for ln in stdout.split('\n') if ln.strip() and 'name' not in ln.lower() and not ln.startswith('(')]
         for line in lines:
             if line.strip():
                 print(f"  {line.strip()}")

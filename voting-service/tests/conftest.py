@@ -13,10 +13,9 @@ import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import prometheus_client
-from prometheus_client import CollectorRegistry
 
 import pytest
 

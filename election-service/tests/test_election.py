@@ -17,7 +17,6 @@ Architecture notes:
 import base64
 import json
 
-import pytest
 from itsdangerous import TimestampSigner
 
 

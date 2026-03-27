@@ -25,7 +25,6 @@ import uuid
 import asyncio
 import tests.helpers.mailhog as _mailhog_helper
 from tests.helpers.mailhog import get_latest_voting_token, delete_all_messages
-from contextlib import contextmanager
 from typing import Any, Dict, Optional, Tuple
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -310,7 +309,7 @@ def stage_auth(res: Results, pf: PortForwardManager, state: dict) -> bool:
             and "email" in payload
             and "exp" in payload
         )
-    except Exception as exc:
+    except Exception:
         jwt_ok = False
         payload = {}
     res.check("JWT structure valid", jwt_ok,
@@ -582,7 +581,7 @@ def stage_voting(res: Results, pf: PortForwardManager, state: dict) -> bool:
         for phrase in ("already been used", "invalid ballot token", "already used")
     )
     res.check(
-        f"POST voting/vote/submit (duplicate) → error",
+        "POST voting/vote/submit (duplicate) → error",
         dup_rejected,
         "" if dup_rejected else html2[:150].strip(),
     )
@@ -662,7 +661,7 @@ def stage_cleanup(res: Results, pf: PortForwardManager,
     org_id = state.get("organiser_id")
 
     if keep:
-        print(f"      --keep-data: test data preserved")
+        print("      --keep-data: test data preserved")
         print(f"      run_id:        {run_id}")
         if org_id:
             print(f"      organiser_id:  {org_id}")
@@ -689,10 +688,10 @@ def stage_cleanup(res: Results, pf: PortForwardManager,
                   "no DELETE endpoint — data remains in DB")
 
     if eid:
-        print(f"      NOTE: no DELETE endpoint — test data remains in the DB.")
-        print(f"      To remove manually:")
-        print(f"        kubectl exec -n uvote-dev deployment/postgresql -- \\")
-        print(f"          psql -U uvote_admin -d uvote -c \\")
+        print("      NOTE: no DELETE endpoint — test data remains in the DB.")
+        print("      To remove manually:")
+        print("        kubectl exec -n uvote-dev deployment/postgresql -- \\")
+        print("          psql -U uvote_admin -d uvote -c \\")
         print(f"          \"DELETE FROM elections WHERE title LIKE '[TEST] {run_id}%';\"")
 
 

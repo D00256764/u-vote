@@ -267,8 +267,8 @@ def step4_health_check(logger: DeploymentLogger) -> None:
     for ns in ("uvote-dev", "monitoring"):
         rc, out, _ = run_cmd(["kubectl", "get", "pods", "-n", ns, "--no-headers"])
         if rc == 0:
-            lines = [l for l in out.strip().splitlines() if l]
-            running = sum(1 for l in lines if "Running" in l)
+            lines = [ln for ln in out.strip().splitlines() if ln]
+            running = sum(1 for ln in lines if "Running" in ln)
             total   = len(lines)
             if running == total and total > 0:
                 logger.success(f"All {total} pods Running in '{ns}'")
