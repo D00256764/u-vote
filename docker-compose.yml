@@ -176,6 +176,37 @@ services:
       - voting-network
     restart: unless-stopped
 
+  # Prometheus — scrapes /metrics from all 6 services every 15s
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: uvote-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  # Grafana — SLI dashboards auto-provisioned from monitoring/grafana/
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: uvote-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - voting-network
+    restart: unless-stopped
+
   # MailHog — local development email testing ONLY.
   # Captures outgoing emails instead of delivering them to real recipients.
   # Not for production use. Web UI: http://localhost:8025
@@ -191,6 +222,7 @@ services:
 
 volumes:
   postgres_data:
+  grafana_data:
 
 networks:
   voting-network:
