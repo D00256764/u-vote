@@ -51,15 +51,15 @@ def test_home_page_contains_expected_content(client):
     Landing page contains key UI elements from templates/index.html.
 
     Strings verified directly in index.html:
-      - "Secure Voting System"    (h1 title)
-      - "Register as Organiser"   (button / card heading)
-      - "Login"                   (button href text)
+      - "Secure Online"         (h1 heading)
+      - "Get Started"           (register CTA button)
+      - "Sign In"               (login link text)
     """
     r = client["client"].get("/")
     body = r.text
-    assert "Secure Voting System" in body
-    assert "Register as Organiser" in body
-    assert "Login" in body
+    assert "Secure Online" in body
+    assert "Get Started" in body
+    assert "Sign In" in body
 
 
 # ── GET /health ───────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ def test_login_page_returns_200(client):
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
     # Strings from templates/login.html
-    assert "Organiser Login" in r.text
+    assert "Sign In" in r.text
     assert 'name="email"' in r.text
     assert 'name="password"' in r.text
 
@@ -200,7 +200,7 @@ def test_register_page_returns_200(client):
     r = client["client"].get("/register")
     assert r.status_code == 200
     # Strings from templates/register.html
-    assert "Register as Organiser" in r.text
+    assert "Create" in r.text
     assert 'name="email"' in r.text
     assert 'name="confirm_password"' in r.text
 
@@ -354,5 +354,5 @@ def test_logout_clears_session_and_shows_public_view(authed_client):
     # before following the redirect to /, so the session is gone by then.
     r = authed_client["client"].get("/logout", follow_redirects=True)
     assert r.status_code == 200
-    assert "Register as Organiser" in r.text
+    assert "Get Started" in r.text
     assert "Go to Dashboard" not in r.text
