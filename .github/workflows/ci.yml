@@ -134,13 +134,31 @@ jobs:
             'until curl -sf http://localhost/ -o /dev/null; do sleep 3; done'
           echo "NGINX is up."
 
+      - name: Wait for auth-service to be ready
+        run: |
+          echo "Waiting for auth-service DB pool to initialise..."
+          timeout 90 bash -c \
+            'until docker compose exec -T auth-service python3 -c \
+              "import urllib.request; urllib.request.urlopen(\"http://localhost:5001/health\")" \
+              2>/dev/null; do sleep 3; done'
+          echo "auth-service is ready."
+
+      - name: Wait for election-service to be ready
+        run: |
+          echo "Waiting for election-service DB pool to initialise..."
+          timeout 90 bash -c \
+            'until docker compose exec -T election-service python3 -c \
+              "import urllib.request; urllib.request.urlopen(\"http://localhost:5005/health\")" \
+              2>/dev/null; do sleep 3; done'
+          echo "election-service is ready."
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Install test dependencies
-        run: pip install httpx pytest
+        run: pip install "httpx==0.27.0" pytest
 
       - name: Run integration tests
         run: |
