@@ -345,6 +345,8 @@ def test_create_election_form_success(client, mock_db):
             "title": "Form Election",
             "description": "A form test",
             "options[]": ["Option A", "Option B"],
+            "scheduled_open_at": "2030-01-01T09:00",
+            "scheduled_close_at": "2030-01-02T17:00",
         },
         cookies={"session": session_cookie},
         follow_redirects=False,
