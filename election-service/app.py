@@ -47,9 +47,7 @@ ADMIN_SERVICE = os.getenv("ADMIN_SERVICE_URL", "http://admin-service:5002")
 
 # ── Async HTTP client ────────────────────────────────────────────────────────
 http_client: httpx.AsyncClient | None = None
-
-
-scheduler = AsyncIOScheduler()
+scheduler: AsyncIOScheduler | None = None
 
 
 async def auto_manage_elections():
@@ -107,10 +105,11 @@ async def auto_manage_elections():
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global http_client
+    global http_client, scheduler
     await Database.get_pool()
     http_client = httpx.AsyncClient(timeout=10.0)
-    scheduler.add_job(auto_manage_elections, "interval", seconds=20, id="auto_manage", replace_existing=True)
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(auto_manage_elections, "interval", seconds=20, id="auto_manage")
     scheduler.start()
     logger.info("Election scheduler started (20s interval)")
     yield
