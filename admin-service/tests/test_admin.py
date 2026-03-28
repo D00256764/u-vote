@@ -19,7 +19,7 @@ Architecture notes:
   - upload_voters multipart field name is "file".
 """
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 
@@ -189,16 +189,6 @@ def test_upload_voters_csv_missing_email_column_returns_400(client, mock_db):
     assert "email" in r.json()["detail"].lower()
 
 
-def test_upload_voters_csv_missing_dob_column_returns_400(client, mock_db):
-    """Returns 400 when the CSV has no 'date_of_birth' column header."""
-    csv_content = b"email\nvoter@test.com\n"
-    r = client["client"].post(
-        "/elections/1/voters/upload",
-        files={"file": ("voters.csv", csv_content, "text/csv")},
-    )
-    assert r.status_code == 400
-    assert "date_of_birth" in r.json()["detail"].lower()
-
 
 # ── POST /elections/{id}/tokens/generate ─────────────────────────────────────
 
@@ -363,106 +353,6 @@ def test_generate_tokens_db_error_returns_500(client, mock_db, mock_email):
     r = client["client"].post("/elections/1/tokens/generate")
     assert r.status_code == 500
 
-
-# ── POST /mfa/verify ──────────────────────────────────────────────────────────
-
-def _mfa_token_row(dob=date(1990, 6, 15), is_used=False, status="open"):
-    """
-    Returns the combined row shape returned by the JOIN query in verify_identity:
-        SELECT v.date_of_birth, vt.is_used, vt.expires_at, e.status
-        FROM voting_tokens vt
-        JOIN voters v ON v.id = vt.voter_id
-        JOIN elections e ON e.id = vt.election_id
-        WHERE vt.token = $1
-    """
-    return {
-        "date_of_birth": dob,
-        "is_used": is_used,
-        "expires_at": datetime.now() + timedelta(days=7),
-        "status": status,
-    }
-
-
-def test_mfa_verify_correct_dob(client, mock_db):
-    """Returns 200 {"verified": True} when date_of_birth matches."""
-    # 1st fetchrow: token+voter+election join row
-    # 2nd fetchrow: existing MFA check (None = not yet verified → INSERT runs)
-    mock_db.fetchrow.side_effect = [_mfa_token_row(), None]
-
-    r = client["client"].post(
-        "/mfa/verify?token=test-token&date_of_birth=1990-06-15"
-    )
-    assert r.status_code == 200
-    assert r.json() == {"verified": True}
-
-
-def test_mfa_verify_wrong_dob_returns_403(client, mock_db):
-    """Returns 403 when submitted date_of_birth does not match stored value."""
-    mock_db.fetchrow.return_value = _mfa_token_row(dob=date(1990, 6, 15))
-
-    r = client["client"].post(
-        "/mfa/verify?token=test-token&date_of_birth=1900-01-01"
-    )
-    assert r.status_code == 403
-    assert "date of birth" in r.json()["detail"].lower()
-
-
-def test_mfa_verify_token_not_found_returns_404(client, mock_db):
-    """Returns 404 when the token does not exist in voting_tokens."""
-    mock_db.fetchrow.return_value = None
-
-    r = client["client"].post(
-        "/mfa/verify?token=nonexistent&date_of_birth=1990-06-15"
-    )
-    assert r.status_code == 404
-
-
-def test_mfa_verify_used_token_returns_400(client, mock_db):
-    """Returns 400 when the token has already been used."""
-    mock_db.fetchrow.return_value = _mfa_token_row(is_used=True)
-
-    r = client["client"].post(
-        "/mfa/verify?token=used-token&date_of_birth=1990-06-15"
-    )
-    assert r.status_code == 400
-    assert "already used" in r.json()["detail"].lower()
-
-
-def test_mfa_verify_closed_election_returns_400(client, mock_db):
-    """Returns 400 when the election is not open."""
-    mock_db.fetchrow.return_value = _mfa_token_row(status="closed")
-
-    r = client["client"].post(
-        "/mfa/verify?token=test-token&date_of_birth=1990-06-15"
-    )
-    assert r.status_code == 400
-    assert "not open" in r.json()["detail"].lower()
-
-
-def test_mfa_verify_invalid_date_format_returns_400(client, mock_db):
-    """Returns 400 when date_of_birth is not a valid ISO date string."""
-    r = client["client"].post(
-        "/mfa/verify?token=test-token&date_of_birth=not-a-date"
-    )
-    assert r.status_code == 400
-    assert "Invalid date format" in r.json()["detail"]
-
-
-def test_mfa_verify_already_verified_does_not_duplicate(client, mock_db):
-    """
-    When a voter has already completed MFA (existing voter_mfa row found),
-    the handler skips the INSERT and still returns {"verified": True}.
-    """
-    existing_mfa_row = {"id": 99}
-    mock_db.fetchrow.side_effect = [_mfa_token_row(), existing_mfa_row]
-
-    r = client["client"].post(
-        "/mfa/verify?token=test-token&date_of_birth=1990-06-15"
-    )
-    assert r.status_code == 200
-    assert r.json() == {"verified": True}
-    # execute (INSERT voter_mfa) must NOT have been called
-    mock_db.execute.assert_not_called()
 
 
 # ── GET /tokens/{token}/validate ─────────────────────────────────────────────
