@@ -180,7 +180,7 @@ def test_submit_vote_success(client, mock_db, mock_auth,
     )
 
     assert response.status_code == 200
-    assert "Vote Successfully Cast" in response.text
+    assert "Vote Submitted" in response.text
     assert "testhash123" in response.text
 
 
@@ -331,4 +331,4 @@ def test_auth_service_unreachable_on_submit(client, mock_db, mock_auth,
 
     # submit_vote never calls auth-service, so ConnectError is never raised
     assert response.status_code == 200
-    assert "Vote Successfully Cast" in response.text
+    assert "Vote Submitted" in response.text
