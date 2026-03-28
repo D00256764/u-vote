@@ -217,8 +217,8 @@ def test_register_success_redirects_to_login(client):
         "/register",
         data={
             "email": "new@uvote.com",
-            "password": "pass1234",
-            "confirm_password": "pass1234",
+            "password": "Pass1234",
+            "confirm_password": "Pass1234",
         },
         follow_redirects=False,
     )
@@ -238,8 +238,8 @@ def test_register_duplicate_email_renders_error(client):
         "/register",
         data={
             "email": "dup@uvote.com",
-            "password": "pass1234",
-            "confirm_password": "pass1234",
+            "password": "Pass1234",
+            "confirm_password": "Pass1234",
         },
         follow_redirects=False,
     )
@@ -257,8 +257,8 @@ def test_register_service_unreachable_shows_error(client):
         "/register",
         data={
             "email": "new@uvote.com",
-            "password": "pass1234",
-            "confirm_password": "pass1234",
+            "password": "Pass1234",
+            "confirm_password": "Pass1234",
         },
         follow_redirects=False,
     )
