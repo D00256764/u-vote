@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: uvote
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/D00256764/u-vote
+    targetRevision: main
+    path: uvote-platform/k8s
+    directory:
+      recurse: true   # apply all YAMLs in subdirectories (services/, ingress/, etc.)
+
+  destination:
+    server: https://kubernetes.default.svc  # in-cluster ArgoCD
+    namespace: uvote-dev
+
+  syncPolicy:
+    automated:
+      prune: false    # don't delete resources removed from git (safer for first deploy)
+      selfHeal: true  # revert any manual kubectl changes back to git state
+    syncOptions:
+      - CreateNamespace=true  # creates uvote-dev if it doesn't exist yet
