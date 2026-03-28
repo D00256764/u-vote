@@ -129,7 +129,7 @@ def test_register_and_login_flow():
     End-to-end: register a new organiser account, log in, land on dashboard.
     Uses a unique email per test run to avoid conflicts on re-runs.
     """
-    email = f"ci_{uuid.uuid4().hex[:8]}@uvote.test"
+    email = f"ci_{uuid.uuid4().hex[:8]}@example.com"
     password = "CiTest123!"
 
     with httpx.Client(
@@ -143,19 +143,30 @@ def test_register_and_login_flow():
             "password": password,
             "confirm_password": password,
         })
-        assert r.status_code == 200
-        # After successful registration the form redirects to /login
-        assert "/login" in str(r.url) or "Login" in r.text or "login" in r.text.lower()
+        # Successful registration: frontend returns 303 → GET /login (200)
+        assert r.status_code == 200, (
+            f"Register expected final status 200 (login page), got {r.status_code}. "
+            f"Response body: {r.text[:300]}"
+        )
+        assert "/login" in str(r.url), (
+            f"Register should redirect to /login but ended at {r.url}. "
+            f"Body snippet: {r.text[:300]}"
+        )
 
         # ── Login ────────────────────────────────────────────────────────────
         r = c.post("/login", data={"email": email, "password": password})
-        assert r.status_code == 200
         # After login the chain is:
         #   frontend → redirect to /dashboard?token=...&organiser_id=...
         #   election-service stores session → redirect to /dashboard
         #   election-service renders dashboard
-        assert "/dashboard" in str(r.url)
-        assert r.status_code == 200
+        assert r.status_code == 200, (
+            f"Login expected final status 200 (dashboard), got {r.status_code}. "
+            f"Body snippet: {r.text[:300]}"
+        )
+        assert "/dashboard" in str(r.url), (
+            f"Login should end at /dashboard but ended at {r.url}. "
+            f"Body snippet: {r.text[:300]}"
+        )
 
 
 # ---------------------------------------------------------------------------
