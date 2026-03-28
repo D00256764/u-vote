@@ -40,8 +40,8 @@ spec:
     spec:
       containers:
       - name: frontend-service
-        image: frontend-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-frontend-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5000
           name: http
@@ -50,8 +50,9 @@ spec:
         # Inter-service communication (backend service URLs)
         - name: AUTH_SERVICE_URL
           value: "http://auth-service:5001"
+        # Must be browser-reachable (external URL) — the browser follows this redirect
         - name: ELECTION_DASHBOARD_URL
-          value: "http://election-service:5005/dashboard"
+          value: "http://uvote.local/dashboard"
         # Session configuration
         - name: SESSION_SECRET
           valueFrom:
@@ -61,14 +62,16 @@ spec:
         # IMPORTANT: NO DB_HOST, DB_USER, or DB_PASSWORD
         # Frontend is blocked from database by network policy (defence in depth)
         livenessProbe:
-          tcpSocket:
+          httpGet:
+            path: /health
             port: 5000
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
-          tcpSocket:
+          httpGet:
+            path: /health
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5

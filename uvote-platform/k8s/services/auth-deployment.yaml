@@ -39,8 +39,8 @@ spec:
     spec:
       containers:
       - name: auth-service
-        image: auth-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-auth-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5001
           name: http
@@ -76,6 +76,30 @@ spec:
         # Service configuration
         - name: DEFAULT_ORG_ID
           value: "1"
+        # Twilio SMS (OTP MFA) — CV-14
+        # Create secret: kubectl create secret generic twilio-credentials \
+        #   --from-literal=account_sid=ACxxx \
+        #   --from-literal=auth_token=xxx \
+        #   --from-literal=from_number=+1xxx -n uvote-dev
+        # If any key is absent, auth-service falls back to logging OTP to stdout.
+        - name: TWILIO_ACCOUNT_SID
+          valueFrom:
+            secretKeyRef:
+              name: twilio-credentials
+              key: account_sid
+              optional: true
+        - name: TWILIO_AUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: twilio-credentials
+              key: auth_token
+              optional: true
+        - name: TWILIO_FROM_NUMBER
+          valueFrom:
+            secretKeyRef:
+              name: twilio-credentials
+              key: from_number
+              optional: true
         livenessProbe:
           httpGet:
             path: /health
