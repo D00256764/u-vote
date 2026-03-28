@@ -40,8 +40,8 @@ spec:
     spec:
       containers:
       - name: election-service
-        image: election-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-election-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5005
           name: http
@@ -67,15 +67,21 @@ spec:
         # Inter-service communication
         - name: AUTH_SERVICE_URL
           value: "http://auth-service:5001"
+        - name: ADMIN_SERVICE_URL
+          value: "http://admin-service:5002"
         # Session configuration
         - name: SESSION_SECRET
           valueFrom:
             secretKeyRef:
               name: flask-secret
               key: secret
-        # Redirect URL after election operations
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://uvote.local"
+        # Redirect URL after login — must be browser-reachable (external URL)
         - name: ELECTION_DASHBOARD_URL
-          value: "http://election-service:5005/dashboard"
+          value: "http://uvote.local/dashboard"
         livenessProbe:
           httpGet:
             path: /health

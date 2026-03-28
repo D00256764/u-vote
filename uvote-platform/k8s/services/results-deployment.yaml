@@ -41,8 +41,8 @@ spec:
     spec:
       containers:
       - name: results-service
-        image: results-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-results-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5004
           name: http
@@ -76,6 +76,10 @@ spec:
             secretKeyRef:
               name: flask-secret
               key: secret
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://uvote.local"
         livenessProbe:
           httpGet:
             path: /health
