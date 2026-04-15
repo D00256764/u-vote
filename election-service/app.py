@@ -264,6 +264,8 @@ async def create_election_form(request: Request):
         )
 
     # Parse datetime-local values (format: "YYYY-MM-DDTHH:MM")
+    # Column is timestamp without time zone — store as naive UTC.
+    # The scheduler compares with NOW() which is UTC inside Docker.
     try:
         scheduled_open_at = datetime.fromisoformat(scheduled_open_str)
         scheduled_close_at = datetime.fromisoformat(scheduled_close_str)
@@ -303,6 +305,113 @@ async def create_election_form(request: Request):
                 )
 
     flash(request, "Election created successfully!", "success")
+    return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
+
+@app.get("/elections/{election_id}/edit", response_class=HTMLResponse)
+async def edit_election_page(request: Request, election_id: int):
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    qp_token = request.query_params.get("token")
+    qp_oid = request.query_params.get("organiser_id")
+    if qp_token and qp_oid:
+        try:
+            request.session["token"] = qp_token
+            request.session["organiser_id"] = int(qp_oid)
+        except (ValueError, TypeError):
+            pass
+        return RedirectResponse(url=f"/elections/{election_id}/edit", status_code=303)
+
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+
+    organiser_id = request.session["organiser_id"]
+    async with Database.connection() as conn:
+        election = await conn.fetchrow(
+            """
+            SELECT id, title, description, status, organiser_id,
+                   scheduled_open_at, scheduled_close_at
+            FROM elections WHERE id = $1
+            """,
+            election_id,
+        )
+        if not election or election["organiser_id"] != organiser_id:
+            flash(request, "Election not found or access denied", "danger")
+            return RedirectResponse(url="/dashboard", status_code=303)
+
+        if election["status"] != "draft":
+            flash(request, "Only draft elections can be edited", "warning")
+            return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
+
+    def fmt_dt(dt):
+        return dt.strftime("%Y-%m-%dT%H:%M") if dt else ""
+
+    return templates.TemplateResponse("edit_election.html", {
+        "request": request,
+        "election": {
+            "id": election["id"],
+            "title": election["title"],
+            "description": election["description"] or "",
+            "status": election["status"],
+            "scheduled_open_at": fmt_dt(election["scheduled_open_at"]),
+            "scheduled_close_at": fmt_dt(election["scheduled_close_at"]),
+        },
+        "messages": get_flashed_messages(request),
+    })
+
+
+@app.post("/elections/{election_id}/edit", response_class=HTMLResponse)
+async def edit_election_form(request: Request, election_id: int):
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    redirect = _require_login(request)
+    if redirect:
+        return redirect
+
+    from datetime import datetime
+
+    organiser_id = request.session["organiser_id"]
+    form = await request.form()
+    title = form.get("title", "").strip()
+    description = form.get("description", "")
+    scheduled_open_str = form.get("scheduled_open_at", "").strip()
+    scheduled_close_str = form.get("scheduled_close_at", "").strip()
+
+    if not title:
+        flash(request, "Election title is required", "error")
+        return RedirectResponse(url=f"/elections/{election_id}/edit", status_code=303)
+
+    if not scheduled_open_str or not scheduled_close_str:
+        flash(request, "Both open and close times are required", "error")
+        return RedirectResponse(url=f"/elections/{election_id}/edit", status_code=303)
+
+    try:
+        scheduled_open_at = datetime.fromisoformat(scheduled_open_str)
+        scheduled_close_at = datetime.fromisoformat(scheduled_close_str)
+    except ValueError:
+        flash(request, "Invalid date format for scheduled times", "error")
+        return RedirectResponse(url=f"/elections/{election_id}/edit", status_code=303)
+
+    if scheduled_close_at <= scheduled_open_at:
+        flash(request, "Close time must be after open time", "error")
+        return RedirectResponse(url=f"/elections/{election_id}/edit", status_code=303)
+
+    async with Database.transaction() as conn:
+        result = await conn.execute(
+            """
+            UPDATE elections
+            SET title = $1, description = $2,
+                scheduled_open_at = $3, scheduled_close_at = $4
+            WHERE id = $5 AND organiser_id = $6 AND status = 'draft'
+            """,
+            title, description, scheduled_open_at, scheduled_close_at,
+            election_id, organiser_id,
+        )
+
+    if result == "UPDATE 0":
+        flash(request, "Election not found, not yours, or no longer a draft", "danger")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    flash(request, "Election updated successfully!", "success")
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
 
 

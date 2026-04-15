@@ -39,7 +39,7 @@ def client():
 # Helper: wait for NGINX to be responsive (used as a simple readiness gate)
 # ---------------------------------------------------------------------------
 
-def _wait_for_nginx(retries: int = 30, delay: float = 2.0):
+def _wait_for_nginx(retries: int = 60, delay: float = 3.0):
     for _ in range(retries):
         try:
             r = httpx.get(f"{BASE}/", timeout=3, follow_redirects=True)
