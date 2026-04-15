@@ -95,5 +95,16 @@
         `;
         container.appendChild(wrapper);
     });
+
+    function toUtcLocal(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input.value) return;
+        input.value = new Date(input.value).toISOString().slice(0, 16);
+    }
+
+    document.getElementById('createElectionForm').addEventListener('submit', function () {
+        toUtcLocal('scheduled_open_at');
+        toUtcLocal('scheduled_close_at');
+    });
 </script>
 {% endblock %}
