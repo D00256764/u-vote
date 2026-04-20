@@ -104,7 +104,7 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "sum by (job) (rate(http_requests_total{status_code=~\"5..\"}[1m])) / sum by (job) (rate(http_requests_total[1m]))",
+              "expr": "sum by (job) (rate(http_requests_total{status=~\"5xx\"}[1m])) / sum by (job) (rate(http_requests_total[1m]))",
               "legendFormat": "{{job}}",
               "refId": "A"
             }
@@ -169,7 +169,7 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "sum(rate(http_requests_total{job=\"voting-service\", handler=\"/vote/submit\", status_code=\"200\"}[1m])) * 60",
+              "expr": "sum(rate(http_requests_total{job=\"voting-service\", handler=\"/vote/submit\", status=\"2xx\"}[1m])) * 60",
               "legendFormat": "votes/min",
               "refId": "A"
             }
@@ -193,7 +193,7 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "sum(rate(http_requests_total{status_code!~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+              "expr": "sum(rate(http_requests_total{status!~\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
               "refId": "A"
             }
           ],
@@ -223,7 +223,7 @@ data:
           "datasource": "Prometheus",
           "targets": [
             {
-              "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m]))",
+              "expr": "sum(rate(http_requests_total{status=~\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
               "refId": "A"
             }
           ],

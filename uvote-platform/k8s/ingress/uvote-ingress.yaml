@@ -4,9 +4,7 @@ metadata:
   name: uvote-ingress
   namespace: uvote-dev
   annotations:
-    # Enable regex path matching so we can route /elections/{id}/voters etc.
     nginx.ingress.kubernetes.io/use-regex: "true"
-    # Allow CSV uploads (voter import) up to 10 MB
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
   ingressClassName: nginx

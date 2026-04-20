@@ -1,0 +1,247 @@
+# =============================================================================
+# U-Vote Inter-Service Communication Policies
+#
+# The default-deny (00) blocks all egress, including service-to-service calls.
+# This file opens the specific paths each service needs to call others.
+#
+# frontend  → auth-service    (login, register, token validation)
+# frontend  → admin-service   (voter management pages)
+# frontend  → voting-service  (ballot display, vote submission)
+# frontend  → results-service (results display)
+# election-service → auth-service  (JWT validation, _require_login)
+# admin-service    → auth-service  (JWT validation)
+# voting-service   → auth-service  (token/JWT validation)
+# results-service  → auth-service  (JWT validation)
+# =============================================================================
+
+# --- frontend egress → auth-service ------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-auth
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+
+---
+# --- frontend egress → admin-service -----------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-admin
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: admin-service
+    ports:
+    - port: 5002
+      protocol: TCP
+
+---
+# --- frontend egress → voting-service ----------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-voting
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: voting-service
+    ports:
+    - port: 5003
+      protocol: TCP
+
+---
+# --- frontend egress → results-service ---------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-results
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: results-service
+    ports:
+    - port: 5004
+      protocol: TCP
+
+---
+# --- election-service egress → auth-service ----------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-election-to-auth
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: election-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+
+---
+# --- admin-service egress → auth-service -------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-admin-to-auth
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+
+---
+# --- voting-service egress → auth-service ------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-voting-to-auth
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: voting-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+
+---
+# --- results-service egress → auth-service -----------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-results-to-auth
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: results-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+
+---
+# --- election-service egress → admin-service ---------------------------------
+# election-service calls admin-service to get voter counts
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-election-to-admin
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: election-service
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: admin-service
+    ports:
+    - port: 5002
+      protocol: TCP
+
+---
+# --- auth ingress from all services (matching the egress rules above) --------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-auth-ingress
+  namespace: uvote-dev
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend-service
+    - podSelector:
+        matchLabels:
+          app: election-service
+    - podSelector:
+        matchLabels:
+          app: admin-service
+    - podSelector:
+        matchLabels:
+          app: voting-service
+    - podSelector:
+        matchLabels:
+          app: results-service
+    ports:
+    - port: 5001
+      protocol: TCP

@@ -22,7 +22,7 @@ metadata:
     tier: backend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: election-service
@@ -78,10 +78,10 @@ spec:
         # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
         # Used by _require_login redirects and Jinja2 templates.
         - name: BASE_URL
-          value: "http://uvote.local"
+          value: "http://localhost"
         # Redirect URL after login — must be browser-reachable (external URL)
         - name: ELECTION_DASHBOARD_URL
-          value: "http://uvote.local/dashboard"
+          value: "http://localhost/dashboard"
         livenessProbe:
           httpGet:
             path: /health
@@ -94,9 +94,9 @@ spec:
           httpGet:
             path: /health
             port: 5005
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         resources:
           requests:

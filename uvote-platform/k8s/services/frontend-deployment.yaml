@@ -22,7 +22,7 @@ metadata:
     tier: frontend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: frontend-service
@@ -52,7 +52,7 @@ spec:
           value: "http://auth-service:5001"
         # Must be browser-reachable (external URL) — the browser follows this redirect
         - name: ELECTION_DASHBOARD_URL
-          value: "http://uvote.local/dashboard"
+          value: "http://localhost/dashboard"
         # Session configuration
         - name: SESSION_SECRET
           valueFrom:

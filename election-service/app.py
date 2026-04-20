@@ -69,6 +69,11 @@ async def auto_manage_elections():
                     row["id"],
                 )
                 logger.info("Scheduler: auto-opened election %s", row["id"])
+                await conn.execute(
+                    "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4)",
+                    "election_opened", row["id"], "system",
+                    '{"source": "scheduler"}',
+                )
                 # Auto-send voting tokens to all voters for this election
                 try:
                     resp = await http_client.post(
@@ -76,9 +81,16 @@ async def auto_manage_elections():
                         json={"expiry_hours": 168},
                     )
                     data = resp.json()
+                    tokens_sent = data.get("tokens_generated", 0)
+                    emails_sent = data.get("emails_sent", 0)
                     logger.info(
                         "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
-                        row["id"], data.get("tokens_generated", 0), data.get("emails_sent", 0),
+                        row["id"], tokens_sent, emails_sent,
+                    )
+                    await conn.execute(
+                        "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4::jsonb)",
+                        "tokens_sent", row["id"], "system",
+                        f'{{"tokens_generated": {tokens_sent}, "emails_sent": {emails_sent}}}',
                     )
                 except Exception as e:
                     logger.error("Scheduler: failed to send tokens for election %s: %s", row["id"], e)
@@ -99,6 +111,11 @@ async def auto_manage_elections():
                 )
                 await _tally_votes(conn, row["id"])
                 logger.info("Scheduler: auto-closed election %s", row["id"])
+                await conn.execute(
+                    "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4)",
+                    "election_closed", row["id"], "system",
+                    '{"source": "scheduler"}',
+                )
     except Exception as e:
         logger.error("Scheduler error in auto_manage_elections: %s", e)
 
@@ -552,6 +569,52 @@ def _require_login(request: Request):
     return None
 
 
+@app.get("/dashboard/notifications")
+async def dashboard_notifications(request: Request):
+    """Lightweight endpoint — returns recent activity for the logged-in organiser."""
+    organiser_id = request.session.get("organiser_id")
+    if not organiser_id:
+        return []
+    async with Database.connection() as conn:
+        election_ids = [r["id"] for r in await conn.fetch(
+            "SELECT id FROM elections WHERE organiser_id = $1", organiser_id
+        )]
+        if not election_ids:
+            return []
+        import json as _json
+        notif_rows = await conn.fetch(
+            """
+            SELECT a.event_type, a.detail, a.created_at, e.title
+            FROM audit_log a
+            JOIN elections e ON e.id = a.election_id
+            WHERE a.election_id = ANY($1)
+              AND a.event_type IN ('election_opened','election_closed','tokens_sent')
+            ORDER BY a.created_at DESC LIMIT 20
+            """,
+            election_ids,
+        )
+        result = []
+        for n in notif_rows:
+            raw = n["detail"]
+            detail = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+            if n["event_type"] == "election_opened":
+                msg = f"Election \"{n['title']}\" was automatically opened."
+                cat = "info"
+            elif n["event_type"] == "election_closed":
+                msg = f"Election \"{n['title']}\" was automatically closed and tallied."
+                cat = "warning"
+            elif n["event_type"] == "tokens_sent":
+                sent = detail.get("tokens_generated", 0)
+                msg = f"{sent} voting token(s) emailed to voters for \"{n['title']}\"."
+                cat = "success"
+            else:
+                continue
+            result.append({"id": f"{n['event_type']}_{n['created_at'].isoformat()}",
+                            "message": msg, "category": cat,
+                            "time": n["created_at"].strftime("%H:%M UTC")})
+    return result
+
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -594,6 +657,40 @@ async def dashboard_page(request: Request):
             organiser_id,
         )
 
+        election_ids = [r["id"] for r in rows]
+        notifications = []
+        if election_ids:
+            notif_rows = await conn.fetch(
+                """
+                SELECT a.event_type, a.election_id, a.detail, a.created_at, e.title
+                FROM audit_log a
+                JOIN elections e ON e.id = a.election_id
+                WHERE a.election_id = ANY($1)
+                  AND a.event_type IN ('election_opened', 'election_closed', 'tokens_sent')
+                ORDER BY a.created_at DESC
+                LIMIT 10
+                """,
+                election_ids,
+            )
+            for n in notif_rows:
+                import json as _json
+                raw = n["detail"]
+                detail = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                if n["event_type"] == "election_opened":
+                    msg = f"Election \"{n['title']}\" was automatically opened."
+                    cat = "info"
+                elif n["event_type"] == "election_closed":
+                    msg = f"Election \"{n['title']}\" was automatically closed and tallied."
+                    cat = "warning"
+                elif n["event_type"] == "tokens_sent":
+                    sent = detail.get("tokens_generated", 0)
+                    msg = f"{sent} voting token(s) emailed to voters for \"{n['title']}\"."
+                    cat = "success"
+                else:
+                    continue
+                notifications.append({"message": msg, "category": cat,
+                                       "time": n["created_at"].strftime("%H:%M UTC")})
+
     elections = [
         {
             "id": r["id"], "title": r["title"], "description": r["description"],
@@ -610,6 +707,7 @@ async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {
         "request": request, "elections": elections,
         "messages": get_flashed_messages(request),
+        "notifications": notifications,
     })
 
 

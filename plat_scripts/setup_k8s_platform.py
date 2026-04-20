@@ -151,13 +151,23 @@ def create_kind_cluster(kind_config: Path) -> bool:
         return False
     
     print_success("Cluster created successfully")
-    
+
+    # Label the control-plane node so the Kind ingress controller can schedule on it.
+    # The Kind ingress manifest uses nodeSelector: ingress-ready=true, but Kind only
+    # adds that label automatically when the cluster name is the default "kind".
+    # With a custom name (e.g. "uvote") the label must be applied manually.
+    print_info("Labelling control-plane node for ingress scheduling...")
+    run_command(
+        ['kubectl', 'label', 'node', 'uvote-control-plane', 'ingress-ready=true', '--overwrite'],
+        check=False,
+    )
+
     # Verify nodes
     success, stdout, _ = run_command(['kubectl', 'get', 'nodes'], capture_output=True, check=False)
     if success:
         print_info("Cluster nodes:")
         print(stdout)
-    
+
     return True
 
 def install_calico() -> bool:
@@ -506,41 +516,47 @@ def apply_network_policies(k8s_dir: Path) -> bool:
     return True
 
 def install_ingress_controller() -> bool:
-    """Install Nginx Ingress Controller"""
-    print_step(7, "Installing Nginx Ingress Controller...")
-    
-    # Add Helm repo
-    print_info("Adding ingress-nginx Helm repository...")
-    run_command(['helm', 'repo', 'add', 'ingress-nginx', 
-                 'https://kubernetes.github.io/ingress-nginx'], check=False)
-    run_command(['helm', 'repo', 'update'], check=False)
-    
-    # Install ingress controller
-    print_info("Installing ingress-nginx...")
-    success, _, stderr = run_command([
-        'helm', 'install', 'ingress-nginx', 'ingress-nginx/ingress-nginx',
-        '--namespace', 'ingress-nginx',
-        '--create-namespace'
-    ], check=False)
-    
-    if not success and 'already exists' not in stderr:
-        print_error("Failed to install ingress controller")
+    """Install Nginx Ingress Controller using the Kind-specific manifest.
+
+    The standard Helm chart creates a LoadBalancer service which never gets
+    an external IP in Kind. The Kind-specific manifest binds the controller
+    pod directly to hostPort 80/443 on the control-plane node, which
+    connects to the extraPortMappings declared in kind-config.yaml.
+    This makes the app reachable at http://localhost without any port-forward.
+    """
+    print_step(7, "Installing Nginx Ingress Controller (Kind)...")
+
+    KIND_INGRESS_MANIFEST = (
+        "https://raw.githubusercontent.com/kubernetes/ingress-nginx"
+        "/controller-v1.10.1/deploy/static/provider/kind/deploy.yaml"
+    )
+
+    print_info("Applying Kind ingress-nginx manifest...")
+    success, _, stderr = run_command(
+        ['kubectl', 'apply', '-f', KIND_INGRESS_MANIFEST],
+        check=False,
+    )
+
+    if not success:
+        print_error("Failed to apply ingress-nginx manifest")
+        print(stderr)
         return False
-    
-    # Wait for ingress controller
-    print_info("Waiting for ingress controller to be ready...")
+
+    # Wait for the controller pod to be ready
+    print_info("Waiting for ingress controller to be ready (up to 3 min)...")
     success, _, _ = run_command([
-        'kubectl', 'wait', '--namespace', 'ingress-nginx',
+        'kubectl', 'wait',
+        '--namespace', 'ingress-nginx',
         '--for=condition=ready', 'pod',
         '--selector=app.kubernetes.io/component=controller',
-        '--timeout=120s'
+        '--timeout=180s',
     ], check=False)
-    
+
     if not success:
-        print_warning("Ingress controller may still be starting")
-        return True  # Continue anyway
-    
-    print_success("Ingress controller installed")
+        print_warning("Ingress controller pod not ready yet — it may still be pulling the image")
+        return True  # Continue; it usually becomes ready shortly after
+
+    print_success("Ingress controller installed and ready")
     return True
 
 def verify_setup() -> bool:
