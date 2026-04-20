@@ -17,6 +17,13 @@
     </a>
 </div>
 
+<div id="activityPanel" class="mb-4" style="display:none;">
+    <div style="font-size:0.7rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem;">
+        <i class="bi bi-bell-fill me-1"></i> Recent Activity
+    </div>
+    <div id="activityList"></div>
+</div>
+
 {% if elections %}
     <div class="row g-3">
         {% for election in elections %}
@@ -50,11 +57,11 @@
 
                         {% if election.status == 'draft' %}
                             <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
-                                <i class="bi bi-clock"></i> Opens {{ election.scheduled_open_at[:16].replace('T',' ') if election.scheduled_open_at else '—' }}
+                                <i class="bi bi-clock"></i> Opens <span class="local-time" data-utc="{{ election.scheduled_open_at }}">{{ election.scheduled_open_at[:16].replace('T',' ') if election.scheduled_open_at else '—' }}</span>
                             </span>
                         {% elif election.status == 'open' %}
                             <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
-                                <i class="bi bi-clock"></i> Closes {{ election.scheduled_close_at[:16].replace('T',' ') if election.scheduled_close_at else '—' }}
+                                <i class="bi bi-clock"></i> Closes <span class="local-time" data-utc="{{ election.scheduled_close_at }}">{{ election.scheduled_close_at[:16].replace('T',' ') if election.scheduled_close_at else '—' }}</span>
                             </span>
                         {% endif %}
 
@@ -83,4 +90,59 @@
         <p class="text-muted mt-3 mb-0" style="font-size: 0.875rem;">No elections yet. Click "Create New Election" to get started.</p>
     </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Convert UTC times to local
+document.querySelectorAll('.local-time').forEach(function(el) {
+    const utc = el.getAttribute('data-utc');
+    if (!utc) return;
+    const d = new Date(utc.endsWith('Z') ? utc : utc + 'Z');
+    el.textContent = d.toLocaleString([], {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+});
+
+// Notifications
+const DISMISSED_KEY = 'uvote_dismissed';
+function getDismissed() { try { return JSON.parse(localStorage.getItem(DISMISSED_KEY)||'[]'); } catch(e){return[];} }
+function dismiss(btn) {
+    const el = btn.closest('[data-notif-id]');
+    if (!el) return;
+    const id = el.getAttribute('data-notif-id');
+    const d = getDismissed(); if(!d.includes(id)){d.push(id);} localStorage.setItem(DISMISSED_KEY, JSON.stringify(d));
+    el.remove();
+    if(!document.getElementById('activityList').children.length) document.getElementById('activityPanel').style.display='none';
+}
+
+const COLORS = {success:['#f0fdf4','#16a34a','envelope-check-fill'], warning:['#fffbeb','#d97706','lock-fill'], info:['#eff6ff','#2563eb','play-circle-fill']};
+
+function renderNotifications(items) {
+    const dismissed = getDismissed();
+    const list = document.getElementById('activityList');
+    const panel = document.getElementById('activityPanel');
+    const visible = items.filter(n => !dismissed.includes(n.id));
+    if (!visible.length) { panel.style.display='none'; return; }
+    panel.style.display='block';
+    list.innerHTML = '';
+    visible.forEach(function(n) {
+        const [bg, col, icon] = COLORS[n.category] || COLORS.info;
+        const div = document.createElement('div');
+        div.setAttribute('data-notif-id', n.id);
+        div.className = 'd-flex align-items-start gap-2 mb-2 p-3';
+        div.style.cssText = `background:${bg};border-left:3px solid ${col};border-radius:0 8px 8px 0;font-size:0.825rem;`;
+        div.innerHTML = `<i class="bi bi-${icon}" style="color:${col};margin-top:1px;flex-shrink:0;"></i>
+            <span style="color:#374151;">${n.message}</span>
+            <span class="ms-auto" style="color:#9ca3af;white-space:nowrap;font-size:0.75rem;">${n.time}</span>
+            <button onclick="dismiss(this)" style="background:none;border:none;color:#9ca3af;cursor:pointer;padding:0 0 0 6px;font-size:1rem;line-height:1;flex-shrink:0;">&times;</button>`;
+        list.appendChild(div);
+    });
+}
+
+function pollNotifications() {
+    fetch('/dashboard/notifications').then(r=>r.json()).then(renderNotifications).catch(()=>{});
+}
+
+pollNotifications();
+setInterval(pollNotifications, 30000);
+</script>
 {% endblock %}

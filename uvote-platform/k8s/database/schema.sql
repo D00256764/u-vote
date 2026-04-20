@@ -90,24 +90,29 @@ CREATE TABLE elections (
     status         VARCHAR(20) DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
     encryption_key TEXT,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    opened_at      TIMESTAMP,
-    closed_at      TIMESTAMP
+    opened_at          TIMESTAMP,
+    closed_at          TIMESTAMP,
+    scheduled_open_at  TIMESTAMP,
+    scheduled_close_at TIMESTAMP
 );
 
 CREATE TABLE voters (
-    id          SERIAL PRIMARY KEY,
-    election_id INTEGER REFERENCES elections(id) ON DELETE CASCADE,
-    email       VARCHAR(255) NOT NULL,
-    date_of_birth DATE NOT NULL,
-    has_voted   BOOLEAN DEFAULT FALSE,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    id           SERIAL PRIMARY KEY,
+    election_id  INTEGER REFERENCES elections(id) ON DELETE CASCADE,
+    email        VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20),
+    date_of_birth DATE,
+    has_voted    BOOLEAN DEFAULT FALSE,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(election_id, email)
 );
 
 CREATE TABLE voter_mfa (
-    id          SERIAL PRIMARY KEY,
-    token       VARCHAR(255) NOT NULL,
-    verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id             SERIAL PRIMARY KEY,
+    token          VARCHAR(255) NOT NULL,
+    otp_code       VARCHAR(6),
+    otp_expires_at TIMESTAMP,
+    verified_at    TIMESTAMP
 );
 
 CREATE TABLE election_options (

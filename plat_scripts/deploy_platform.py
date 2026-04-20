@@ -88,6 +88,9 @@ SERVICE_REGISTRY: Dict[str, dict] = {
     },
 }
 
+# GHCR registry prefix — must match the image names in the K8s deployment YAMLs
+GHCR_PREFIX = "ghcr.io/d00256764"
+
 # Ordered list of image names (build order)
 ALL_SERVICES = list(SERVICE_REGISTRY.keys())
 
@@ -344,6 +347,11 @@ class PlatformDeployer:
                 ["docker", "images", svc, "--format", "{{.Size}}"], check=False
             )
             size = size_out.strip().splitlines()[0] if size_out.strip() else "unknown"
+
+            # Tag with GHCR name so Kind loads match what the deployment YAMLs reference
+            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
+            self.run_cmd(["docker", "tag", f"{svc}:latest", ghcr_tag], check=False, mutating=True)
+
             self.logger.success(f"✓ {svc}:latest built (Size: {size})")
             self.results["images_built"].append(svc)
 
@@ -361,9 +369,10 @@ class PlatformDeployer:
                 self.logger.warning(f"⚠ Skipping {svc} (build failed)")
                 continue
 
+            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
             self.logger.info(f"Loading {svc}:latest into Kind cluster...")
             rc, out, err = self.run_cmd(
-                ["kind", "load", "docker-image", f"{svc}:latest",
+                ["kind", "load", "docker-image", ghcr_tag,
                  "--name", self.cluster_name],
                 check=False,
                 timeout=300,
@@ -375,7 +384,7 @@ class PlatformDeployer:
                 self.results["images_load_failed"].append(svc)
                 all_ok = False
             else:
-                self.logger.success(f"✓ {svc}:latest loaded into Kind")
+                self.logger.success(f"✓ {svc}:latest loaded into Kind (as {ghcr_tag})")
                 self.results["images_loaded"].append(svc)
 
         return all_ok
