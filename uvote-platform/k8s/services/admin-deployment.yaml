@@ -45,7 +45,7 @@ spec:
     spec:
       containers:
       - name: admin-service
-        image: ghcr.io/d00256764/u-vote-admin-service:latest
+        image: ghcr.io/d00256764/u-vote-admin-service:2d7de54
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5002
