@@ -41,7 +41,7 @@ spec:
     spec:
       containers:
       - name: results-service
-        image: ghcr.io/d00256764/u-vote-results-service:2d7de54
+        image: ghcr.io/d00256764/u-vote-results-service:87cfd4c
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5004

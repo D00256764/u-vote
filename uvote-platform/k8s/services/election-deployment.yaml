@@ -40,7 +40,7 @@ spec:
     spec:
       containers:
       - name: election-service
-        image: ghcr.io/d00256764/u-vote-election-service:2d7de54
+        image: ghcr.io/d00256764/u-vote-election-service:87cfd4c
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5005
