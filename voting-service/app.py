@@ -22,8 +22,8 @@ Runs on port 5003, exposed to voters on port 8081.
 
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Form
@@ -42,6 +42,10 @@ for p in [
     if os.path.isdir(p_abs):
         sys.path.insert(0, p_abs)
         break
+
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('voting-service')
 
 from database import Database
 from security import generate_receipt_token
@@ -72,6 +76,9 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
+
 
 # -- Helpers ------------------------------------------------------------------
 
@@ -91,15 +98,17 @@ def _error_page(request, error):
 # -- Health -------------------------------------------------------------------
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "voting"}
 
 
 # -- Receipt verification (public) -------------------------------------------
 
 @app.get("/receipt/{receipt_token}")
-async def verify_receipt(receipt_token: str):
+async def verify_receipt(request: Request, receipt_token: str):
     """Public endpoint: verify a vote receipt was recorded."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             """
@@ -127,8 +136,8 @@ async def verify_receipt(receipt_token: str):
 # ==========================================================================
 # VOTER-FACING WEB PAGES - the complete voting journey
 #
-#   GET  /vote/{token}           -> validate token -> show identity form
-#   POST /vote/verify-identity   -> verify DOB via auth-service -> get ballot token -> show ballot
+#   GET  /vote/{token}           -> validate token -> auto-send OTP -> show OTP entry form
+#   POST /vote/verify-identity   -> verify OTP via auth-service -> get ballot token -> show ballot
 #   POST /vote/submit            -> encrypt vote -> store in encrypted_ballots -> show receipt
 #   GET  /vote/verify/{receipt}  -> verify receipt page
 # ==========================================================================
@@ -136,22 +145,39 @@ async def verify_receipt(receipt_token: str):
 @app.get("/vote/{token}", response_class=HTMLResponse)
 async def vote_landing(request: Request, token: str):
     """Step 1 - Validate voting token and show identity verification form."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
 
     # Validate token via auth-service
-    resp = await http_client.get(f"{AUTH_SERVICE}/tokens/{token}/validate")
+    try:
+        resp = await http_client.get(f"{AUTH_SERVICE}/tokens/{token}/validate")
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'GET', AUTH_SERVICE + '/tokens/{token}/validate', e)
+        return _error_page(request, "Service unavailable")
 
     if resp.status_code != 200:
         error = safe_json(resp).get("detail", "Invalid or expired voting link")
         return _error_page(request, error)
 
     # Check if MFA already completed
-    mfa_resp = await http_client.get(
-        f"{AUTH_SERVICE}/mfa/status", params={"token": token}
-    )
+    try:
+        mfa_resp = await http_client.get(f"{AUTH_SERVICE}/mfa/status",
+                                         params={"token": token})
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'GET', AUTH_SERVICE + '/mfa/status', e)
+        return _error_page(request, "Service unavailable")
+
     if mfa_resp.status_code == 200 and safe_json(mfa_resp).get("mfa_verified"):
         # MFA done but ballot token not yet issued - show ballot token step
         election_id = safe_json(resp).get("election_id")
         return await _acquire_ballot_and_show(request, token, election_id)
+
+    # Auto-send OTP to voter's registered phone
+    try:
+        await http_client.post(f"{AUTH_SERVICE}/mfa/send-otp", params={"token": token})
+    except httpx.RequestError as e:
+        logger.error('Could not auto-send OTP: %s', e)
 
     return templates.TemplateResponse("verify_identity.html", {
         "request": request, "token": token, "messages": [],
@@ -160,14 +186,20 @@ async def vote_landing(request: Request, token: str):
 
 @app.post("/vote/verify-identity", response_class=HTMLResponse)
 async def verify_identity(request: Request, token: str = Form(...),
-                          date_of_birth: str = Form(...)):
-    """Step 2 - Verify DOB via auth-service, acquire ballot token, show ballot."""
+                          otp: str = Form(...)):
+    """Step 2 - Verify OTP via auth-service, acquire ballot token, show ballot."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
 
-    # Verify identity via auth-service
-    verify_resp = await http_client.post(
-        f"{AUTH_SERVICE}/mfa/verify",
-        params={"token": token, "date_of_birth": date_of_birth},
-    )
+    # Verify OTP via auth-service
+    try:
+        verify_resp = await http_client.post(
+            f"{AUTH_SERVICE}/mfa/verify",
+            params={"token": token, "otp": otp},
+        )
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'POST', AUTH_SERVICE + '/mfa/verify', e)
+        return _error_page(request, "Service unavailable")
 
     if verify_resp.status_code != 200:
         error = safe_json(verify_resp).get("detail", "Verification failed")
@@ -178,9 +210,15 @@ async def verify_identity(request: Request, token: str = Form(...),
         })
 
     # MFA passed - get election_id
-    validate_resp = await http_client.get(
-        f"{AUTH_SERVICE}/tokens/{token}/validate"
-    )
+    try:
+        validate_resp = await http_client.get(
+            f"{AUTH_SERVICE}/tokens/{token}/validate"
+        )
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'GET', AUTH_SERVICE + '/tokens/{token}/validate', e)
+        return _error_page(request, "Service unavailable")
+
     if validate_resp.status_code != 200:
         return _error_page(request, "Token validation failed")
 
@@ -192,6 +230,7 @@ async def verify_identity(request: Request, token: str = Form(...),
 async def submit_vote(request: Request, ballot_token: str = Form(...),
                       option_id: int = Form(...), election_id: int = Form(...)):
     """Step 3 - Cast an encrypted vote using the blind ballot token."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
 
     async with Database.transaction() as conn:
         # Validate the blind ballot token
@@ -301,6 +340,7 @@ async def submit_vote(request: Request, ballot_token: str = Form(...),
 @app.get("/vote/verify/{receipt_token}", response_class=HTMLResponse)
 async def verify_receipt_page(request: Request, receipt_token: str):
     """Page where a voter can verify their vote receipt."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             """
@@ -331,10 +371,15 @@ async def _acquire_ballot_and_show(request, token, election_id):
     """Issue a blind ballot token via auth-service and show the ballot."""
 
     # Ask auth-service to issue a blind ballot token
-    issue_resp = await http_client.post(
-        f"{AUTH_SERVICE}/ballot-token/issue",
-        params={"token": token},
-    )
+    try:
+        issue_resp = await http_client.post(
+            f"{AUTH_SERVICE}/ballot-token/issue",
+            params={"token": token},
+        )
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'POST', AUTH_SERVICE + '/ballot-token/issue', e)
+        return _error_page(request, "Service unavailable")
 
     if issue_resp.status_code != 200:
         error = safe_json(issue_resp).get("detail", "Could not issue ballot token")

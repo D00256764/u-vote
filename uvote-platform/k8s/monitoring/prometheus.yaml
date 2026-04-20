@@ -1,0 +1,115 @@
+# =============================================================================
+# Prometheus — scrapes /metrics from all 6 u-vote services
+#
+# Deployed in uvote-dev namespace so the existing network policy
+# 06-allow-prometheus-scrape.yaml (podSelector: app=prometheus) permits access.
+#
+# Access: http://<node-ip>:30090
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: uvote-dev
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: auth-service
+        static_configs:
+          - targets: ['auth-service:5001']
+        metrics_path: /metrics
+
+      - job_name: admin-service
+        static_configs:
+          - targets: ['admin-service:5002']
+        metrics_path: /metrics
+
+      - job_name: voting-service
+        static_configs:
+          - targets: ['voting-service:5003']
+        metrics_path: /metrics
+
+      - job_name: results-service
+        static_configs:
+          - targets: ['results-service:5004']
+        metrics_path: /metrics
+
+      - job_name: election-service
+        static_configs:
+          - targets: ['election-service:5005']
+        metrics_path: /metrics
+
+      - job_name: frontend-service
+        static_configs:
+          - targets: ['frontend-service:5000']
+        metrics_path: /metrics
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: uvote-dev
+  labels:
+    app: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.47.0
+        args:
+          - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--storage.tsdb.retention.time=7d"
+        ports:
+        - containerPort: 9090
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus/prometheus.yml
+          subPath: prometheus.yml
+        - name: data
+          mountPath: /prometheus
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: data
+        emptyDir: {}   # data lost on pod restart — acceptable for demo
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: uvote-dev
+  labels:
+    app: prometheus
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30090
+    name: http

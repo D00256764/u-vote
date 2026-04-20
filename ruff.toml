@@ -1,0 +1,14 @@
+[lint]
+# E402: module-level import not at top of file — intentionally suppressed because
+# every service must manipulate sys.path to resolve the shared/ module before
+# importing from it. This pattern is consistent across all 6 services.
+ignore = ["E402"]
+
+# Exclude generated / vendored files and migration scripts
+exclude = [
+    ".git",
+    "__pycache__",
+    "*.pyc",
+    "plat_scripts/",
+    "database/",
+]

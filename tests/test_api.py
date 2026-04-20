@@ -22,7 +22,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from contextlib import contextmanager
+import asyncio
+import tests.helpers.mailhog as _mailhog_helper
+from tests.helpers.mailhog import get_latest_voting_token, delete_all_messages
 from typing import Any, Dict, Optional, Tuple
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -36,6 +38,7 @@ SERVICES: Dict[str, Dict[str, Any]] = {
     "voting":   {"app": "voting-service",   "port": 5003},
     "results":  {"app": "results-service",  "port": 5004},
     "frontend": {"app": "frontend-service", "port": 5000},
+    "mailhog":  {"app": "mailhog",          "port": 8025},
 }
 
 
@@ -216,6 +219,52 @@ class Results:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stage 0: HEALTH
+# ─────────────────────────────────────────────────────────────────────────────
+
+def stage_health(res: Results, pf: PortForwardManager, state: dict) -> bool:
+    res.section("[HEALTH]")
+
+    checks = [
+        ("auth",     "/health", {"status": "healthy", "service": "auth"}),
+        ("election", "/health", {"status": "healthy", "service": "election"}),
+        ("voting",   "/health", {"status": "healthy", "service": "voting"}),
+        ("results",  "/health", {"status": "healthy", "service": "results"}),
+        ("admin",    "/health", {"status": "healthy", "service": "admin"}),
+        ("frontend", "/health", {"status": "healthy", "service": "frontend"}),
+    ]
+
+    for pf_key, path, expected in checks:
+        base = pf.url(pf_key)
+        label = f"GET {pf_key}{path}"
+
+        try:
+            status, body = get(f"{base}{path}")
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
+            res.check(label, False, "service unreachable")
+            return False
+
+        if status != 200:
+            res.check(f"{label} → {status}", False, str(body)[:100])
+            return False
+
+        ok = (
+            isinstance(body, dict)
+            and body.get("status") == expected["status"]
+            and body.get("service") == expected["service"]
+        )
+        res.check(
+            f"{label} → {status}",
+            ok,
+            "" if ok else f"got {body!r}",
+        )
+        if not ok:
+            return False
+
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 1: AUTH
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -260,7 +309,7 @@ def stage_auth(res: Results, pf: PortForwardManager, state: dict) -> bool:
             and "email" in payload
             and "exp" in payload
         )
-    except Exception as exc:
+    except Exception:
         jwt_ok = False
         payload = {}
     res.check("JWT structure valid", jwt_ok,
@@ -383,37 +432,66 @@ def stage_voting(res: Results, pf: PortForwardManager, state: dict) -> bool:
     res.check(f"POST /elections/{eid}/voters (voter) → {status}", ok,
               "" if ok else str(body)[:100])
 
-    # Generate voting token directly via DB (SMTP unavailable in test cluster)
-    # The tokens/generate endpoint generates tokens then emails them; the email
-    # step hangs because outbound SMTP is blocked by network policy.  We test
-    # the token-generation DB path by inserting a token directly and then
-    # exercising every downstream endpoint (validate → MFA → ballot-token →
-    # vote/submit) via the real API.
-    voter_id = state.get("voter_id")
+    # Token generation is now tested through the real email-delivery path.
+    # MailHog captures the email in-cluster (SMTP port 1025) without external
+    # delivery. The test retrieves the token via the MailHog HTTP API (port
+    # 8025) using tests/helpers/mailhog.py. The psql workaround has been
+    # removed.
+    # Prerequisite note: Port 587 (SMTP) is blocked by egress policy —
+    # MailHog on port 1025 captures emails in-cluster; psql workaround removed.
+    _mailhog_helper.MAILHOG_API = f"{pf.url('mailhog')}/api/v2/messages"
     voting_token: Optional[str] = None
-    if voter_id is not None:
-        raw_tok = uuid.uuid4().hex + uuid.uuid4().hex  # 64 hex chars
-        rc, _out, err = _run([
-            "kubectl", "exec", "-n", pf.namespace, "deployment/postgresql",
-            "--", "psql", "-U", "uvote_admin", "-d", "uvote",
-            "-c",
-            f"INSERT INTO voting_tokens (token, voter_id, election_id, expires_at) "
-            f"VALUES ('{raw_tok}', {voter_id}, {eid}, NOW() + INTERVAL '7 days')",
-        ])
-        ok = rc == 0
-        if ok:
-            voting_token = raw_tok
-            state["voting_token"] = voting_token
-        res.check(
-            "voting token inserted via DB (SMTP bypass)",
-            ok,
-            "" if ok else err[:100],
-        )
-    else:
-        res.check("voting token inserted via DB (SMTP bypass)", False,
-                  "skipped — voter_id missing")
+    check3_fail_reason = ""
 
-    if voting_token is None:
+    # a) Call the real token generation endpoint
+    gen_status = 0
+    tok_req = urllib.request.Request(
+        f"{admin_base}/elections/{eid}/tokens/generate",
+        method="POST",
+    )
+    tok_req.add_header("Authorization", f"Bearer {state['jwt']}")
+    try:
+        with urllib.request.urlopen(tok_req, timeout=15) as tok_resp:
+            gen_status = tok_resp.status
+    except urllib.error.HTTPError as exc:
+        gen_status = exc.code
+    except (urllib.error.URLError, OSError) as exc:
+        check3_fail_reason = str(exc)
+
+    if gen_status not in (200, 202):
+        if not check3_fail_reason:
+            check3_fail_reason = f"token generation returned HTTP {gen_status}"
+    else:
+        # b) Poll MailHog for email (up to 5 attempts, 1 s sleep between retries)
+        for attempt in range(5):
+            try:
+                voting_token = asyncio.run(get_latest_voting_token(voter_email))
+                break
+            except AssertionError as exc:
+                check3_fail_reason = str(exc)
+                if attempt < 4:
+                    time.sleep(1)
+
+        # c) Store the extracted token
+        if voting_token is not None:
+            state["voting_token"] = voting_token
+
+        # d) Clean up MailHog inbox (best-effort — never fail the check for this)
+        try:
+            asyncio.run(delete_all_messages())
+        except Exception:
+            pass
+
+    # e) Record check result
+    check3_ok = voting_token is not None
+    res.check(
+        f"POST /elections/{eid}/tokens/generate → email via MailHog",
+        check3_ok,
+        "Token generation email captured via MailHog" if check3_ok else check3_fail_reason,
+    )
+
+    if not check3_ok:
+        state["voting_token"] = None
         for label in [
             "GET auth/tokens/{token}/validate",
             "POST auth/mfa/verify (wrong DOB)",
@@ -503,7 +581,7 @@ def stage_voting(res: Results, pf: PortForwardManager, state: dict) -> bool:
         for phrase in ("already been used", "invalid ballot token", "already used")
     )
     res.check(
-        f"POST voting/vote/submit (duplicate) → error",
+        "POST voting/vote/submit (duplicate) → error",
         dup_rejected,
         "" if dup_rejected else html2[:150].strip(),
     )
@@ -583,7 +661,7 @@ def stage_cleanup(res: Results, pf: PortForwardManager,
     org_id = state.get("organiser_id")
 
     if keep:
-        print(f"      --keep-data: test data preserved")
+        print("      --keep-data: test data preserved")
         print(f"      run_id:        {run_id}")
         if org_id:
             print(f"      organiser_id:  {org_id}")
@@ -610,10 +688,10 @@ def stage_cleanup(res: Results, pf: PortForwardManager,
                   "no DELETE endpoint — data remains in DB")
 
     if eid:
-        print(f"      NOTE: no DELETE endpoint — test data remains in the DB.")
-        print(f"      To remove manually:")
-        print(f"        kubectl exec -n uvote-dev deployment/postgresql -- \\")
-        print(f"          psql -U uvote_admin -d uvote -c \\")
+        print("      NOTE: no DELETE endpoint — test data remains in the DB.")
+        print("      To remove manually:")
+        print("        kubectl exec -n uvote-dev deployment/postgresql -- \\")
+        print("          psql -U uvote_admin -d uvote -c \\")
         print(f"          \"DELETE FROM elections WHERE title LIKE '[TEST] {run_id}%';\"")
 
 
@@ -682,12 +760,13 @@ def main() -> None:
 
     t0 = time.time()
     try:
-        stage_auth(res, pf, state)
-        stage_frontend(res, pf, state)
-        stage_elections(res, pf, state)
-        stage_voting(res, pf, state)
-        stage_receipt(res, pf, state)
-        stage_results(res, pf, state)
+        if stage_health(res, pf, state):
+            stage_auth(res, pf, state)
+            stage_frontend(res, pf, state)
+            stage_elections(res, pf, state)
+            stage_voting(res, pf, state)
+            stage_receipt(res, pf, state)
+            stage_results(res, pf, state)
         stage_cleanup(res, pf, state, args.keep_data)
     finally:
         elapsed = time.time() - t0
@@ -704,3 +783,90 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# =============================================================================
+# pytest wrappers — thin adapters so pytest can discover and run these tests.
+# The original stage functions above are used by the standalone CLI runner.
+# The api_session fixture (tests/conftest.py) runs the full suite once as a
+# subprocess; these wrappers parse individual stage outcomes from stdout.
+#
+# Approach: subprocess (not programmatic) because main() calls sys.exit() and
+# accepts no parameters — it cannot be called as a library function.
+# =============================================================================
+
+import pytest as _pytest
+
+
+def _stage_passed(stdout: str, section: str) -> bool:
+    """Return True if the named stage section completed with no [FAIL] checks.
+
+    Searches for `section` in stdout, then scans the text up to the next known
+    section header for any [FAIL] markers (which appear in Results.check() as
+    the literal string [FAIL] regardless of surrounding ANSI colour codes).
+    """
+    _ALL_SECTIONS = [
+        "[HEALTH]", "[AUTH]", "[FRONTEND]", "[ELECTIONS]",
+        "[VOTING]", "[RECEIPT]", "[RESULTS]", "[CLEANUP]",
+    ]
+    idx = stdout.find(section)
+    if idx == -1:
+        return False
+    end_idx = len(stdout)
+    for other in _ALL_SECTIONS:
+        if other == section:
+            continue
+        pos = stdout.find(other, idx + len(section))
+        if pos != -1 and pos < end_idx:
+            end_idx = pos
+    return "[FAIL]" not in stdout[idx:end_idx]
+
+
+def test_stage_0_health(api_session):
+    """pytest: Stage 0 — All 6 services healthy."""
+    assert _stage_passed(api_session["stdout"], "[HEALTH]"), \
+        "Health checks failed — see stdout for details"
+
+
+def test_stage_1_auth(api_session):
+    """pytest: Stage 1 — Organiser authentication."""
+    assert _stage_passed(api_session["stdout"], "[AUTH]"), \
+        "Auth stage failed — see stdout for details"
+
+
+def test_stage_6_frontend(api_session):
+    """pytest: Stage 6 — Frontend serving home page."""
+    assert _stage_passed(api_session["stdout"], "[FRONTEND]"), \
+        "Frontend health check failed"
+
+
+def test_stage_2_elections(api_session):
+    """pytest: Stage 2 — Election creation and listing."""
+    assert _stage_passed(api_session["stdout"], "[ELECTIONS]"), \
+        "Elections stage failed — see stdout for details"
+
+
+def test_stage_3_voting(api_session):
+    """pytest: Stage 3 — Full voter journey including MailHog token."""
+    assert _stage_passed(api_session["stdout"], "[VOTING]"), \
+        "Voting stage failed — see stdout for details"
+
+
+def test_stage_4_receipt(api_session):
+    """pytest: Stage 4 — Receipt verification."""
+    stdout = api_session["stdout"]
+    if "[RECEIPT]" not in stdout:
+        _pytest.skip("No receipt token captured — receipt stage was skipped")
+    assert _stage_passed(stdout, "[RECEIPT]"), "Receipt verification failed"
+
+
+def test_stage_5_results(api_session):
+    """pytest: Stage 5 — Results and audit trail."""
+    assert _stage_passed(api_session["stdout"], "[RESULTS]"), \
+        "Results stage failed — see stdout for details"
+
+
+def test_stage_7_cleanup(api_session):
+    """pytest: Stage 7 — Cleanup (--keep-data: data preserved)."""
+    assert _stage_passed(api_session["stdout"], "[CLEANUP]"), \
+        "Cleanup stage failed — see stdout for details"

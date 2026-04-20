@@ -57,29 +57,23 @@
                     <div class="card-body">
                         <h5 class="card-title">Actions</h5>
                         <div class="d-grid gap-2">
-                            <a href="http://localhost:8083/elections/{{ election.id }}/voters" 
+                            <a href="{{ base_url }}/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
                                class="btn btn-outline-primary btn-sm">
                                 <i class="bi bi-people"></i> Manage Voters
                             </a>
                             
-                            {% if election.status == 'draft' %}
-                                <form method="POST" action="/elections/{{ election.id }}/open/confirm" 
-                                      onsubmit="return confirm('Are you sure you want to open this election?')">
-                                    <button type="submit" class="btn btn-success btn-sm w-100">
-                                        <i class="bi bi-unlock"></i> Open Election
-                                    </button>
-                                </form>
-                            {% elif election.status == 'open' %}
-                                <form method="POST" action="/elections/{{ election.id }}/close/confirm"
-                                      onsubmit="return confirm('Are you sure you want to close this election? This cannot be undone.')">
-                                    <button type="submit" class="btn btn-danger btn-sm w-100">
-                                        <i class="bi bi-lock"></i> Close Election
-                                    </button>
-                                </form>
+                            {% if election.status == 'draft' and election.scheduled_open_at %}
+                                <div class="text-muted small">
+                                    <i class="bi bi-clock"></i> Opens {{ election.scheduled_open_at[:16].replace('T',' ') }}
+                                </div>
+                            {% elif election.status == 'open' and election.scheduled_close_at %}
+                                <div class="text-muted small">
+                                    <i class="bi bi-clock"></i> Closes {{ election.scheduled_close_at[:16].replace('T',' ') }}
+                                </div>
                             {% endif %}
                             
                             {% if election.status == 'closed' %}
-                                <a href="http://localhost:8084/elections/{{ election.id }}/results/view" 
+                                <a href="{{ base_url }}/elections/{{ election.id }}/results/view?token={{ request.session.get('token', '') }}&organiser_id={{ request.session.get('organiser_id', '') }}"
                                    class="btn btn-primary btn-sm">
                                     <i class="bi bi-bar-chart"></i> View Results
                                 </a>

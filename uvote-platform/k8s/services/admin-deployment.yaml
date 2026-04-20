@@ -1,6 +1,6 @@
-# U-Vote Kubernetes Manifest: Admin Service (voter-service code)
+# U-Vote Kubernetes Manifest: Admin Service
 # CRITICAL: Network policy 03-allow-from-ingress-to-admin uses label "app: admin-service"
-#           Code lives in voter-service/ directory, image is voter-service:latest
+#           Code lives in admin-service/ directory, image is admin-service:latest
 #           Deployment name and labels use "admin-service" to match network policies
 #
 # Scanned Port: 5002 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5002)
@@ -12,7 +12,7 @@
 # Framework: FastAPI + Uvicorn + Jinja2
 # Database Access: Yes (asyncpg — voters, voting_tokens, voter_mfa)
 # External Access: Via Ingress Controller
-# Health Endpoint: GET /health → {"status": "healthy", "service": "voter"}
+# Health Endpoint: GET /health → {"status": "healthy", "service": "admin"}
 # Templates: Yes (Jinja2 — /elections/{id}/voters)
 # Special: CSV voter import, token generation, email sending (aiosmtplib)
 # Generated: 2026-02-16
@@ -27,7 +27,7 @@ metadata:
     tier: backend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: admin-service
@@ -45,8 +45,8 @@ spec:
     spec:
       containers:
       - name: admin-service
-        image: voter-service:latest  # Built from voter-service/ directory
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-admin-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5002
           name: http
@@ -76,10 +76,61 @@ spec:
               name: flask-secret
               key: secret
         # Email configuration (aiosmtplib for sending voting tokens)
+        # All SMTP values come from the smtp-credentials Secret (ADR011).
+        # The manifest is environment-agnostic — dev points to MailHog,
+        # production points to a real SMTP provider. No inline values here.
         - name: SMTP_HOST
-          value: "smtp.gmail.com"
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_HOST
         - name: SMTP_PORT
-          value: "587"
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PORT
+        - name: SMTP_USE_TLS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USE_TLS
+        - name: SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_FROM
+        - name: SMTP_USER
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USER
+              optional: true
+        - name: SMTP_PASS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PASS
+              optional: true
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PASSWORD
+              optional: true
+        - name: SMTP_USE_SSL
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USE_SSL
+        - name: FRONTEND_URL
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: FRONTEND_URL
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://localhost"
         livenessProbe:
           httpGet:
             path: /health
@@ -92,9 +143,9 @@ spec:
           httpGet:
             path: /health
             port: 5002
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         resources:
           requests:
@@ -107,7 +158,7 @@ spec:
           runAsNonRoot: true
           runAsUser: 1000
           allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false  # FastAPI/Jinja2 needs to write temp files
+          readOnlyRootFilesystem: false
 
 ---
 apiVersion: v1

@@ -81,13 +81,13 @@ class ElectionOptionOut(BaseModel):
 # Voter management
 class VoterAddRequest(BaseModel):
     email: EmailStr
-    date_of_birth: str  # YYYY-MM-DD
+    phone_number: str = ""
 
 
 class VoterOut(BaseModel):
     id: int
     email: str
-    date_of_birth: str
+    phone_number: str
     has_voted: bool
     has_token: bool
     created_at: datetime

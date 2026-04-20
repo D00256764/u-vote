@@ -1,0 +1,363 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, mvp_tests]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # 1. Lint ──────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check .
+
+  # 2. Unit tests — one job per service, all run in parallel ─────────────────
+  unit-tests:
+    name: Unit Tests — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: lint
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - auth-service
+          - voting-service
+          - election-service
+          - results-service
+          - admin-service
+          - frontend-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install service + dev dependencies
+        run: |
+          pip install \
+            -r ${{ matrix.service }}/requirements.txt \
+            -r requirements-dev.txt
+
+      - name: Run unit tests
+        run: |
+          python -m pytest ${{ matrix.service }}/tests/ \
+            -v --tb=short \
+            --junitxml=test-results/unit-${{ matrix.service }}.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-results-${{ matrix.service }}
+          path: test-results/unit-${{ matrix.service }}.xml
+
+  # 3. Shared-module unit tests (logging_config, security, schemas) ───────────
+  unit-tests-shared:
+    name: Unit Tests — shared
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            -r shared/requirements.txt \
+            -r auth-service/requirements.txt \
+            -r requirements-dev.txt
+
+      - name: Run shared tests
+        run: |
+          python -m pytest tests/test_logging_config.py tests/test_shared.py \
+            -v --tb=short \
+            --junitxml=test-results/unit-shared.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-results-shared
+          path: test-results/unit-shared.xml
+
+  # 4. Integration tests — full stack via Docker Compose + NGINX ─────────────
+  integration-tests:
+    name: Integration Tests (Docker Compose)
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build all images
+        run: docker compose build
+
+      - name: Start full stack
+        run: docker compose up -d
+
+      - name: Wait for PostgreSQL to be healthy
+        run: |
+          echo "Waiting for postgres..."
+          timeout 120 bash -c \
+            'until docker compose ps postgres | grep -q "(healthy)"; do sleep 3; done'
+          echo "PostgreSQL is healthy."
+
+      - name: Wait for NGINX gateway to be responsive
+        run: |
+          echo "Waiting for nginx on port 80..."
+          timeout 90 bash -c \
+            'until curl -sf http://localhost/ -o /dev/null; do sleep 3; done'
+          echo "NGINX is up."
+
+      - name: Wait for auth-service to be ready
+        run: |
+          echo "Waiting for auth-service DB pool to initialise..."
+          timeout 90 bash -c \
+            'until docker compose exec -T auth-service python3 -c \
+              "import urllib.request; urllib.request.urlopen(\"http://localhost:5001/health\")" \
+              2>/dev/null; do sleep 3; done'
+          echo "auth-service is ready."
+
+      - name: Wait for election-service to be ready
+        run: |
+          echo "Waiting for election-service DB pool to initialise..."
+          timeout 90 bash -c \
+            'until docker compose exec -T election-service python3 -c \
+              "import urllib.request; urllib.request.urlopen(\"http://localhost:5005/health\")" \
+              2>/dev/null; do sleep 3; done'
+          echo "election-service is ready."
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install test dependencies
+        run: pip install "httpx==0.27.0" pytest
+
+      - name: Run integration tests
+        run: |
+          python -m pytest tests/test_integration_compose.py \
+            -v --tb=short \
+            --junitxml=test-results/integration.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results
+          path: test-results/integration.xml
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --tail=50
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose down -v
+
+  # 5. Docker build verification (all Dockerfiles build cleanly) ─────────────
+  build:
+    name: Docker build
+    runs-on: ubuntu-latest
+    needs: [unit-tests, unit-tests-shared]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build all images
+        run: docker compose build
+
+  # ── 6. Trivy CVE scan — one job per image ────────────────────────────────────
+  trivy:
+    name: Trivy — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: auth-service
+            image: u-vote-auth-service
+          - service: admin-service
+            image: u-vote-admin-service
+          - service: voting-service
+            image: u-vote-voting-service
+          - service: results-service
+            image: u-vote-results-service
+          - service: election-service
+            image: u-vote-election-service
+          - service: frontend-service
+            image: u-vote-frontend-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        run: docker compose build ${{ matrix.service }}
+
+      - name: Trivy — scan image for CVEs
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ matrix.image }}
+          format: sarif
+          output: trivy-${{ matrix.service }}.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.service }}.sarif
+          category: trivy-${{ matrix.service }}
+
+  # 7. Trivy filesystem scan — secrets and misconfigurations in source ────────
+  trivy-fs:
+    name: Trivy — filesystem
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Trivy — scan repo for secrets and misconfigs
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-filesystem
+
+  # 8. Push images to GHCR — only on main / mvp_tests after scans complete ─────
+  push-images:
+    name: Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: [trivy, trivy-fs]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp_tests'
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: auth-service
+            dockerfile: auth-service/Dockerfile
+          - service: admin-service
+            dockerfile: admin-service/Dockerfile
+          - service: voting-service
+            dockerfile: voting-service/Dockerfile
+          - service: results-service
+            dockerfile: results-service/Dockerfile
+          - service: election-service
+            dockerfile: election-service/Dockerfile
+          - service: frontend-service
+            dockerfile: frontend-service/Dockerfile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/u-vote-${{ matrix.service }}:latest
+            ghcr.io/${{ github.repository_owner }}/u-vote-${{ matrix.service }}:${{ github.sha }}
+
+  # 9. Update K8s manifests with the new image SHA ──────────────────────────────
+  #    Committing the tag change is what ArgoCD detects to trigger a sync.
+  update-manifests:
+    name: Update image tags in manifests
+    runs-on: ubuntu-latest
+    needs: push-images
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mvp_tests'
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stamp new SHA into deployment YAMLs
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          for svc in auth admin voting results election frontend; do
+            sed -i \
+              "s|ghcr.io/${OWNER}/u-vote-${svc}-service:.*|ghcr.io/${OWNER}/u-vote-${svc}-service:${SHORT_SHA}|" \
+              uvote-platform/k8s/services/${svc}-deployment.yaml
+          done
+
+      - name: Commit and push manifest update
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add uvote-platform/k8s/services/
+          git diff --staged --quiet \
+            && echo "No tag changes to commit" \
+            || (git commit -m "chore: update image tags to ${SHORT_SHA} [skip ci]" \
+                && git push origin ${{ github.ref_name }})

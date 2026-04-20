@@ -1,0 +1,278 @@
+# =============================================================================
+# U-Vote Prometheus Scrape Policy
+# =============================================================================
+#
+# Allows Prometheus to scrape /metrics endpoints on all six U-Vote services.
+#
+# How it works
+# ------------
+# Each NetworkPolicy below selects one service's pods and adds an Ingress
+# rule that permits TCP connections from any pod labelled app=prometheus on
+# the service's container port.  Prometheus initiates every scrape, so no
+# additional Egress rule is required on the service pods.
+#
+# Prometheus pod label selector
+# -----------------------------
+# Pods must carry the label:
+#   app: prometheus
+# If Prometheus is deployed without this label, scraping will be blocked by
+# the default-deny policy (00-default-deny.yaml).
+#
+# Namespace
+# ---------
+# All policies target: uvote-dev
+# Prometheus must be deployed in the same namespace, or a cross-namespace
+# namespaceSelector must be added to each from: rule.
+#
+# Services and ports covered
+# --------------------------
+#   auth-service      port 5001  (tier=backend)
+#   admin-service     port 5002  (tier=backend)
+#   voting-service    port 5003  (tier=backend)
+#   results-service   port 5004  (tier=backend)
+#   election-service  port 5005  (tier=backend)
+#   frontend-service  port 5000  (tier=frontend)
+#
+# Reference: PLATFORM.MD § "Files" — 06-allow-prometheus-scrape.yaml
+# =============================================================================
+
+
+# =============================================================================
+# POLICY 1 of 6: auth-service (port 5001)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-auth-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets auth-service pods (tier=backend to exclude test pods)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: auth-service
+      tier: backend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5001 from Prometheus pods (app=prometheus).
+  # Prometheus scrapes GET /metrics; no response egress rule is required
+  # because established-connection packets are allowed automatically.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5001
+
+---
+
+# =============================================================================
+# POLICY 2 of 6: admin-service (port 5002)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-admin-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets admin-service pods (tier=backend)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: admin-service
+      tier: backend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5002 from Prometheus pods.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5002
+
+---
+
+# =============================================================================
+# POLICY 3 of 6: voting-service (port 5003)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-voting-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets voting-service pods (tier=backend)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: voting-service
+      tier: backend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5003 from Prometheus pods.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5003
+
+---
+
+# =============================================================================
+# POLICY 4 of 6: results-service (port 5004)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-results-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets results-service pods (tier=backend)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: results-service
+      tier: backend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5004 from Prometheus pods.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5004
+
+---
+
+# =============================================================================
+# POLICY 5 of 6: election-service (port 5005)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-election-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets election-service pods (tier=backend)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: election-service
+      tier: backend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5005 from Prometheus pods.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5005
+
+---
+
+# =============================================================================
+# POLICY 6 of 6: frontend-service (port 5000)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-frontend-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: prometheus-scraping
+    policy-order: "06"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: targets frontend-service pods (tier=frontend)
+  # ---------------------------------------------------------------------------
+  podSelector:
+    matchLabels:
+      app: frontend-service
+      tier: frontend
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 5000 from Prometheus pods.
+  # ---------------------------------------------------------------------------
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 5000

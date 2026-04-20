@@ -5,32 +5,90 @@ Environment variables:
     SMTP_HOST      SMTP server hostname  (default: smtp.gmail.com)
     SMTP_PORT      SMTP server port      (default: 587 → Gmail STARTTLS)
     SMTP_USER      SMTP username / sender email
-    SMTP_PASS      SMTP password (Gmail App Password)
+    SMTP_PASSWORD  SMTP password (Gmail App Password)
     SMTP_USE_TLS   Set to "true" for STARTTLS connections (default: true)
+    SMTP_USE_SSL   Set to "true" for implicit TLS/SSL on port 465 (default: false)
     SMTP_FROM      Sender address        (default: uvote.verify@gmail.com)
-    FRONTEND_URL   Public URL of the frontend, used to build vote links
+    FRONTEND_URL   Public URL of the voting service, used to build vote links
 """
 
 import os
 import logging
 from email.message import EmailMessage
+from typing import Optional
 
 import aiosmtplib
+import httpx
 
 logger = logging.getLogger(__name__)
+
 
 # ── Configuration ────────────────────────────────────────────────────────────
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "uvote.verify@gmail.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
 SMTP_FROM = os.getenv("SMTP_FROM", "uvote.verify@gmail.com")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8081")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5003")
+
+# SendGrid support (preferred if SENDGRID_API_KEY is set)
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+SENDGRID_FROM = os.getenv("SENDGRID_FROM", SMTP_FROM)
 
 
-async def send_email(to: str, subject: str, body_text: str, body_html: str | None = None):
-    """Send an email asynchronously via SMTP."""
+async def _send_via_sendgrid(to: str, subject: str, body_text: str, body_html: Optional[str] = None):
+    """Send email via SendGrid Web API (async using httpx).
+
+    This is used when SENDGRID_API_KEY environment variable is present.
+    """
+    if not SENDGRID_API_KEY:
+        raise RuntimeError("SENDGRID_API_KEY is not configured")
+
+    url = "https://api.sendgrid.com/v3/mail/send"
+    headers = {
+        "Authorization": f"Bearer {SENDGRID_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    personalizations = [{"to": [{"email": to}]}]
+    content = [{"type": "text/plain", "value": body_text}]
+    if body_html:
+        content.append({"type": "text/html", "value": body_html})
+
+    payload = {
+        "personalizations": personalizations,
+        "from": {"email": SENDGRID_FROM},
+        "subject": subject,
+        "content": content,
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code >= 200 and resp.status_code < 300:
+            logger.info("SendGrid accepted message to %s: %s", to[:3] + "***", subject)
+            return
+        else:
+            logger.error("SendGrid failed (%s): %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+
+
+async def send_email(to: str, subject: str, body_text: str, body_html: Optional[str] = None):
+    """Send an email asynchronously.
+
+    If SENDGRID_API_KEY is present, prefer using SendGrid via HTTPS. Otherwise
+    fall back to SMTP using aiosmtplib.
+    """
+    # Prefer SendGrid when configured (works around outbound SMTP blocking)
+    if SENDGRID_API_KEY:
+        try:
+            await _send_via_sendgrid(to, subject, body_text, body_html)
+            return
+        except Exception as e:
+            logger.warning("SendGrid send failed, falling back to SMTP: %s", e)
+
+    # --- Build EmailMessage for SMTP fallback ---
     msg = EmailMessage()
     msg["From"] = SMTP_FROM
     msg["To"] = to
@@ -43,17 +101,25 @@ async def send_email(to: str, subject: str, body_text: str, body_html: str | Non
     kwargs: dict = {
         "hostname": SMTP_HOST,
         "port": SMTP_PORT,
-        "start_tls": SMTP_USE_TLS,
+        "timeout": 10,
     }
-    if SMTP_USER and SMTP_PASS:
-        kwargs["username"] = SMTP_USER
-        kwargs["password"] = SMTP_PASS
+    if SMTP_USE_SSL:
+        kwargs["use_tls"] = True
+    else:
+        kwargs["start_tls"] = SMTP_USE_TLS
 
+    if SMTP_USER and SMTP_PASSWORD:
+        kwargs["username"] = SMTP_USER
+        kwargs["password"] = SMTP_PASSWORD
+
+    logger.info("Sending email via %s:%s (start_tls=%s use_ssl=%s)",
+                SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL)
     try:
         await aiosmtplib.send(msg, **kwargs)
-        logger.info(f"Email sent to {to}: {subject}")
+        logger.info("Email sent: %s", subject)
     except Exception as e:
-        logger.error(f"Failed to send email to {to}: {e}")
+        logger.error("Failed to send email via %s:%s (start_tls=%s use_ssl=%s): %s",
+                     SMTP_HOST, SMTP_PORT, SMTP_USE_TLS, SMTP_USE_SSL, e)
         raise
 
 
@@ -157,3 +223,28 @@ async def send_otp_email(to_email: str, otp_code: str, election_title: str):
     """
 
     await send_email(to_email, subject, body_text, body_html)
+
+
+async def check_smtp_connection() -> tuple[bool, str]:
+    """Attempt to connect to the configured SMTP server and authenticate.
+
+    Returns (True, 'ok') on success or (False, error_message) on failure.
+    """
+    try:
+        if SMTP_USE_SSL:
+            smtp = aiosmtplib.SMTP(hostname=SMTP_HOST, port=SMTP_PORT, timeout=10, use_tls=True)
+        else:
+            smtp = aiosmtplib.SMTP(hostname=SMTP_HOST, port=SMTP_PORT, timeout=10, use_tls=False)
+
+        await smtp.connect()
+        if not SMTP_USE_SSL and SMTP_USE_TLS:
+            await smtp.starttls()
+
+        if SMTP_USER and SMTP_PASSWORD:
+            await smtp.login(SMTP_USER, SMTP_PASSWORD)
+
+        await smtp.quit()
+        return True, "ok"
+    except Exception as e:
+        logger.error("SMTP connectivity check failed: %s", e)
+        return False, str(e)

@@ -23,7 +23,7 @@ metadata:
     tier: backend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: voting-service
@@ -41,8 +41,8 @@ spec:
     spec:
       containers:
       - name: voting-service
-        image: voting-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-voting-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5003
           name: http
@@ -80,9 +80,9 @@ spec:
           httpGet:
             path: /health
             port: 5003
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         resources:
           requests:
