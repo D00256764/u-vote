@@ -9,7 +9,3 @@ nodes:
   - containerPort: 443
     hostPort: 443
 - role: worker
-- role: worker
-networking:
-  disableDefaultCNI: true
-  podSubnet: 192.168.0.0/16

@@ -1,0 +1,68 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: observability
+    policy-order: "07"
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+  - Egress
+  egress:
+  # Allow Prometheus to scrape /metrics from all six services
+  - to:
+    - podSelector:
+        matchLabels:
+          app: auth-service
+    ports:
+    - port: 5001
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
+          app: admin-service
+    ports:
+    - port: 5002
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
+          app: voting-service
+    ports:
+    - port: 5003
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
+          app: results-service
+    ports:
+    - port: 5004
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
+          app: election-service
+    ports:
+    - port: 5005
+      protocol: TCP
+  - to:
+    - podSelector:
+        matchLabels:
+          app: frontend-service
+    ports:
+    - port: 5000
+      protocol: TCP
+  # Allow DNS so service names resolve
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP

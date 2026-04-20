@@ -17,7 +17,7 @@
 - [Security Measures](#security-measures)
 - [Project Deliverables](#project-deliverables)
 - [Documentation](#documentation)
-- [License](#license)
+- [Licence](#licence)
 
 ---
 
@@ -172,7 +172,7 @@ u-vote/
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── voter-service/                  # Voter list & token management
+├── admin-service/                  # Voter list & token management (deployed as admin-service)
 │   ├── app.py
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -262,6 +262,19 @@ docker-compose up --build
 ```
 
 The database is automatically initialised with the schema on first startup via `database/init.sql`.
+
+### Local email testing (MailHog)
+
+[MailHog](https://github.com/mailhog/MailHog) is an open source fake SMTP server for local development — it accepts outgoing emails and makes them inspectable via a web UI without delivering them to real recipients.
+
+All voting token emails sent by the voter service are captured by MailHog during local development instead of being delivered to real recipients. To view them, open the MailHog web UI after starting the stack:
+
+| Environment | URL |
+|-------------|-----|
+| Docker Compose | http://localhost:8025 |
+| Kubernetes | `kubectl port-forward svc/mailhog 8025:8025 -n uvote-dev` → http://localhost:8025 |
+
+> **Local development only.** Production deployments use real SMTP credentials configured via the `smtp-credentials` Kubernetes Secret. MailHog is not deployed in `uvote-test` or `uvote-prod`.
 
 ### Kubernetes Deployment
 
@@ -416,6 +429,6 @@ Slides, poster, live demonstration, and Q&A at end of year.
 
 ---
 
-## License
+## Licence
 
 This project is developed as part of the BSc in Computing Systems and Operations at Dundalk Institute of Technology (DkIT). It is provided for educational and demonstration purposes.

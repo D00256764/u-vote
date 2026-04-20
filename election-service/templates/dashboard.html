@@ -1,65 +1,148 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Secure Voting System{% endblock %}
+{% block title %}Dashboard - Election Admin{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}My Elections{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="bi bi-speedometer2"></i> My Elections</h2>
-            <a href="/elections/create" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> Create Election
-            </a>
-        </div>
-
-        {% if elections %}
-            <div class="row">
-                {% for election in elections %}
-                    <div class="col-md-6 col-lg-4 mb-4">
-                        <div class="card h-100 shadow-sm">
-                            <div class="card-body">
-                                <h5 class="card-title">{{ election.title }}</h5>
-                                <p class="card-text">
-                                    <span class="badge 
-                                        {% if election.status == 'draft' %}bg-secondary
-                                        {% elif election.status == 'open' %}bg-success
-                                        {% else %}bg-danger{% endif %}">
-                                        {{ election.status|upper }}
-                                    </span>
-                                </p>
-                                <p class="card-text text-muted small">
-                                    <i class="bi bi-calendar"></i> 
-                                    Created: {{ election.created_at[:16] }}
-                                </p>
-                                {% if election.opened_at %}
-                                    <p class="card-text text-muted small">
-                                        <i class="bi bi-unlock"></i> 
-                                        Opened: {{ election.opened_at[:16] }}
-                                    </p>
-                                {% endif %}
-                                {% if election.closed_at %}
-                                    <p class="card-text text-muted small">
-                                        <i class="bi bi-lock"></i> 
-                                        Closed: {{ election.closed_at[:16] }}
-                                    </p>
-                                {% endif %}
-                            </div>
-                            <div class="card-footer bg-white">
-                                <a href="/elections/{{ election.id }}/detail" 
-                                   class="btn btn-sm btn-outline-primary">
-                                    <i class="bi bi-eye"></i> View Details
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle"></i> 
-                No elections created yet. Click "Create Election" to get started.
-            </div>
-        {% endif %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h4 class="fw-bold mb-1" style="color: #1a1a2e;">
+            Welcome back, {{ request.session.get('organiser_email', 'Organiser').split('@')[0] | title }}
+        </h4>
+        <p class="text-muted mb-0" style="font-size: 0.875rem;">Manage your elections and track voter participation</p>
     </div>
+    <a href="/elections/create" class="btn btn-primary" style="font-size: 0.875rem; padding: 0.55rem 1rem; border-radius: 8px;">
+        <i class="bi bi-plus-lg"></i> Create New Election
+    </a>
 </div>
+
+<div id="activityPanel" class="mb-4" style="display:none;">
+    <div style="font-size:0.7rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem;">
+        <i class="bi bi-bell-fill me-1"></i> Recent Activity
+    </div>
+    <div id="activityList"></div>
+</div>
+
+{% if elections %}
+    <div class="row g-3">
+        {% for election in elections %}
+        <div class="col-md-6 col-xl-4">
+            <div class="card border-0 shadow-sm h-100" style="border-radius: 12px;">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <h6 class="fw-semibold mb-0 me-2" style="color: #1a1a2e; font-size: 0.95rem; line-height: 1.4;">{{ election.title }}</h6>
+                        {% if election.status == 'open' %}
+                            <span style="background:#dcfce7;color:#16a34a;font-size:0.72rem;font-weight:500;padding:0.25rem 0.6rem;border-radius:20px;white-space:nowrap;flex-shrink:0;">Open</span>
+                        {% elif election.status == 'draft' %}
+                            <span style="background:#f3f4f6;color:#6b7280;font-size:0.72rem;font-weight:500;padding:0.25rem 0.6rem;border-radius:20px;white-space:nowrap;flex-shrink:0;">Draft</span>
+                        {% else %}
+                            <span style="background:#fee2e2;color:#dc2626;font-size:0.72rem;font-weight:500;padding:0.25rem 0.6rem;border-radius:20px;white-space:nowrap;flex-shrink:0;">Closed</span>
+                        {% endif %}
+                    </div>
+
+                    <p class="mb-1" style="font-size:0.8rem;color:#9ca3af;">
+                        <i class="bi bi-calendar3"></i> Created: {{ election.created_at[:10] }}
+                    </p>
+                    <p class="mb-3" style="font-size:0.8rem;color:#9ca3af;">
+                        <i class="bi bi-people"></i> {{ election.voter_count }} voters
+                    </p>
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <a href="/elections/{{ election.id }}/edit"
+                           class="btn btn-outline-secondary btn-sm"
+                           style="font-size:0.78rem;border-radius:6px;">
+                            <i class="bi bi-pencil-square"></i> Edit
+                        </a>
+
+                        {% if election.status == 'draft' %}
+                            <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
+                                <i class="bi bi-clock"></i> Opens <span class="local-time" data-utc="{{ election.scheduled_open_at }}">{{ election.scheduled_open_at[:16].replace('T',' ') if election.scheduled_open_at else '—' }}</span>
+                            </span>
+                        {% elif election.status == 'open' %}
+                            <span style="font-size:0.75rem;color:#6b7280;display:flex;align-items:center;gap:0.3rem;">
+                                <i class="bi bi-clock"></i> Closes <span class="local-time" data-utc="{{ election.scheduled_close_at }}">{{ election.scheduled_close_at[:16].replace('T',' ') if election.scheduled_close_at else '—' }}</span>
+                            </span>
+                        {% endif %}
+
+                        {% if election.status == 'closed' %}
+                            <a href="{{ base_url }}/elections/{{ election.id }}/results/view?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+                               class="btn btn-primary btn-sm"
+                               style="font-size:0.78rem;border-radius:6px;">
+                                <i class="bi bi-bar-chart-line"></i> View Results
+                            </a>
+                        {% endif %}
+
+                        <a href="{{ base_url }}/elections/{{ election.id }}/voters/manage?token={{ request.session.get('token','') }}&organiser_id={{ request.session.get('organiser_id','') }}"
+                           class="btn btn-outline-secondary btn-sm"
+                           style="font-size:0.78rem;border-radius:6px;">
+                            <i class="bi bi-people"></i> Manage Voters
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-inbox" style="font-size: 3rem; color: #d1d5db;"></i>
+        <p class="text-muted mt-3 mb-0" style="font-size: 0.875rem;">No elections yet. Click "Create New Election" to get started.</p>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Convert UTC times to local
+document.querySelectorAll('.local-time').forEach(function(el) {
+    const utc = el.getAttribute('data-utc');
+    if (!utc) return;
+    const d = new Date(utc.endsWith('Z') ? utc : utc + 'Z');
+    el.textContent = d.toLocaleString([], {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+});
+
+// Notifications
+const DISMISSED_KEY = 'uvote_dismissed';
+function getDismissed() { try { return JSON.parse(localStorage.getItem(DISMISSED_KEY)||'[]'); } catch(e){return[];} }
+function dismiss(btn) {
+    const el = btn.closest('[data-notif-id]');
+    if (!el) return;
+    const id = el.getAttribute('data-notif-id');
+    const d = getDismissed(); if(!d.includes(id)){d.push(id);} localStorage.setItem(DISMISSED_KEY, JSON.stringify(d));
+    el.remove();
+    if(!document.getElementById('activityList').children.length) document.getElementById('activityPanel').style.display='none';
+}
+
+const COLORS = {success:['#f0fdf4','#16a34a','envelope-check-fill'], warning:['#fffbeb','#d97706','lock-fill'], info:['#eff6ff','#2563eb','play-circle-fill']};
+
+function renderNotifications(items) {
+    const dismissed = getDismissed();
+    const list = document.getElementById('activityList');
+    const panel = document.getElementById('activityPanel');
+    const visible = items.filter(n => !dismissed.includes(n.id));
+    if (!visible.length) { panel.style.display='none'; return; }
+    panel.style.display='block';
+    list.innerHTML = '';
+    visible.forEach(function(n) {
+        const [bg, col, icon] = COLORS[n.category] || COLORS.info;
+        const div = document.createElement('div');
+        div.setAttribute('data-notif-id', n.id);
+        div.className = 'd-flex align-items-start gap-2 mb-2 p-3';
+        div.style.cssText = `background:${bg};border-left:3px solid ${col};border-radius:0 8px 8px 0;font-size:0.825rem;`;
+        div.innerHTML = `<i class="bi bi-${icon}" style="color:${col};margin-top:1px;flex-shrink:0;"></i>
+            <span style="color:#374151;">${n.message}</span>
+            <span class="ms-auto" style="color:#9ca3af;white-space:nowrap;font-size:0.75rem;">${n.time}</span>
+            <button onclick="dismiss(this)" style="background:none;border:none;color:#9ca3af;cursor:pointer;padding:0 0 0 6px;font-size:1rem;line-height:1;flex-shrink:0;">&times;</button>`;
+        list.appendChild(div);
+    });
+}
+
+function pollNotifications() {
+    fetch('/dashboard/notifications').then(r=>r.json()).then(renderNotifications).catch(()=>{});
+}
+
+pollNotifications();
+setInterval(pollNotifications, 30000);
+</script>
 {% endblock %}

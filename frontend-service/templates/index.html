@@ -1,102 +1,194 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Election Admin - Secure Online Voting</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #1a1a2e; }
 
-{% block title %}Home - Secure Voting System{% endblock %}
+        /* Nav */
+        .topnav { display: flex; align-items: center; justify-content: space-between; padding: 1rem 2.5rem; background: #fff; border-bottom: 1px solid #e8eaed; position: sticky; top: 0; z-index: 100; }
+        .nav-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1rem; color: #1a1a2e; text-decoration: none; }
+        .nav-brand-icon { width: 32px; height: 32px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+        .nav-links { display: flex; gap: 2rem; list-style: none; margin: 0; padding: 0; }
+        .nav-links a { color: #6b7280; text-decoration: none; font-size: 0.875rem; }
+        .nav-links a:hover { color: #1a1a2e; }
+        .nav-actions { display: flex; align-items: center; gap: 0.75rem; }
 
-{% block content %}
-<div class="row mt-5">
-    <div class="col-lg-8 mx-auto text-center">
-        <h1 class="display-4 mb-4">
-            <i class="bi bi-shield-lock text-primary"></i>
-            Secure Voting System
-        </h1>
-        <p class="lead mb-5">
-            A cryptographically secure, identity-separated voting platform with immutable vote storage
-        </p>
+        /* Hero */
+        .hero { background: #f0f4ff; padding: 5rem 2.5rem 4rem; }
+        .hero-inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 4rem; }
+        .hero-text { flex: 1; }
+        .hero-title { font-size: 3rem; font-weight: 800; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 1.25rem; }
+        .hero-subtitle { font-size: 1rem; color: #6b7280; line-height: 1.7; margin-bottom: 2rem; max-width: 480px; }
+        .hero-ctas { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 
-        <div class="row mb-5">
-            <div class="col-md-4 mb-3">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-key-fill text-primary" style="font-size: 2rem;"></i>
-                        <h5 class="card-title mt-3">Single-Use Tokens</h5>
-                        <p class="card-text">Cryptographically secure one-time voting credentials</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-eye-slash text-primary" style="font-size: 2rem;"></i>
-                        <h5 class="card-title mt-3">Anonymous Voting</h5>
-                        <p class="card-text">Complete separation between voter identity and ballots</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <i class="bi bi-lock-fill text-primary" style="font-size: 2rem;"></i>
-                        <h5 class="card-title mt-3">Immutable Records</h5>
-                        <p class="card-text">Votes stored with cryptographic hashes and hash chains</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+        /* Sections */
+        section { padding: 5rem 2.5rem; }
+        section.alt { background: #f9fafb; }
+        .section-inner { max-width: 1100px; margin: 0 auto; }
+        .section-title { font-size: 2rem; font-weight: 800; text-align: center; margin-bottom: 0.75rem; }
+        .section-subtitle { text-align: center; color: #6b7280; font-size: 0.95rem; margin-bottom: 3rem; max-width: 560px; margin-left: auto; margin-right: auto; }
 
-        <div class="d-grid gap-2 d-md-block">
-            {% if request.session.get('token') %}
-                <a href="/dashboard" class="btn btn-primary btn-lg">
-                    <i class="bi bi-speedometer2"></i> Go to Dashboard
+        /* Feature cards */
+        .feature-card { background: #fff; border: 1px solid #e8eaed; border-radius: 12px; padding: 1.75rem; }
+        .feature-icon { width: 48px; height: 48px; background: #eff6ff; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+        .feature-icon i { color: #2563eb; font-size: 1.25rem; }
+        .feature-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.5rem; }
+        .feature-desc { color: #6b7280; font-size: 0.875rem; line-height: 1.6; margin: 0; }
+
+        /* How it works */
+        .step-num { width: 48px; height: 48px; background: #2563eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 1.1rem; flex-shrink: 0; }
+        .step-line { flex: 1; height: 2px; background: #dbeafe; margin: 0 0.5rem; align-self: center; }
+        .step-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.4rem; }
+        .step-desc { color: #6b7280; font-size: 0.8rem; line-height: 1.5; margin: 0; }
+
+        /* Footer */
+        footer { background: #1a1a2e; color: rgba(255,255,255,0.5); text-align: center; padding: 2rem; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="topnav">
+    <a href="/" class="nav-brand">
+        <div class="nav-brand-icon"><i class="bi bi-card-checklist" style="color:white;font-size:1rem;"></i></div>
+        Election Admin
+    </a>
+    <ul class="nav-links d-none d-md-flex">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#how-it-works">How It Works</a></li>
+    </ul>
+    <div class="nav-actions">
+        {% if request.session.get('token') %}
+            <a href="{{ base_url }}/dashboard" class="btn btn-primary btn-sm" style="border-radius:8px;font-size:0.875rem;">Go to Dashboard</a>
+        {% else %}
+            <a href="/login" style="font-size:0.875rem;color:#374151;text-decoration:none;font-weight:500;">Sign In</a>
+            <a href="/register" class="btn btn-primary btn-sm" style="border-radius:8px;font-size:0.875rem;">Get Started</a>
+        {% endif %}
+    </div>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+    <div class="hero-inner">
+        <div class="hero-text">
+            <h1 class="hero-title">Secure Online<br>Elections Made<br>Simple</h1>
+            <p class="hero-subtitle">
+                Run transparent, secure elections with ease. From student councils to board elections,
+                manage the entire voting process from one powerful platform.
+            </p>
+            <div class="hero-ctas">
+                <a href="/register" class="btn btn-primary" style="border-radius:8px;padding:0.7rem 1.5rem;font-weight:600;">
+                    Get Started <i class="bi bi-arrow-right ms-1"></i>
                 </a>
-            {% else %}
-                <a href="/register" class="btn btn-primary btn-lg me-2">
-                    <i class="bi bi-person-plus"></i> Register as Organizer
+                <a href="#how-it-works" class="btn btn-outline-secondary" style="border-radius:8px;padding:0.7rem 1.5rem;font-weight:500;">
+                    See How It Works
                 </a>
-                <a href="/login" class="btn btn-outline-primary btn-lg">
-                    <i class="bi bi-box-arrow-in-right"></i> Login
-                </a>
-            {% endif %}
+            </div>
+            <div class="d-flex gap-4 mt-4">
+                <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:#16a34a;"><i class="bi bi-check-circle-fill"></i> No data shared with third parties</div>
+                <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.8rem;color:#16a34a;"><i class="bi bi-check-circle-fill"></i> End-to-end encrypted</div>
+            </div>
         </div>
     </div>
 </div>
 
-<div class="row mt-5">
-    <div class="col-lg-10 mx-auto">
-        <h3 class="text-center mb-4">How It Works</h3>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <div class="card border-primary">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="mb-0">For Organizers</h5>
-                    </div>
-                    <div class="card-body">
-                        <ol class="mb-0">
-                            <li>Create an election with options/candidates</li>
-                            <li>Upload voter email list (CSV)</li>
-                            <li>Generate secure one-time tokens</li>
-                            <li>Open the election</li>
-                            <li>Close and view results after voting ends</li>
-                        </ol>
-                    </div>
+<!-- Features -->
+<section id="features" class="alt">
+    <div class="section-inner">
+        <h2 class="section-title">Everything You Need to Run Elections</h2>
+        <p class="section-subtitle">Powerful features designed to make election management effortless, secure, and transparent.</p>
+        <div class="row g-3">
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-card-checklist"></i></div>
+                    <div class="feature-title">Easy Election Setup</div>
+                    <p class="feature-desc">Create and configure elections in minutes with our intuitive interface. Add candidates and customise settings effortlessly.</p>
                 </div>
             </div>
-            <div class="col-md-6 mb-3">
-                <div class="card border-success">
-                    <div class="card-header bg-success text-white">
-                        <h5 class="mb-0">For Voters</h5>
-                    </div>
-                    <div class="card-body">
-                        <ol class="mb-0">
-                            <li>Receive unique voting token via email</li>
-                            <li>Access ballot using the token</li>
-                            <li>Cast your vote securely</li>
-                            <li>Receive confirmation hash</li>
-                            <li>Vote is anonymous and immutable</li>
-                        </ol>
-                    </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-people-fill"></i></div>
+                    <div class="feature-title">Voter Management</div>
+                    <p class="feature-desc">Upload voter lists via CSV, send secure voting tokens automatically, and track participation in real-time.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-shield-fill-check"></i></div>
+                    <div class="feature-title">Secure &amp; Anonymous</div>
+                    <p class="feature-desc">Cryptographic blind ballot tokens ensure vote integrity while maintaining complete voter anonymity. Votes are immutable.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-bar-chart-line-fill"></i></div>
+                    <div class="feature-title">Real-Time Analytics</div>
+                    <p class="feature-desc">Track turnout rates, view live results, and analyse voting patterns with comprehensive dashboards and reports.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-clock-fill"></i></div>
+                    <div class="feature-title">Automated Workflows</div>
+                    <p class="feature-desc">Set election schedules, automate token distribution, and let the system handle the heavy lifting for you.</p>
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-4">
+                <div class="feature-card h-100">
+                    <div class="feature-icon"><i class="bi bi-check-circle-fill"></i></div>
+                    <div class="feature-title">Instant Results</div>
+                    <p class="feature-desc">Get immediate, accurate results as soon as voting closes. Share findings transparently with all stakeholders.</p>
                 </div>
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
+</section>
+
+<!-- How it works -->
+<section id="how-it-works">
+    <div class="section-inner">
+        <h2 class="section-title">How It Works</h2>
+        <p class="section-subtitle">Get your election up and running in four simple steps.</p>
+
+        <div class="d-flex align-items-start gap-0 mb-5">
+            <div class="step-num">1</div><div class="step-line"></div>
+            <div class="step-num">2</div><div class="step-line"></div>
+            <div class="step-num">3</div><div class="step-line"></div>
+            <div class="step-num">4</div>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-3">
+                <div class="step-title">Create Your Election</div>
+                <p class="step-desc">Set up your election with title, description, candidates, and voting period in just a few clicks.</p>
+            </div>
+            <div class="col-md-3">
+                <div class="step-title">Add Voters</div>
+                <p class="step-desc">Upload your voter list via CSV. The system automatically sends secure, one-time voting tokens via email.</p>
+            </div>
+            <div class="col-md-3">
+                <div class="step-title">Monitor &amp; Manage</div>
+                <p class="step-desc">Track real-time participation and monitor the election progress from your dashboard.</p>
+            </div>
+            <div class="col-md-3">
+                <div class="step-title">View Results</div>
+                <p class="step-desc">Get instant results when voting closes. Export reports, share findings, and maintain full transparency.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <p style="margin:0;">&copy; <span id="year"></span> Election Admin. Built with privacy and security in mind.</p>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

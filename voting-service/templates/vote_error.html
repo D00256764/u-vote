@@ -1,31 +1,35 @@
 {% extends "base.html" %}
 
-{% block title %}Error — Secure Voting System{% endblock %}
+{% block title %}Voting Error{% endblock %}
+
+{% block head %}
+<style>
+    .error-card { background: #fff; border-radius: 16px; padding: 2.5rem 2rem; box-shadow: 0 4px 24px rgba(0,0,0,0.07); text-align: center; }
+    .error-icon { width: 72px; height: 72px; background: #fee2e2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.25rem; }
+    .reason-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1rem 1.25rem; text-align: left; margin-top: 1.25rem; font-size: 0.825rem; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="row mt-5">
-    <div class="col-lg-6 mx-auto">
-        <div class="card shadow text-center">
-            <div class="card-body p-5">
-                <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 5rem;"></i>
-                <h2 class="mt-4 mb-3">Voting Error</h2>
-                <p class="lead text-danger">{{ error }}</p>
-
-                <div class="alert alert-info mt-4">
-                    <h6>Possible reasons:</h6>
-                    <ul class="list-unstyled mb-0">
-                        <li><i class="bi bi-x-circle"></i> Token has already been used</li>
-                        <li><i class="bi bi-x-circle"></i> Token has expired</li>
-                        <li><i class="bi bi-x-circle"></i> Election is not currently open</li>
-                        <li><i class="bi bi-x-circle"></i> Invalid token</li>
-                    </ul>
-                </div>
-
-                <p class="mt-4">
-                    If you believe this is an error, please contact the election organizer.
-                </p>
-            </div>
-        </div>
+<div class="error-card">
+    <div class="error-icon">
+        <i class="bi bi-exclamation-triangle-fill" style="color:#dc2626;font-size:1.75rem;"></i>
     </div>
+    <h2 style="font-weight:700;color:#1a1a2e;font-size:1.4rem;margin-bottom:0.5rem;">Voting Error</h2>
+    <p style="color:#dc2626;font-size:0.875rem;margin-bottom:0;">{{ error }}</p>
+
+    <div class="reason-box">
+        <p style="font-weight:600;color:#374151;margin-bottom:0.5rem;">Possible reasons:</p>
+        <ul class="list-unstyled mb-0" style="color:#6b7280;">
+            <li style="padding:0.2rem 0;"><i class="bi bi-x-circle me-2 text-danger"></i>Token has already been used</li>
+            <li style="padding:0.2rem 0;"><i class="bi bi-x-circle me-2 text-danger"></i>Token has expired</li>
+            <li style="padding:0.2rem 0;"><i class="bi bi-x-circle me-2 text-danger"></i>Election is not currently open</li>
+            <li style="padding:0.2rem 0;"><i class="bi bi-x-circle me-2 text-danger"></i>Invalid or malformed token</li>
+        </ul>
+    </div>
+
+    <p style="font-size:0.825rem;color:#6b7280;margin-top:1.25rem;margin-bottom:0;">
+        If you believe this is an error, please contact the election organiser.
+    </p>
 </div>
 {% endblock %}

@@ -1,0 +1,42 @@
+---
+clusterName: "elasticsearch"
+nodeGroup: "master"
+
+roles:
+  - master
+  - data
+  - ingest
+
+replicas: 1
+minimumMasterNodes: 1
+discoveryType: "single-node"
+clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s"
+
+image: "docker.elastic.co/elasticsearch/elasticsearch"
+imageTag: "8.12.0"
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+volumeClaimTemplate:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+
+persistence:
+  enabled: true
+
+service:
+  type: ClusterIP
+  port: 9200
+
+antiAffinity: "soft"
+
+podAnnotations:
+  prometheus.io/scrape: "false"

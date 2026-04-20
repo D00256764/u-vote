@@ -41,6 +41,8 @@ spec:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
           subPath: postgres
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
         resources:
           requests:
             memory: "256Mi"
@@ -66,8 +68,10 @@ spec:
           periodSeconds: 5
       volumes:
       - name: postgres-storage
-        persistentVolumeClaim:
-          claimName: postgres-pvc
+        emptyDir: {}
+      - name: init-scripts
+        configMap:
+          name: uvote-init-scripts
 ---
 apiVersion: v1
 kind: Service

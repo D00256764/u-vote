@@ -11,6 +11,7 @@ All endpoints are read-only; results only available after election closes.
 """
 import os
 import sys
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -31,12 +32,12 @@ for p in [
         sys.path.insert(0, p_abs)
         break
 
-import logging
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('results-service')
 
 from database import Database
 from schemas import HealthResponse
-
-logger = logging.getLogger("results-service")
 
 # ── Auth-service URL for token verification ──────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -63,6 +64,11 @@ app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
+BASE_URL = os.getenv("BASE_URL", "http://localhost")
+templates.env.globals["base_url"] = BASE_URL
+
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
 
 
 # ── Flash helpers ────────────────────────────────────────────────────────────
@@ -78,20 +84,22 @@ def get_flashed_messages(request: Request):
 def _require_login(request: Request):
     """Check session for organiser JWT. Redirect to auth gateway if missing."""
     if "token" not in request.session:
-        return RedirectResponse(url="http://localhost:8080/login", status_code=303)
+        return RedirectResponse(url=f"{BASE_URL}/login", status_code=303)
     return None
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "results"}
 
 
 @app.get("/elections/{election_id}/results")
-async def get_results(election_id: int):
+async def get_results(request: Request, election_id: int):
     """Get election results (only after election closes)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             "SELECT id, title, status, closed_at FROM elections WHERE id = $1",
@@ -109,18 +117,17 @@ async def get_results(election_id: int):
         results = await conn.fetch(
             """
             SELECT eo.id, eo.option_text, eo.display_order,
-                   COUNT(v.id) AS vote_count
+                   COALESCE(tv.vote_count, 0) AS vote_count
             FROM election_options eo
-            LEFT JOIN votes v ON v.option_id = eo.id
+            LEFT JOIN tallied_votes tv ON tv.option_id = eo.id
             WHERE eo.election_id = $1
-            GROUP BY eo.id, eo.option_text, eo.display_order
             ORDER BY vote_count DESC, eo.display_order
             """,
             election_id,
         )
 
         total_votes = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
+            "SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id
         )
         total_voters = await conn.fetchval(
             "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
@@ -153,8 +160,9 @@ async def get_results(election_id: int):
 
 
 @app.get("/elections/{election_id}/audit")
-async def get_audit_trail(election_id: int):
+async def get_audit_trail(request: Request, election_id: int):
     """Get audit information — vote hashes and hash-chain verification."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         status_row = await conn.fetchrow(
             "SELECT status FROM elections WHERE id = $1", election_id
@@ -170,8 +178,8 @@ async def get_audit_trail(election_id: int):
 
         votes = await conn.fetch(
             """
-            SELECT id, vote_hash, previous_hash, cast_at
-            FROM votes
+            SELECT id, ballot_hash AS vote_hash, previous_hash, cast_at
+            FROM encrypted_ballots
             WHERE election_id = $1
             ORDER BY id ASC
             """,
@@ -204,8 +212,9 @@ async def get_audit_trail(election_id: int):
 
 
 @app.get("/elections/{election_id}/statistics")
-async def get_statistics(election_id: int):
+async def get_statistics(request: Request, election_id: int):
     """Get detailed statistics about the election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         election = await conn.fetchrow(
             """
@@ -219,7 +228,7 @@ async def get_statistics(election_id: int):
             raise HTTPException(status_code=404, detail="Election not found")
 
         total_votes = await conn.fetchval(
-            "SELECT COUNT(*) FROM votes WHERE election_id = $1", election_id
+            "SELECT COUNT(*) FROM encrypted_ballots WHERE election_id = $1", election_id
         )
         total_voters = await conn.fetchval(
             "SELECT COUNT(*) FROM voters WHERE election_id = $1", election_id
@@ -240,7 +249,7 @@ async def get_statistics(election_id: int):
             timeline = await conn.fetch(
                 """
                 SELECT DATE_TRUNC('hour', cast_at) AS hour, COUNT(*) AS vote_count
-                FROM votes
+                FROM encrypted_ballots
                 WHERE election_id = $1
                 GROUP BY hour
                 ORDER BY hour
@@ -274,19 +283,32 @@ async def get_statistics(election_id: int):
 # ── Web (HTML) routes ────────────────────────────────────────────────────────
 # These render the results page directly in this service.
 
-ELECTION_SERVICE = os.getenv("ELECTION_SERVICE_URL", "http://localhost:8082")
+ELECTION_SERVICE = os.getenv("ELECTION_SERVICE_URL", "http://localhost:5005")
 
 
 @app.get("/elections/{election_id}/results/view", response_class=HTMLResponse)
 async def results_page(request: Request, election_id: int):
     """Render the results page for a closed election."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    qp_token = request.query_params.get("token")
+    qp_oid = request.query_params.get("organiser_id")
+    if qp_token and qp_oid:
+        try:
+            request.session["token"] = qp_token
+            request.session["organiser_id"] = int(qp_oid)
+        except (ValueError, TypeError):
+            pass
+        return RedirectResponse(
+            url=f"/elections/{election_id}/results/view", status_code=303
+        )
+
     redirect = _require_login(request)
     if redirect:
         return redirect
 
     # Reuse the JSON helpers — call internal functions directly
     try:
-        results_data = await get_results(election_id)
+        results_data = await get_results(request, election_id)
     except HTTPException as exc:
         flash(request, exc.detail, "error")
         return RedirectResponse(
@@ -296,13 +318,13 @@ async def results_page(request: Request, election_id: int):
 
     # Also grab statistics
     try:
-        stats_data = await get_statistics(election_id)
+        stats_data = await get_statistics(request, election_id)
     except HTTPException:
         stats_data = None
 
     # Also grab audit trail
     try:
-        audit_data = await get_audit_trail(election_id)
+        audit_data = await get_audit_trail(request, election_id)
     except HTTPException:
         audit_data = None
 

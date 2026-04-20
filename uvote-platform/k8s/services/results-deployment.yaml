@@ -23,7 +23,7 @@ metadata:
     tier: backend
     version: v1
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: results-service
@@ -41,8 +41,8 @@ spec:
     spec:
       containers:
       - name: results-service
-        image: results-service:latest
-        imagePullPolicy: Never  # Kind cluster — local images
+        image: ghcr.io/d00256764/u-vote-results-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5004
           name: http
@@ -76,6 +76,10 @@ spec:
             secretKeyRef:
               name: flask-secret
               key: secret
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://localhost"
         livenessProbe:
           httpGet:
             path: /health
@@ -88,9 +92,9 @@ spec:
           httpGet:
             path: /health
             port: 5004
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         resources:
           requests:

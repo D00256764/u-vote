@@ -20,10 +20,12 @@ Runs on port 5001 (internal only, not browser-exposed).
 import os
 import sys
 import logging
+import random
+import string
 from contextlib import asynccontextmanager
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from jose import jwt, JWTError
 
 # -- Shared imports -----------------------------------------------------------
@@ -38,18 +40,21 @@ for p in [
         sys.path.insert(0, p_abs)
         break
 
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('auth-service')
+
 from database import Database
 from security import (
     hash_password, verify_password,
-    generate_blind_ballot_token, generate_election_key,
+    generate_blind_ballot_token,
 )
+from sms_util import send_otp_sms
 from schemas import (
     RegisterRequest, LoginRequest, TokenVerifyRequest,
-    AuthResponse, TokenVerifyResponse, BallotTokenResponse,
-    HealthResponse, ErrorResponse,
+    AuthResponse, TokenVerifyResponse, TokenValidateResponse, BallotTokenResponse,
+    HealthResponse,
 )
-
-logger = logging.getLogger("auth-service")
 
 # -- Config -------------------------------------------------------------------
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
@@ -71,19 +76,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
+
 
 # ==========================================================================
 # Organiser endpoints
 # ==========================================================================
 
 @app.get("/health", response_model=HealthResponse)
-async def health():
+async def health(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return {"status": "healthy", "service": "auth"}
 
 
 @app.post("/register", response_model=AuthResponse, status_code=201)
-async def register(data: RegisterRequest):
+async def register(request: Request, data: RegisterRequest):
     """Register a new organiser."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     pw_hash = hash_password(data.password)
     org_id = data.org_id or DEFAULT_ORG_ID
 
@@ -97,14 +107,16 @@ async def register(data: RegisterRequest):
     except Exception as e:
         if "unique" in str(e).lower():
             raise HTTPException(status_code=409, detail="Email already registered")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error('Database error in register: %s', e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"message": "Organiser registered successfully", "organiser_id": row["id"]}
 
 
 @app.post("/login", response_model=AuthResponse)
-async def login(data: LoginRequest):
+async def login(request: Request, data: LoginRequest):
     """Authenticate organiser and return JWT."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             "SELECT id, password_hash FROM organisers WHERE email = $1",
@@ -112,6 +124,7 @@ async def login(data: LoginRequest):
         )
 
     if not row or not verify_password(data.password, row["password_hash"]):
+        logger.warning('Auth failure: %s', 'Invalid credentials')
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = jwt.encode(
@@ -128,8 +141,9 @@ async def login(data: LoginRequest):
 
 
 @app.post("/verify", response_model=TokenVerifyResponse)
-async def verify_token(data: TokenVerifyRequest):
+async def verify_token(request: Request, data: TokenVerifyRequest):
     """Verify a JWT token."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     try:
         payload = jwt.decode(data.token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return {
@@ -139,6 +153,7 @@ async def verify_token(data: TokenVerifyRequest):
         }
     except JWTError as e:
         msg = "Token expired" if "expired" in str(e).lower() else "Invalid token"
+        logger.warning('Auth failure: %s', msg)
         raise HTTPException(status_code=401, detail=msg)
 
 
@@ -146,9 +161,10 @@ async def verify_token(data: TokenVerifyRequest):
 # Voting-token validation  (was in voter-service)
 # ==========================================================================
 
-@app.get("/tokens/{token}/validate", response_model=TokenVerifyResponse)
-async def validate_voting_token(token: str):
+@app.get("/tokens/{token}/validate", response_model=TokenValidateResponse)
+async def validate_voting_token(request: Request, token: str):
     """Validate an identity-linked voting token (from the voter's email)."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
             """
@@ -178,24 +194,23 @@ async def validate_voting_token(token: str):
 
 
 # ==========================================================================
-# MFA (DOB verification) — was in voter-service
+# MFA (Phone OTP) — replaces DOB-based verification
 # ==========================================================================
 
-@app.post("/mfa/verify", status_code=200)
-async def verify_identity(token: str, date_of_birth: str):
-    """Verify voter identity by comparing submitted DOB to stored value."""
-    try:
-        submitted_dob = date.fromisoformat(date_of_birth)
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail="Invalid date format (expected YYYY-MM-DD)"
-        )
+def _generate_otp() -> str:
+    """Generate a 6-digit numeric OTP."""
+    return "".join(random.choices(string.digits, k=6))
 
+
+@app.post("/mfa/send-otp", status_code=200)
+async def send_otp(request: Request, token: str):
+    """Generate and send a one-time passcode to the voter's registered phone number."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         row = await conn.fetchrow(
             """
-            SELECT v.id AS voter_id, v.date_of_birth, v.has_voted,
-                   vt.is_used, vt.expires_at, e.status, vt.election_id
+            SELECT v.id AS voter_id, v.phone_number, v.has_voted,
+                   vt.is_used, vt.expires_at, e.status
             FROM voting_tokens vt
             JOIN voters v ON v.id = vt.voter_id
             JOIN elections e ON e.id = vt.election_id
@@ -215,30 +230,93 @@ async def verify_identity(token: str, date_of_birth: str):
         if row["has_voted"]:
             raise HTTPException(status_code=400, detail="You have already voted")
 
-        if row["date_of_birth"] != submitted_dob:
-            raise HTTPException(
-                status_code=403,
-                detail="Date of birth does not match our records",
-            )
+        otp = _generate_otp()
+        expires_at = datetime.now() + timedelta(minutes=10)
 
-        # Record MFA verification
+        # Upsert OTP into voter_mfa (keyed by voting token)
         existing = await conn.fetchrow(
             "SELECT id FROM voter_mfa WHERE token = $1", token
         )
-        if not existing:
+        if existing:
             await conn.execute(
-                "INSERT INTO voter_mfa (token) VALUES ($1)", token
+                "UPDATE voter_mfa SET otp_code = $1, otp_expires_at = $2, "
+                "verified_at = NULL WHERE token = $3",
+                otp, expires_at, token,
             )
+        else:
+            await conn.execute(
+                "INSERT INTO voter_mfa (token, otp_code, otp_expires_at) "
+                "VALUES ($1, $2, $3)",
+                token, otp, expires_at,
+            )
+
+    # Send SMS outside transaction (no DB rollback if SMS fails)
+    phone = row["phone_number"]
+    if not phone:
+        raise HTTPException(status_code=400, detail="No phone number registered for this voter")
+    try:
+        await send_otp_sms(phone, otp)
+    except RuntimeError as e:
+        logger.error("SMS delivery failed for token %s: %s", token, e)
+        raise HTTPException(status_code=502, detail="Could not send OTP — please try again")
+
+    return {"message": "OTP sent"}
+
+
+@app.post("/mfa/verify", status_code=200)
+async def verify_otp(request: Request, token: str, otp: str):
+    """Verify the OTP submitted by the voter."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
+    async with Database.transaction() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT v.id AS voter_id, v.has_voted,
+                   vt.is_used, vt.expires_at, e.status, vt.election_id,
+                   vm.otp_code, vm.otp_expires_at, vm.verified_at
+            FROM voting_tokens vt
+            JOIN voters v ON v.id = vt.voter_id
+            JOIN elections e ON e.id = vt.election_id
+            LEFT JOIN voter_mfa vm ON vm.token = vt.token
+            WHERE vt.token = $1
+            """,
+            token,
+        )
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Invalid token")
+        if row["is_used"]:
+            raise HTTPException(status_code=400, detail="Token already used")
+        if datetime.now() > row["expires_at"]:
+            raise HTTPException(status_code=400, detail="Token expired")
+        if row["status"] != "open":
+            raise HTTPException(status_code=400, detail="Election is not open")
+        if row["has_voted"]:
+            raise HTTPException(status_code=400, detail="You have already voted")
+
+        if not row["otp_code"]:
+            raise HTTPException(status_code=400, detail="No OTP has been issued — request a new code")
+        if datetime.now() > row["otp_expires_at"]:
+            raise HTTPException(status_code=400, detail="OTP has expired — request a new code")
+        if row["otp_code"] != otp:
+            raise HTTPException(status_code=401, detail="Incorrect code")
+
+        # Mark OTP as verified
+        await conn.execute(
+            "UPDATE voter_mfa SET verified_at = CURRENT_TIMESTAMP WHERE token = $1",
+            token,
+        )
 
     return {"verified": True}
 
 
 @app.get("/mfa/status")
-async def mfa_status(token: str):
+async def mfa_status(request: Request, token: str):
     """Check if a voting token has passed MFA."""
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.connection() as conn:
         row = await conn.fetchrow(
-            "SELECT id FROM voter_mfa WHERE token = $1", token
+            "SELECT id FROM voter_mfa WHERE token = $1 AND verified_at IS NOT NULL",
+            token,
         )
     return {"mfa_verified": row is not None}
 
@@ -251,7 +329,7 @@ async def mfa_status(token: str):
 # ==========================================================================
 
 @app.post("/ballot-token/issue", response_model=BallotTokenResponse)
-async def issue_ballot_token(token: str):
+async def issue_ballot_token(request: Request, token: str):
     """Issue an anonymous ballot token after MFA verification.
 
     Contract:
@@ -265,6 +343,7 @@ async def issue_ballot_token(token: str):
     After this function returns, there is NO record linking
     the voter_id to the ballot_token. The anonymity gap is closed.
     """
+    logger.info('Request received: %s %s', request.method, request.url.path)
     async with Database.transaction() as conn:
         # Validate voting token
         vt_row = await conn.fetchrow(

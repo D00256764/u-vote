@@ -33,8 +33,9 @@ services:
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
       JWT_SECRET: your-super-secret-jwt-key-change-this-in-production
-    ports:
-      - "5001:5001"
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,10 +43,10 @@ services:
       - voting-network
     restart: unless-stopped
 
-  voter-service:
+  admin-service:
     build:
       context: .
-      dockerfile: voter-service/Dockerfile
+      dockerfile: admin-service/Dockerfile
     container_name: voting-voter
     environment:
       DB_HOST: postgres
@@ -53,18 +54,23 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-      SMTP_HOST: ${SMTP_HOST}
-      SMTP_PORT: ${SMTP_PORT}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      SMTP_USE_TLS: ${SMTP_USE_TLS}
-      SMTP_FROM: ${SMTP_FROM}
-      FRONTEND_URL: http://localhost:8080
-    ports:
-      - "5002:5002"
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_FROM: ${SENDGRID_FROM:-}
+      FRONTEND_URL: http://localhost
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     networks:
       - voting-network
     restart: unless-stopped
@@ -80,11 +86,11 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-    ports:
-      - "5003:5003"
     depends_on:
       postgres:
         condition: service_healthy
+      auth-service:
+        condition: service_started
     networks:
       - voting-network
     restart: unless-stopped
@@ -100,8 +106,9 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-    ports:
-      - "5004:5004"
+      ELECTION_SERVICE_URL: http://localhost
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,8 +127,9 @@ services:
       DB_NAME: voting_db
       DB_USER: voting_user
       DB_PASSWORD: voting_pass
-    ports:
-      - "5005:5005"
+      SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      ADMIN_SERVICE_URL: http://admin-service:5002
+      BASE_URL: http://localhost
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,16 +144,18 @@ services:
     container_name: voting-frontend
     environment:
       AUTH_SERVICE_URL: http://auth-service:5001
-      VOTER_SERVICE_URL: http://voter-service:5002
+      VOTER_SERVICE_URL: http://admin-service:5002
       VOTING_SERVICE_URL: http://voting-service:5003
       RESULTS_SERVICE_URL: http://results-service:5004
       ELECTION_SERVICE_URL: http://election-service:5005
+      ELECTION_DASHBOARD_URL: http://localhost/dashboard
       SESSION_SECRET: your-super-secret-session-key-change-this-in-production
+      BASE_URL: http://localhost
     ports:
-      - "8080:5000"
+      - "8082:5000"
     depends_on:
       - auth-service
-      - voter-service
+      - admin-service
       - voting-service
       - results-service
       - election-service
@@ -153,8 +163,70 @@ services:
       - voting-network
     restart: unless-stopped
 
+  nginx:
+    image: nginx:alpine
+    container_name: uvote-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - frontend-service
+      - admin-service
+      - voting-service
+      - results-service
+      - election-service
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  # Prometheus — scrapes /metrics from all 6 services every 15s
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: uvote-prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  # Grafana — SLI dashboards auto-provisioned from monitoring/grafana/
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: uvote-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - voting-network
+    restart: unless-stopped
+
+  # MailHog — local development email testing ONLY.
+  # Captures outgoing emails instead of delivering them to real recipients.
+  # Not for production use. Web UI: http://localhost:8025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: uvote-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP — receives emails from services
+      - "8025:8025"   # HTTP Web UI
+    networks:
+      - voting-network
+
 volumes:
   postgres_data:
+  grafana_data:
 
 networks:
   voting-network:

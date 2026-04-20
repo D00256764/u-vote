@@ -13,6 +13,8 @@ Each downstream service (election, voter, results) owns its own UI pages.
 Runs on port 5000, exposed to browsers on port 8080.
 """
 import os
+import sys
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -22,11 +24,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+# ── Shared imports ────────────────────────────────────────────────────────────
+current_dir = os.path.dirname(__file__)
+for p in [
+    os.path.join(current_dir, '..', 'shared'),
+    os.path.join(current_dir, 'shared'),
+    '/app/shared',
+]:
+    p_abs = os.path.abspath(p)
+    if os.path.isdir(p_abs):
+        sys.path.insert(0, p_abs)
+        break
+
+from logging_config import configure_logging
+configure_logging()
+logger = logging.getLogger('frontend-service')
+
 # ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
 
 # After login, redirect organiser to the Election Service dashboard
-ELECTION_DASHBOARD = os.getenv("ELECTION_DASHBOARD_URL", "http://localhost:8082/dashboard")
+ELECTION_DASHBOARD = os.getenv("ELECTION_DASHBOARD_URL", "http://localhost:5005/dashboard")
 
 # ── Shared async HTTP client ────────────────────────────────────────────────
 http_client: httpx.AsyncClient | None = None
@@ -44,6 +62,11 @@ app = FastAPI(title="Secure Voting System — Admin", lifespan=lifespan)
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me"))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+BASE_URL = os.getenv("BASE_URL", "http://localhost")
+templates.env.globals["base_url"] = BASE_URL
+
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,10 +91,18 @@ def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
         return fallback or {}
 
 
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "service": "frontend"}
+
+
 # ── Public pages ─────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return templates.TemplateResponse("index.html", {
         "request": request,
         "messages": get_flashed_messages(request),
@@ -80,6 +111,7 @@ async def index(request: Request):
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return templates.TemplateResponse("register.html", {
         "request": request,
         "messages": get_flashed_messages(request),
@@ -89,15 +121,47 @@ async def register_page(request: Request):
 @app.post("/register", response_class=HTMLResponse)
 async def register(request: Request, email: str = Form(...), password: str = Form(...),
                    confirm_password: str = Form(...)):
+    logger.info('Request received: %s %s', request.method, request.url.path)
+
     if password != confirm_password:
         flash(request, "Passwords do not match", "danger")
         return templates.TemplateResponse("register.html", {
             "request": request, "messages": get_flashed_messages(request),
         })
 
-    resp = await http_client.post(f"{AUTH_SERVICE}/register", json={
-        "email": email, "password": password,
-    })
+    import re
+    if len(password) < 8:
+        flash(request, "Password must be at least 8 characters", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[A-Z]', password):
+        flash(request, "Password must contain at least one uppercase letter", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[a-z]', password):
+        flash(request, "Password must contain at least one lowercase letter", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+    if not re.search(r'[0-9]', password):
+        flash(request, "Password must contain at least one number", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
+
+    try:
+        resp = await http_client.post(f"{AUTH_SERVICE}/register", json={
+            "email": email, "password": password,
+        })
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'POST', AUTH_SERVICE + '/register', e)
+        flash(request, "Service unavailable", "danger")
+        return templates.TemplateResponse("register.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
 
     if resp.status_code == 201:
         flash(request, "Registration successful! Please log in.", "success")
@@ -111,6 +175,7 @@ async def register(request: Request, email: str = Form(...), password: str = For
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     return templates.TemplateResponse("login.html", {
         "request": request,
         "messages": get_flashed_messages(request),
@@ -119,24 +184,35 @@ async def login_page(request: Request):
 
 @app.post("/login", response_class=HTMLResponse)
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
-    resp = await http_client.post(f"{AUTH_SERVICE}/login", json={
-        "email": email, "password": password,
-    })
+    logger.info('Request received: %s %s', request.method, request.url.path)
+
+    try:
+        resp = await http_client.post(f"{AUTH_SERVICE}/login", json={
+            "email": email, "password": password,
+        })
+    except httpx.RequestError as e:
+        logger.error('External service call failed: %s %s — %s',
+                     'POST', AUTH_SERVICE + '/login', e)
+        flash(request, "Service unavailable", "danger")
+        return templates.TemplateResponse("login.html", {
+            "request": request, "messages": get_flashed_messages(request),
+        })
 
     if resp.status_code == 200:
         data = safe_json(resp)
         request.session["token"] = data["token"]
-        request.session["organizer_id"] = data["organizer_id"]
+        request.session["organiser_id"] = data["organiser_id"]
         flash(request, "Login successful!", "success")
-        # Redirect to Election Service dashboard, passing organizer_id so the
+        # Redirect to Election Service dashboard, passing organiser_id so the
         # downstream service can store it in its own session.
-        oid = data["organizer_id"]
+        oid = data["organiser_id"]
         token = data["token"]
         return RedirectResponse(
-            url=f"{ELECTION_DASHBOARD}?organizer_id={oid}&token={token}",
+            url=f"{ELECTION_DASHBOARD}?organiser_id={oid}&token={token}",
             status_code=303,
         )
 
+    logger.warning('Auth failure: %s', safe_json(resp).get("detail", "Login failed"))
     flash(request, safe_json(resp).get("detail", "Login failed"), "danger")
     return templates.TemplateResponse("login.html", {
         "request": request, "messages": get_flashed_messages(request),
@@ -145,5 +221,6 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
 
 @app.get("/logout")
 async def logout(request: Request):
+    logger.info('Request received: %s %s', request.method, request.url.path)
     request.session.clear()
     return RedirectResponse(url="/", status_code=303)

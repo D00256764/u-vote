@@ -1,0 +1,75 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: uvote-ingress
+  namespace: uvote-dev
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      # ── Voting-service: /vote/* and /receipt/* ─────────────────────────────
+      # Must come before /elections to avoid /vote matching the catch-all.
+      - path: /vote(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: voting-service
+            port:
+              number: 5003
+      - path: /receipt(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: voting-service
+            port:
+              number: 5003
+
+      # ── Results-service: /elections/{id}/results/* ─────────────────────────
+      # More specific than /elections — must be listed first.
+      - path: /elections/[0-9]+/results(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: results-service
+            port:
+              number: 5004
+
+      # ── Admin-service: /elections/{id}/voters/* and /elections/{id}/tokens/* ─
+      # More specific than /elections — must be listed before the election block.
+      - path: /elections/[0-9]+/(voters|tokens)(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: admin-service
+            port:
+              number: 5002
+
+      # ── Election-service: /elections/* and /dashboard ─────────────────────
+      - path: /elections(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: election-service
+            port:
+              number: 5005
+      - path: /dashboard(/|$)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: election-service
+            port:
+              number: 5005
+
+      # ── Frontend-service: everything else (/, /login, /register, /logout) ──
+      # auth-service is internal-only and never exposed via ingress.
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 5000

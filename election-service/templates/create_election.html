@@ -1,69 +1,110 @@
 {% extends "base.html" %}
 
-{% block title %}Create Election - Secure Voting System{% endblock %}
+{% block title %}Create Election - Election Admin{% endblock %}
+{% block page_title %}Create Election{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-8 mx-auto">
-        <h2 class="mb-4"><i class="bi bi-plus-circle"></i> Create New Election</h2>
-        
-        <div class="card shadow">
-            <div class="card-body p-4">
-                <form method="POST" id="createElectionForm">
-                    <div class="mb-3">
-                        <label for="title" class="form-label">Election Title *</label>
-                        <input type="text" class="form-control" id="title" name="title" required>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label for="description" class="form-label">Description</label>
-                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Options/Candidates *</label>
-                        <div id="optionsContainer">
-                            <div class="input-group mb-2">
-                                <input type="text" class="form-control" name="options[]" placeholder="Option 1" required>
-                            </div>
-                            <div class="input-group mb-2">
-                                <input type="text" class="form-control" name="options[]" placeholder="Option 2" required>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="addOptionBtn">
-                            <i class="bi bi-plus"></i> Add Option
-                        </button>
-                    </div>
-                    
-                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                        <a href="/dashboard" class="btn btn-outline-secondary">Cancel</a>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> Create Election
-                        </button>
-                    </div>
-                </form>
+<div style="max-width: 680px;">
+    <h4 class="fw-bold mb-4" style="color: #1a1a2e;">Create New Election</h4>
+
+    <form method="POST" id="createElectionForm">
+
+        <div class="mb-4">
+            <label for="title" class="form-label fw-semibold" style="font-size:0.875rem;color:#374151;">
+                Election Title <span class="text-danger">*</span>
+            </label>
+            <input type="text" class="form-control" id="title" name="title"
+                   placeholder="Enter election title"
+                   style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+        </div>
+
+        <div class="mb-4">
+            <label for="description" class="form-label fw-semibold" style="font-size:0.875rem;color:#374151;">
+                Election Description <span class="text-danger">*</span>
+            </label>
+            <textarea class="form-control" id="description" name="description" rows="4"
+                      placeholder="Enter a detailed description of this election"
+                      style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;resize:vertical;"></textarea>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:0.875rem;color:#374151;">
+                Voting Options <span class="text-danger">*</span>
+            </label>
+            <p class="text-muted mb-2" style="font-size:0.8rem;">Add at least 2 options for voters to choose from</p>
+            <div id="optionsContainer">
+                <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 1"
+                       style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+                <input type="text" class="form-control mb-2" name="options[]" placeholder="Option 2"
+                       style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+            </div>
+            <button type="button" id="addOptionBtn"
+                    style="background:none;border:none;color:#2563eb;font-size:0.875rem;cursor:pointer;padding:0.25rem 0;display:flex;align-items:center;gap:0.3rem;">
+                <i class="bi bi-plus-circle"></i> Add Another Option
+            </button>
+        </div>
+
+        <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:0.875rem;color:#374151;">
+                Election Schedule <span class="text-danger">*</span>
+            </label>
+            <p class="text-muted mb-2" style="font-size:0.8rem;">
+                The election will open and close automatically at the times you set.
+            </p>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label for="scheduled_open_at" class="form-label" style="font-size:0.8rem;color:#6b7280;">Open at <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="scheduled_open_at" name="scheduled_open_at"
+                           style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+                </div>
+                <div class="col-md-6">
+                    <label for="scheduled_close_at" class="form-label" style="font-size:0.8rem;color:#6b7280;">Close at <span class="text-danger">*</span></label>
+                    <input type="datetime-local" class="form-control" id="scheduled_close_at" name="scheduled_close_at"
+                           style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;" required>
+                </div>
             </div>
         </div>
-    </div>
+
+        <div class="d-flex gap-2 mt-4">
+            <button type="submit" class="btn btn-primary" style="font-size:0.875rem;border-radius:8px;padding:0.55rem 1.25rem;">
+                Save
+            </button>
+            <a href="/dashboard" class="btn btn-outline-secondary" style="font-size:0.875rem;border-radius:8px;padding:0.55rem 1.25rem;">
+                Cancel
+            </a>
+        </div>
+    </form>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
     let optionCount = 2;
-    
-    document.getElementById('addOptionBtn').addEventListener('click', function() {
+    document.getElementById('addOptionBtn').addEventListener('click', function () {
         optionCount++;
         const container = document.getElementById('optionsContainer');
-        const div = document.createElement('div');
-        div.className = 'input-group mb-2';
-        div.innerHTML = `
-            <input type="text" class="form-control" name="options[]" placeholder="Option ${optionCount}">
-            <button class="btn btn-outline-danger" type="button" onclick="this.parentElement.remove()">
+        const wrapper = document.createElement('div');
+        wrapper.className = 'd-flex gap-2 mb-2';
+        wrapper.innerHTML = `
+            <input type="text" class="form-control" name="options[]" placeholder="Option ${optionCount}"
+                   style="border-radius:8px;border-color:#e5e7eb;font-size:0.875rem;">
+            <button type="button" class="btn btn-outline-danger btn-sm" style="border-radius:8px;flex-shrink:0;"
+                    onclick="this.parentElement.remove()">
                 <i class="bi bi-trash"></i>
             </button>
         `;
-        container.appendChild(div);
+        container.appendChild(wrapper);
+    });
+
+    function toUtcLocal(inputId) {
+        const input = document.getElementById(inputId);
+        if (!input.value) return;
+        input.value = new Date(input.value).toISOString().slice(0, 16);
+    }
+
+    document.getElementById('createElectionForm').addEventListener('submit', function () {
+        toUtcLocal('scheduled_open_at');
+        toUtcLocal('scheduled_close_at');
     });
 </script>
 {% endblock %}

@@ -9,7 +9,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple
 
 # ANSI color codes for terminal output
 class Colors:
@@ -151,13 +151,23 @@ def create_kind_cluster(kind_config: Path) -> bool:
         return False
     
     print_success("Cluster created successfully")
-    
+
+    # Label the control-plane node so the Kind ingress controller can schedule on it.
+    # The Kind ingress manifest uses nodeSelector: ingress-ready=true, but Kind only
+    # adds that label automatically when the cluster name is the default "kind".
+    # With a custom name (e.g. "uvote") the label must be applied manually.
+    print_info("Labelling control-plane node for ingress scheduling...")
+    run_command(
+        ['kubectl', 'label', 'node', 'uvote-control-plane', 'ingress-ready=true', '--overwrite'],
+        check=False,
+    )
+
     # Verify nodes
     success, stdout, _ = run_command(['kubectl', 'get', 'nodes'], capture_output=True, check=False)
     if success:
         print_info("Cluster nodes:")
         print(stdout)
-    
+
     return True
 
 def install_calico() -> bool:
@@ -366,17 +376,103 @@ def apply_database_schema(k8s_dir: Path) -> bool:
         return False
     
     print_success("Database schema applied")
-    
+
+    # Apply create_roles.sql
+    roles_file = k8s_dir / "database" / "create_roles.sql"
+    if not roles_file.exists():
+        print_error(f"Roles file not found: {roles_file}")
+        return False
+
+    print_info("Applying database roles (create_roles.sql)...")
+    with open(roles_file, 'r') as f:
+        roles_content = f.read()
+
+    process = subprocess.Popen(
+        ['kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+         'psql', '-U', 'uvote_admin', '-d', 'uvote'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    stdout, stderr = process.communicate(input=roles_content)
+
+    if process.returncode != 0:
+        print_error("Failed to apply database roles")
+        print(stderr)
+        return False
+
+    print_success("Database roles applied successfully")
+
+    # Apply seed_data.sql
+    seed_file = k8s_dir / "database" / "seed_data.sql"
+    if not seed_file.exists():
+        print_error(f"Seed data file not found: {seed_file}")
+        return False
+
+    print_info("Applying seed data (seed_data.sql)...")
+    with open(seed_file, 'r') as f:
+        seed_content = f.read()
+
+    process = subprocess.Popen(
+        ['kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+         'psql', '-U', 'uvote_admin', '-d', 'uvote'],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    stdout, stderr = process.communicate(input=seed_content)
+
+    if process.returncode != 0:
+        print_error("Failed to apply seed data")
+        print(stderr)
+        return False
+
+    print_success("Seed data applied successfully")
+
     # Verify tables
     print_info("Verifying tables...")
     success, stdout, _ = run_command([
         'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
         'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c', '\\dt'
     ], capture_output=True, check=False)
-    
+
     if success:
         print(stdout)
-    
+
+    # Verify roles
+    print_info("Verifying database roles...")
+    success, stdout, _ = run_command([
+        'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+        'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c', '\\du'
+    ], capture_output=True, check=False)
+
+    if success:
+        print(stdout)
+
+    # Verify seed data
+    print_info("Verifying seed data...")
+    success, stdout, _ = run_command([
+        'kubectl', 'exec', '-i', '-n', 'uvote-dev', pod_name, '--',
+        'psql', '-U', 'uvote_admin', '-d', 'uvote', '-c',
+        'SELECT COUNT(*) FROM organisers;'
+    ], capture_output=True, check=False)
+
+    if success:
+        count = 0
+        for line in stdout.strip().splitlines():
+            stripped = line.strip()
+            if stripped.isdigit():
+                count = int(stripped)
+                break
+        if count == 0:
+            print_warning("Seed data verification: organisers table is empty")
+        else:
+            print_success(f"Seed data verified: {count} organiser(s) found")
+
     return True
 
 def apply_network_policies(k8s_dir: Path) -> bool:
@@ -420,41 +516,47 @@ def apply_network_policies(k8s_dir: Path) -> bool:
     return True
 
 def install_ingress_controller() -> bool:
-    """Install Nginx Ingress Controller"""
-    print_step(7, "Installing Nginx Ingress Controller...")
-    
-    # Add Helm repo
-    print_info("Adding ingress-nginx Helm repository...")
-    run_command(['helm', 'repo', 'add', 'ingress-nginx', 
-                 'https://kubernetes.github.io/ingress-nginx'], check=False)
-    run_command(['helm', 'repo', 'update'], check=False)
-    
-    # Install ingress controller
-    print_info("Installing ingress-nginx...")
-    success, _, stderr = run_command([
-        'helm', 'install', 'ingress-nginx', 'ingress-nginx/ingress-nginx',
-        '--namespace', 'ingress-nginx',
-        '--create-namespace'
-    ], check=False)
-    
-    if not success and 'already exists' not in stderr:
-        print_error("Failed to install ingress controller")
+    """Install Nginx Ingress Controller using the Kind-specific manifest.
+
+    The standard Helm chart creates a LoadBalancer service which never gets
+    an external IP in Kind. The Kind-specific manifest binds the controller
+    pod directly to hostPort 80/443 on the control-plane node, which
+    connects to the extraPortMappings declared in kind-config.yaml.
+    This makes the app reachable at http://localhost without any port-forward.
+    """
+    print_step(7, "Installing Nginx Ingress Controller (Kind)...")
+
+    KIND_INGRESS_MANIFEST = (
+        "https://raw.githubusercontent.com/kubernetes/ingress-nginx"
+        "/controller-v1.10.1/deploy/static/provider/kind/deploy.yaml"
+    )
+
+    print_info("Applying Kind ingress-nginx manifest...")
+    success, _, stderr = run_command(
+        ['kubectl', 'apply', '-f', KIND_INGRESS_MANIFEST],
+        check=False,
+    )
+
+    if not success:
+        print_error("Failed to apply ingress-nginx manifest")
+        print(stderr)
         return False
-    
-    # Wait for ingress controller
-    print_info("Waiting for ingress controller to be ready...")
+
+    # Wait for the controller pod to be ready
+    print_info("Waiting for ingress controller to be ready (up to 3 min)...")
     success, _, _ = run_command([
-        'kubectl', 'wait', '--namespace', 'ingress-nginx',
+        'kubectl', 'wait',
+        '--namespace', 'ingress-nginx',
         '--for=condition=ready', 'pod',
         '--selector=app.kubernetes.io/component=controller',
-        '--timeout=120s'
+        '--timeout=180s',
     ], check=False)
-    
+
     if not success:
-        print_warning("Ingress controller may still be starting")
-        return True  # Continue anyway
-    
-    print_success("Ingress controller installed")
+        print_warning("Ingress controller pod not ready yet — it may still be pulling the image")
+        return True  # Continue; it usually becomes ready shortly after
+
+    print_success("Ingress controller installed and ready")
     return True
 
 def verify_setup() -> bool:
@@ -504,8 +606,8 @@ def verify_setup() -> bool:
         'kubectl', 'get', 'namespaces'
     ], capture_output=True, check=False)
     if success:
-        uvote_ns = [line for line in stdout.split('\n') if 'uvote' in line]
-        if len(uvote_ns) >= 3:
+        uvote_ns = [line for line in stdout.split('\n') if 'uvote' in line or 'monitoring' in line]
+        if len(uvote_ns) >= 4:
             print_success(f"{len(uvote_ns)} U-Vote namespaces found")
             for ns in uvote_ns:
                 print(f"  {ns}")
