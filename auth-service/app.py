@@ -11,8 +11,7 @@ The critical anonymity contract:
   - After MFA passes, this service marks voter.has_voted = TRUE
   - It issues a blind ballot_token into the blind_tokens table
   - It does NOT record which voter received which ballot_token
-  - The voting-service uses the ballot_token to cast an encrypted ballot
-  - Nobody can link voter identity to vote choice
+  - The voting-service uses the ballot_token to cast an encrypted ballot, nobody can link voter identity to vote choice
 
 Runs on port 5001 (internal only, not browser-exposed).
 """
