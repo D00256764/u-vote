@@ -48,3 +48,6 @@ uvote-platform/k8s/secrets/
 # Local-only markdown notes
 *.md
 !README.md
+
+# Local scripts
+generate_presentation.py
