@@ -44,3 +44,7 @@ uvote-platform/k8s/secrets/
 
 # Claude
 .claude
+
+# Local-only markdown notes
+*.md
+!README.md
