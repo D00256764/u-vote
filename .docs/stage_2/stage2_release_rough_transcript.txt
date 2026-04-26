@@ -1,0 +1,67 @@
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
+
+Hi, my name is Hausa, and today I'll be walking you through our platform, our online voting system, which is currently running inside of Kubernetes platform. uVote is a secure online voting platform that's built for small to medium scale organisations, such as student unions, NGOs, local councils. So I'll be walking you through the entire application.
+
+This is just the landing page, and it gives you a little bit of information on how the system works. And once I click on get started here, I am led to the registration screen. This is where an election organiser would start by registering with their email.
+
+And there is a bit of authentication here where they need to create a strong enough password. On login, the auth service validates the credentials and issues a JWT token, which is stored in the session and any subsequent request to the election service or admin service and the result service. These would validate this token against the auth service before serving any type of content. 
+
+Once the organiser logs in, they're led to the dashboard, which is where they'll be able to create the election, manage the election, and see real time activity, which we'll come back to later. So I'll just create the election here. I can give it a title, description. 
+
+These are the options to add the candidates. And then this is the automated election window, which the organiser can set. Okay. 
+
+So once I save it, the election is stored in a draft status. And until it's in draft, I'm able to edit it and change the information if I want to. And it will update all the information, but only as long as the election is in a draft state.
+
+And here under manage voters, I can upload the voters as a CSV file, which contains their information, such as name, phone number, that will be used for authentication or OTP verification later. We can view the voters here. And there is a way, there is an option to send the tokens manually, but the system will also send it. 
+
+This is just in case if I were to add more voters later, I can just send it manually. But as soon as the election starts, the system... And this is just the real-time activity feed. So it pulls the server every 30 seconds and shows any recent events like election opening, tokens being sent, and then I can just cross them out.
+
+Here in Mailhug, this is our in-cluster email capture tool. We can see the voting token emails that were automatically sent. In production, this would be delivered to a real SMTP provider, but because this is running in a local Kubernetes environment at the moment, the emails are not being sent to an actual email. 
+
+But now switching to the voter side, once they get this link in their email, they'll be able to click this link, and they are led to this screen where they need to complete their OTP verification before they can see the ballot. This OTP verification will be sent to their phone. And there's the OTP.
+
+The voter will enter this code and the auth service will validate it and make sure it hasn't expired and it matches. And then it will issue a blind ballot token, which is a token that can't be traced back to the voter's identity. Once we verify the voter's identity, we can select a candidate and then submit or pass the vote. 
+
+This vote is encrypted before storage, and three things happen here. Firstly, the anonymous vote record is written, the voter's participation status is updated, and the token is invalidated. So if we were to go back and try and cast it again, it will say that it's been used already. 
+
+The voter would receive this receipt hash that they can use to verify their ballot was recorded. This ballot hash will match the ballot, and this will match the hash that's stored in the audit logs that we will be able to see once the voting closes, the election, once the election closes. The election service runs a background scheduler, which fires every 20 seconds, and when the scheduled close time arrives, it will transition the election to close, and then it will tally the results as soon as the election closes the result, and then we'll be able to view the results on the audit trail. 
+
+The scheduler does run every 20 seconds, so it takes a little bit of time for it to close automatically. There we go. You can see the results here, and the result page shows the total votes, the percentages, and then the winner, and if we scroll down, it shows the audit trial. 
+
+Every ballot has a hash, and each entry chains to the hash of the previous one. Any tampering with a historical record would break this chain, and it would immediately be detectable. The system would verify the entire chain on every results page load, and it would show it as valid here. 
+
+This table doesn't contain any voter identifier, so it's impossible to determine who voted for who even with full database access, and this ballot hash here that the voter receives is the same as what we see here. Next, I will go through the Kubernetes dashboard. So, the entire platform currently is running on Kubernetes, and these are all the application runs in its own isolated namespace, so there's a different namespace for protest and dev, and then there's a different separate monitoring namespace for Prometheus and logging, etc.
+
+In here, we can see all the six microservices that are running here, which includes authorisation, admin, voting, results, election, and frontend. Each pod has a liveness and readiness probe, so Kubernetes automatically restarts any unhealthy containers, and runs as a non-root user with a read-only root file system for security purposes, and you can see the deployments here. So, each service is defined as a deployment. 
+
+In production, these will run with three replicas for high availability with a rolling update strategy, so new versions will roll out pod by pod with zero downtime. Here, everything is infrastructure as code. Even the Prometheus scrape configuration and Grafana dashboards are defined as Kubernetes config maps, so nothing is configured manually, and this is our zero trust network model. 
+
+There's a default-deny policy that blocks all traffic by default, so no pod can communicate with any other pod unless explicitly permitted. Every allowed pod is then opened individually, so only Prometheus can scrape metric endpoints. The Ingress controller can reach application pods. 
+
+The services can call only the specific other services that they need, and then the auth service is never reachable from outside the cluster at all. Originally, Calco was configured as a CNI, but Calco requires access to the kernel namespaces, which Docker Desktop's virtualisation layer on Apple Silicon, which is what I'm running the platform on currently, doesn't expose currently. The worker node was getting stuck and not ready with a kernel error, so for local development, we're using KineNet currently, which is Kine's built-in CNI, which is fully stable on the Mac, and it still enforces all the Kubernetes network policy objects, so every policy that you see here is active and working. 
+
+When we deploy this to AWS, the Calco will be reinstated, and because the network policy manifests are already written and committed to the repository, nothing in the application or policy definitions will change. Under here, we can see that all external traffic enters through a single Nginx Ingress controller, which routes to the correct service based on the URL path, so slash vote will go to the voting service, slash elections goes to the election service, so for observability, every microservice exposes a metrics endpoint. This is a single line of code per service, which automatically instruments all the HTTP endpoints. 
+
+Prometheus runs in the cluster and scrapes all the six services every 15 seconds, and Grafana connects to Prometheus as a data source, and the dashboard that we're looking at here is provisioned automatically through the config map on startup, so it survives cluster restarts without any manual setup, and this here is the request rate. This is requests per second broken down by services in real time. You can see traffic across all six services as it happens.
+
+This is the p95 latency, which is the 95th percentile response time. Our SLA target is under 500 milliseconds, so everything is mostly within that range. The vote throughput is the successful votes cast per minute. 
+
+This will spike during an active election window, and then the availability SLI is the key metric here. We're tracking the percentage of non-error requests across the entire platform. Our target is 99.5% availability, and this is meeting our threshold. 
+
+This is the overall error rate and global p95 latency, which gives a platform-wide view rather than per service, so our SLIs, availability, latency, and error rate are what a production team would define as SLAs against and configure alerting around in a production environment. Lastly, I will go through the CI pipeline, so here we can just see the pipeline running. Every push to any branch will trigger the CI pipeline, and I'll just walk you through all the steps. 
+
+The lint test, this rough runs across all six services, and it makes sure that the code style is consistent, and if this fails, then nothing else will run. Stages two and three are all the unit tests right here. These all run in parallel, so each service uses the test client with a mock database, so tests are isolated. 
+
+Stage three runs the test for their shared modules. This would be any cryptographic security utilities, the database connection, and this login configuration that every service imports. Stage four is our integration tests. 
+
+This is where the full stack comes up, and these tests cover all the workflows, registration, login, election creation, casting a vote, and then retrieving the results, and then we have Docker build, which validates that all the Docker files are correct and builds the images. Stage six and seven is the security scanning with Trivy. This scans each build image for any critical and high-severity vulnerability, and then stage seven, the last stage for this repo, scans the file system for any hard-coded secrets and misconfigurations, and these results are uploaded to GitHub's security tab in SARA format, so we'll just let this run. 
+
+This is just running all the tests again, and while this is running, I'll just explain the last two stages, which is what we'll run here. So, on a feature branch like test or any of our other branches, the last two stages are skipped because the GitHub container registry push, it only runs on main so that we only publish production images from branches that have passed the entire pipeline. When we merge to main, the full pipeline runs against the merged code, and the pipeline authenticates to GitHub container registry using the provided GitHub token, and it pushes all the six images tagged with both latest and the exact commit SHA. 
+
+The SHA tag just means that every deployed image is traceable back to the specific commit, and the last stage is the GitHub's manifest update. Once all the images are pushed, this child updates the image reference in every Kubernetes deployment YAML to the new SHA and commits that change back to the repository. The repository is a single source of truth for what should be running in the cluster, and an Argo CD instance watching this repository would detect the manifest change and automatically perform a rolling update without any downtime.
+
+The pipeline never runs directly, it just updates the file, and the cluster reconciles itself. So, to summarise, UVo is a fully containerised microservices application which is currently running on Kubernetes with zero trust networking, automated election lifecycle management through a background scheduler, security controls including encrypted ballots, blind ballot tokens for voter anonymity, and a cryptographic hash chain audit trial. The platform has a nine-stage CI-CD pipeline with a CI pipeline currently with security scanning, automated image publishing to GHCR, and GitOps-based deployment. 
+
+All of the structure is defined as code in version control manifest, and observability is in place through Prometheus and Grafana. For the next stage, we will be deploying this to AWS. And yeah, that's merged, and yeah, thank you so much for listening.
+
+(Transcribed by TurboScribe. Go Unlimited to remove this message.)
