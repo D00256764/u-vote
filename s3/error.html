@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>404 — U-Vote</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy: #0e2044;
+      --blue: #60a5fa;
+      --light: #c8dff6;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--navy);
+      color: var(--light);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 24px;
+      background: radial-gradient(ellipse 80% 60% at 50% 0%, #1a3a6e, var(--navy) 70%);
+    }
+    .code {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(6rem, 20vw, 10rem);
+      font-weight: 800;
+      color: rgba(96,165,250,0.15);
+      line-height: 1;
+      letter-spacing: -0.04em;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f0f6ff;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 0.95rem;
+      font-weight: 300;
+      opacity: 0.6;
+      margin-bottom: 36px;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--blue);
+      color: var(--navy);
+      font-weight: 500;
+      font-size: 0.9rem;
+      padding: 12px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    a:hover { opacity: 0.85; transform: translateY(-2px); }
+  </style>
+</head>
+<body>
+  <div class="code">404</div>
+  <h1>Page not found</h1>
+  <p>This page doesn't exist on the U-Vote project site.</p>
+  <a href="/">← Back to Home</a>
+</body>
+</html>
