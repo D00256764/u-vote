@@ -41,7 +41,7 @@ spec:
     spec:
       containers:
       - name: voting-service
-        image: ghcr.io/d00256764/u-vote-voting-service:7911df6
+        image: ghcr.io/d00256764/u-vote-voting-service:a4a9ce9
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5003
