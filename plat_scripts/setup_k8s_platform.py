@@ -185,13 +185,16 @@ def install_calico() -> bool:
         print_error("Failed to install Calico operator")
         return False
     
-    # Install Calico custom resources
+    # Install Calico custom resources (local copy with correct pod CIDR)
     print_info("Installing Calico custom resources...")
+    calico_cr = Path(__file__).parent.parent / "uvote-platform" / "k8s" / "calico" / "custom-resources.yaml"
+    if not calico_cr.exists():
+        print_error(f"Calico custom-resources.yaml not found: {calico_cr}")
+        return False
     success, _, stderr = run_command([
-        'kubectl', 'create', '-f',
-        'https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/custom-resources.yaml'
+        'kubectl', 'apply', '-f', str(calico_cr)
     ], check=False)
-    
+
     if not success and 'already exists' not in stderr:
         print_error("Failed to install Calico custom resources")
         return False
@@ -289,6 +292,21 @@ def deploy_database(k8s_dir: Path) -> bool:
         print_error("Failed to create PVC")
         return False
     
+    # Apply init configmap
+    print_info("Creating database init configmap...")
+    configmap_file = db_dir / "db-init-configmap.yaml"
+    if not configmap_file.exists():
+        print_error(f"ConfigMap file not found: {configmap_file}")
+        return False
+
+    success, _, _ = run_command([
+        'kubectl', 'apply', '-f', str(configmap_file)
+    ], check=False)
+
+    if not success:
+        print_error("Failed to create database init configmap")
+        return False
+
     # Apply deployment
     print_info("Creating database deployment...")
     deployment_file = db_dir / "db-deployment.yaml"

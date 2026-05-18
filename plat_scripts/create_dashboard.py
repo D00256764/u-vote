@@ -9,7 +9,9 @@ import base64
 
 BASE = "http://localhost:5601"
 USER = "elastic"
-PASS = os.environ.get("ES_PASSWORD", "a0MmngBaLXa3Dba1")
+PASS = os.environ.get("ES_PASSWORD")
+if not PASS:
+    sys.exit("ERROR: ES_PASSWORD environment variable is required")
 DV_ID = "f0a18b54-cb47-4ad5-b544-1da0ae22da4f"
 
 # Stable UUIDs
@@ -253,25 +255,26 @@ dash = {
 
 # ── POST ──────────────────────────────────────────────────────────────────────
 
-objects = [p1, p2, p3, p4, p5, p6, dash]
-status, result = post("/api/saved_objects/_bulk_create?overwrite=true", objects)
+if __name__ == "__main__":
+    objects = [p1, p2, p3, p4, p5, p6, dash]
+    status, result = post("/api/saved_objects/_bulk_create?overwrite=true", objects)
 
-print(f"HTTP {status}")
-if status not in (200, 201):
-    print("FATAL:", json.dumps(result, indent=2))
-    sys.exit(1)
+    print(f"HTTP {status}")
+    if status not in (200, 201):
+        print("FATAL:", json.dumps(result, indent=2))
+        sys.exit(1)
 
-all_ok = True
-for obj in result.get("saved_objects", []):
-    err = obj.get("error")
-    title = obj.get("attributes", {}).get("title", obj.get("id"))
-    if err:
-        print(f"  ERROR  {obj['type']:15s} '{title}': {err}")
-        all_ok = False
+    all_ok = True
+    for obj in result.get("saved_objects", []):
+        err = obj.get("error")
+        title = obj.get("attributes", {}).get("title", obj.get("id"))
+        if err:
+            print(f"  ERROR  {obj['type']:15s} '{title}': {err}")
+            all_ok = False
+        else:
+            print(f"  OK     {obj['type']:15s} '{title}' -> {obj['id']}")
+
+    if all_ok:
+        print(f"\nDashboard URL: http://localhost:5601/app/dashboards#/view/{DASH}")
     else:
-        print(f"  OK     {obj['type']:15s} '{title}' -> {obj['id']}")
-
-if all_ok:
-    print(f"\nDashboard URL: http://localhost:5601/app/dashboards#/view/{DASH}")
-else:
-    sys.exit(1)
+        sys.exit(1)

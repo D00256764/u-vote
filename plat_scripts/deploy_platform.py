@@ -589,7 +589,7 @@ class PlatformDeployer:
             [
                 "kubectl", "exec", "-n", self.namespace, pod, "--",
                 "psql", "-U", "uvote_admin", "-d", "uvote",
-                "-c", f"ALTER USER uvote_admin PASSWORD '{new_password}';",
+                "-c", f"ALTER USER uvote_admin PASSWORD '{new_password.replace(chr(39), chr(39)*2)}';",
             ],
             check=False,
         )
