@@ -1,0 +1,43 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Page-1" id="ey4-SPsHN9FEswweeHdZ">
+    <mxGraphModel dx="1274" dy="821" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="h1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#005dbb;strokeColor=#0e2044;fontColor=#ffffff;fontFamily=Courier New;fontStyle=1;fontSize=11;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;Distributed Transaction Reliability&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="160" x="160" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#005dbb;strokeColor=#0e2044;fontColor=#ffffff;fontFamily=Courier New;fontStyle=1;fontSize=11;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;Inter-Service Security&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="160" x="360" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="h3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#005dbb;strokeColor=#0e2044;fontColor=#ffffff;fontFamily=Courier New;fontStyle=1;fontSize=11;" value="&lt;font style=&quot;font-size: 17px;&quot;&gt;Service Mesh (Istio)&lt;/font&gt;" vertex="1">
+          <mxGeometry height="60" width="160" x="560" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="conn1" edge="1" parent="1" source="h1" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;rounded=1;html=1;strokeColor=#0e2044;" target="h2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conn2" edge="1" parent="1" source="h2" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;rounded=1;html=1;strokeColor=#0e2044;" target="h3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="h1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e2044;" target="b1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="h2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e2044;" target="b2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="h3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#0e2044;" target="b3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="b1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a5fa;strokeColor=#0e2044;fontColor=#0e2044;fontFamily=Courier New;fontSize=11;align=center;" value="&lt;font style=&quot;font-size: 13px;&quot;&gt;&lt;b&gt;Saga Pattern&lt;/b&gt;&lt;br&gt;Outbox Pattern&lt;br&gt;CQRS&lt;br&gt;&lt;i&gt;Eventual Consistency&lt;/i&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="160" x="180" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="b2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a5fa;strokeColor=#0e2044;fontColor=#0e2044;fontFamily=Courier New;fontSize=11;align=center;" value="&lt;font style=&quot;font-size: 12px;&quot;&gt;&lt;b&gt;mTLS Between Services&lt;/b&gt;&lt;br&gt;Mutual Authentication&lt;br&gt;&lt;i&gt;Encrypted Channels&lt;/i&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="160" x="380" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="b3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#60a5fa;strokeColor=#0e2044;fontColor=#0e2044;fontFamily=Courier New;fontSize=11;align=center;" value="&lt;font&gt;&lt;b&gt;Advanced Traffic Management&lt;/b&gt;&lt;br&gt;Load Balancing&lt;br&gt;Observability &amp;amp; Retries&lt;br&gt;&lt;i&gt;Service Resilience&lt;/i&gt;&lt;/font&gt;" vertex="1">
+          <mxGeometry height="70" width="160" x="580" y="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
