@@ -14,12 +14,13 @@ Runs on port 5000, exposed to browsers on port 8080.
 """
 import os
 import sys
+import secrets
 import logging
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -83,6 +84,17 @@ def get_flashed_messages(request: Request) -> list[dict]:
     return request.session.pop("_messages", [])
 
 
+def generate_csrf_token(request: Request) -> str:
+    if "_csrf_token" not in request.session:
+        request.session["_csrf_token"] = secrets.token_urlsafe(32)
+    return request.session["_csrf_token"]
+
+
+def validate_csrf_token(request: Request, token: str) -> bool:
+    expected = request.session.get("_csrf_token", "")
+    return bool(expected) and secrets.compare_digest(expected, token)
+
+
 def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
     """Safely parse JSON from a response, returning fallback on failure."""
     try:
@@ -115,13 +127,17 @@ async def register_page(request: Request):
     return templates.TemplateResponse("register.html", {
         "request": request,
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request),
     })
 
 
 @app.post("/register", response_class=HTMLResponse)
 async def register(request: Request, email: str = Form(...), password: str = Form(...),
-                   confirm_password: str = Form(...)):
+                   confirm_password: str = Form(...), csrf_token: str = Form(default="")):
     logger.info('Request received: %s %s', request.method, request.url.path)
+
+    if not validate_csrf_token(request, csrf_token):
+        return Response("Forbidden", status_code=403)
 
     if password != confirm_password:
         flash(request, "Passwords do not match", "danger")
@@ -179,12 +195,17 @@ async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {
         "request": request,
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request),
     })
 
 
 @app.post("/login", response_class=HTMLResponse)
-async def login(request: Request, email: str = Form(...), password: str = Form(...)):
+async def login(request: Request, email: str = Form(...), password: str = Form(...),
+                csrf_token: str = Form(default="")):
     logger.info('Request received: %s %s', request.method, request.url.path)
+
+    if not validate_csrf_token(request, csrf_token):
+        return Response("Forbidden", status_code=403)
 
     try:
         resp = await http_client.post(f"{AUTH_SERVICE}/login", json={
