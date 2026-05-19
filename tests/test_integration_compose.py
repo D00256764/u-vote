@@ -11,11 +11,19 @@ FastAPI service instances backed by a live PostgreSQL database.
 Run with:
     pytest tests/test_integration_compose.py -v
 """
+import re
 import time
 import uuid
 
 import httpx
 import pytest
+
+
+def _csrf(client: httpx.Client, url: str) -> str:
+    """GET a form page and extract the CSRF token from the hidden input."""
+    r = client.get(url)
+    m = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text)
+    return m.group(1) if m else ""
 
 BASE = "http://localhost"  # NGINX gateway
 
@@ -138,10 +146,12 @@ def test_register_and_login_flow():
         timeout=15,
     ) as c:
         # ── Register ────────────────────────────────────────────────────────
+        token = _csrf(c, "/register")
         r = c.post("/register", data={
             "email": email,
             "password": password,
             "confirm_password": password,
+            "csrf_token": token,
         })
         # Successful registration: frontend returns 303 → GET /login (200)
         assert r.status_code == 200, (
@@ -154,7 +164,8 @@ def test_register_and_login_flow():
         )
 
         # ── Login ────────────────────────────────────────────────────────────
-        r = c.post("/login", data={"email": email, "password": password})
+        login_token = _csrf(c, "/login")
+        r = c.post("/login", data={"email": email, "password": password, "csrf_token": login_token})
         # After login the chain is:
         #   frontend → redirect to /dashboard?token=...&organiser_id=...
         #   election-service stores session → redirect to /dashboard
@@ -188,9 +199,11 @@ def test_frontend_health_endpoint(client):
 
 def test_login_wrong_password_stays_at_login(client):
     """POST /login with wrong credentials re-renders the login form."""
+    token = _csrf(client, "/login")
     r = client.post("/login", data={
         "email": "nobody@example.com",
         "password": "WrongPass99!",
+        "csrf_token": token,
     })
     assert r.status_code == 200
     assert "/login" in str(r.url)
@@ -204,8 +217,10 @@ def test_register_duplicate_email_shows_error():
 
     with httpx.Client(base_url=BASE, follow_redirects=True, timeout=15) as c:
         # First registration succeeds → redirects to /login
+        token = _csrf(c, "/register")
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": token,
         })
         assert "/login" in str(r.url), (
             f"First registration should redirect to /login, got {r.url}. "
@@ -213,8 +228,10 @@ def test_register_duplicate_email_shows_error():
         )
 
         # Second registration with same email → error, stays on /register
+        token2 = _csrf(c, "/register")
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": token2,
         })
         assert r.status_code == 200
         assert "/register" in str(r.url), (
@@ -237,15 +254,18 @@ def test_full_organiser_flow():
 
     with httpx.Client(base_url=BASE, follow_redirects=True, timeout=15) as c:
         # ── Register ──────────────────────────────────────────────────────
+        reg_token = _csrf(c, "/register")
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": reg_token,
         })
         assert "/login" in str(r.url), (
             f"Register should redirect to /login, got {r.url}. Body: {r.text[:300]}"
         )
 
         # ── Login ─────────────────────────────────────────────────────────
-        r = c.post("/login", data={"email": email, "password": password})
+        login_token = _csrf(c, "/login")
+        r = c.post("/login", data={"email": email, "password": password, "csrf_token": login_token})
         assert "/dashboard" in str(r.url), (
             f"Login should land on /dashboard but got {r.url}. Body: {r.text[:300]}"
         )

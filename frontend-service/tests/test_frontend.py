@@ -21,9 +21,17 @@ Architecture notes recorded here for future readers:
     patch("httpx.AsyncClient", return_value=mock_client) in conftest.py.
 """
 import json
+import re
 
 import httpx
 from unittest.mock import MagicMock
+
+
+def _csrf(client, url: str) -> str:
+    """GET url and extract the CSRF token from the hidden form input."""
+    r = client.get(url)
+    m = re.search(r'name="csrf_token"\s+value="([^"]+)"', r.text)
+    return m.group(1) if m else ""
 
 
 def mock_auth_response(status_code: int = 200, data: dict | None = None) -> MagicMock:
@@ -90,12 +98,14 @@ def test_register_password_mismatch_returns_error(client):
     POST /register with mismatched passwords is rejected locally (no
     auth-service call) and re-renders the form with an error message.
     """
+    token = _csrf(client["client"], "/register")
     r = client["client"].post(
         "/register",
         data={
             "email": "test@uvote.com",
             "password": "pass1234",
             "confirm_password": "different",
+            "csrf_token": token,
         },
         follow_redirects=False,
     )
@@ -127,9 +137,10 @@ def test_login_success_redirects_to_election_dashboard(client):
     client["auth"].post.return_value = mock_auth_response(
         200, {"token": "test.jwt.token", "organiser_id": 1}
     )
+    token = _csrf(client["client"], "/login")
     r = client["client"].post(
         "/login",
-        data={"email": "admin@uvote.com", "password": "admin123"},
+        data={"email": "admin@uvote.com", "password": "admin123", "csrf_token": token},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -147,9 +158,10 @@ def test_login_failure_renders_login_form_with_error(client):
     client["auth"].post.return_value = mock_auth_response(
         401, {"detail": "Invalid credentials"}
     )
+    token = _csrf(client["client"], "/login")
     r = client["client"].post(
         "/login",
-        data={"email": "admin@uvote.com", "password": "wrongpass"},
+        data={"email": "admin@uvote.com", "password": "wrongpass", "csrf_token": token},
         follow_redirects=False,
     )
     assert r.status_code == 200
@@ -166,9 +178,10 @@ def test_login_auth_service_unreachable_shows_error(client):
     by the except block in app.py.
     """
     client["auth"].post.side_effect = httpx.ConnectError("connection refused")
+    token = _csrf(client["client"], "/login")
     r = client["client"].post(
         "/login",
-        data={"email": "admin@uvote.com", "password": "admin123"},
+        data={"email": "admin@uvote.com", "password": "admin123", "csrf_token": token},
         follow_redirects=False,
     )
     assert r.status_code == 200
@@ -183,9 +196,10 @@ def test_login_sets_organiser_id_in_redirect(client):
     client["auth"].post.return_value = mock_auth_response(
         200, {"token": "tok.abc.xyz", "organiser_id": 42}
     )
+    token = _csrf(client["client"], "/login")
     r = client["client"].post(
         "/login",
-        data={"email": "admin@uvote.com", "password": "admin123"},
+        data={"email": "admin@uvote.com", "password": "admin123", "csrf_token": token},
         follow_redirects=False,
     )
     assert r.status_code == 303
@@ -213,12 +227,14 @@ def test_register_success_redirects_to_login(client):
     redirects to /login (303).
     """
     client["auth"].post.return_value = mock_auth_response(201, {})
+    token = _csrf(client["client"], "/register")
     r = client["client"].post(
         "/register",
         data={
             "email": "new@uvote.com",
             "password": "Pass1234",
             "confirm_password": "Pass1234",
+            "csrf_token": token,
         },
         follow_redirects=False,
     )
@@ -234,12 +250,14 @@ def test_register_duplicate_email_renders_error(client):
     client["auth"].post.return_value = mock_auth_response(
         409, {"detail": "Email already registered"}
     )
+    token = _csrf(client["client"], "/register")
     r = client["client"].post(
         "/register",
         data={
             "email": "dup@uvote.com",
             "password": "Pass1234",
             "confirm_password": "Pass1234",
+            "csrf_token": token,
         },
         follow_redirects=False,
     )
@@ -253,12 +271,14 @@ def test_register_service_unreachable_shows_error(client):
     httpx.RequestError and flashes "Service unavailable".
     """
     client["auth"].post.side_effect = httpx.ConnectError("refused")
+    token = _csrf(client["client"], "/register")
     r = client["client"].post(
         "/register",
         data={
             "email": "new@uvote.com",
             "password": "Pass1234",
             "confirm_password": "Pass1234",
+            "csrf_token": token,
         },
         follow_redirects=False,
     )
@@ -314,9 +334,10 @@ def test_safe_json_malformed_body_on_200_causes_500(client):
     bad_response.json.side_effect = ValueError("not valid JSON")
     client["auth"].post.return_value = bad_response
 
+    token = _csrf(client["client"], "/login")
     r = client["client"].post(
         "/login",
-        data={"email": "admin@uvote.com", "password": "admin123"},
+        data={"email": "admin@uvote.com", "password": "admin123", "csrf_token": token},
     )
     # KeyError on data["token"] propagates as 500 — this is a real bug.
     assert r.status_code == 500

@@ -11,6 +11,7 @@ import base64
 import importlib.util
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -94,6 +95,12 @@ for _route in _app_module.app.routes:
 # ---------------------------------------------------------------------------
 # Helpers (not fixtures)
 # ---------------------------------------------------------------------------
+
+def extract_csrf_token(html: str) -> str:
+    """Extract the CSRF token value from a hidden form input in an HTML page."""
+    m = re.search(r'name="csrf_token"\s+value="([^"]+)"', html)
+    return m.group(1) if m else ""
+
 
 def mock_auth_response(status_code: int = 200, data: dict | None = None) -> MagicMock:
     """
@@ -218,12 +225,15 @@ def authed_client(mock_auth):
         mock_auth.post.return_value = mock_auth_response(
             200, {"token": "test.jwt.token", "organiser_id": 1}
         )
+        # GET /login first to establish session and obtain CSRF token.
+        r_get = c.get("/login")
+        token = extract_csrf_token(r_get.text)
         # POST /login → 303 redirect (not followed). The 303 response carries
         # Set-Cookie: session=<signed payload>; the TestClient stores it for
         # domain=testserver so subsequent requests include it.
         c.post(
             "/login",
-            data={"email": "admin@uvote.com", "password": "admin123"},
+            data={"email": "admin@uvote.com", "password": "admin123", "csrf_token": token},
             follow_redirects=False,
         )
         yield {"client": c, "auth": mock_auth}
