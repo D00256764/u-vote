@@ -68,7 +68,8 @@ spec:
           periodSeconds: 5
       volumes:
       - name: postgres-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgres-pvc
       - name: init-scripts
         configMap:
           name: uvote-init-scripts

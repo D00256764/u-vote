@@ -471,6 +471,11 @@ def apply_database_schema(k8s_dir: Path) -> bool:
         return False
 
     print_success("Seed data applied successfully")
+    print_warning(
+        "SECURITY: The default organiser account (admin@uvote.com) has a placeholder "
+        "password hash. You MUST set a real bcrypt password hash in seed_data.sql "
+        "before any real deployment. See the comment in seed_data.sql for instructions."
+    )
 
     # Verify tables
     print_info("Verifying tables...")
