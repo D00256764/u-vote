@@ -1424,8 +1424,20 @@ class PlatformDeployer:
             else:
                 self.logger.success(f"✓ {info['deploy_name']} deleted")
 
-        # Delete secrets (but preserve db-credentials since DB is still running)
-        for secret_name in ["jwt-secret", "flask-secret", "smtp-credentials"]:
+        # Delete secrets (but preserve db-credentials since DB is still running).
+        # Per-service DB credential secrets are included so a subsequent redeploy
+        # generates fresh passwords that are synced to the database roles (ADR014).
+        _secrets_to_delete = [
+            "jwt-secret",
+            "flask-secret",
+            "smtp-credentials",
+            "auth-db-credentials",
+            "voting-db-credentials",
+            "election-db-credentials",
+            "results-db-credentials",
+            "admin-db-credentials",
+        ]
+        for secret_name in _secrets_to_delete:
             self.logger.info(f"Deleting secret '{secret_name}'...")
             self.run_cmd(
                 ["kubectl", "delete", "secret", secret_name,
