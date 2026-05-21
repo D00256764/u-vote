@@ -71,8 +71,6 @@ spec:
               key: secret
         - name: JWT_ALGORITHM
           value: "HS256"
-        - name: JWT_EXPIRATION
-          value: "86400"
         # Service configuration
         - name: DEFAULT_ORG_ID
           value: "1"

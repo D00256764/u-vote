@@ -161,10 +161,12 @@ class MailHogDeployer:
         namespace: str,
         logger: DeploymentLogger,
         timeout: int = 60,
+        cluster_name: str = CLUSTER_NAME,
     ):
         self.namespace = namespace
         self.logger = logger
         self.timeout = timeout
+        self.cluster_name = cluster_name
         self.project_root = Path(__file__).resolve().parent.parent
         self.k8s_dir = self.project_root / "uvote-platform" / "k8s"
         # Keyed by phase label — populated as phases run, used by summary table
@@ -234,15 +236,15 @@ class MailHogDeployer:
 
         # Kind cluster accessible
         rc, _, err = self.run_cmd(
-            ["kubectl", "cluster-info", "--context", f"kind-{CLUSTER_NAME}"],
+            ["kubectl", "cluster-info", "--context", f"kind-{self.cluster_name}"],
             check=False,
         )
         if rc != 0:
             self.logger.error(
-                f"✗ Cluster 'kind-{CLUSTER_NAME}' not accessible: {err.strip()}"
+                f"✗ Cluster 'kind-{self.cluster_name}' not accessible: {err.strip()}"
             )
             return self._record("Phase 1: Preflight", False)
-        self.logger.success(f"✓ Kind cluster 'kind-{CLUSTER_NAME}' is accessible")
+        self.logger.success(f"✓ Kind cluster 'kind-{self.cluster_name}' is accessible")
 
         # Target namespace exists
         rc, _, err = self.run_cmd(
@@ -713,6 +715,12 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="Pod readiness timeout in seconds for Phase 5 (default: 60)",
     )
+    parser.add_argument(
+        "--cluster-name",
+        default=CLUSTER_NAME,
+        metavar="NAME",
+        help=f"Kind cluster name (default: {CLUSTER_NAME})",
+    )
     return parser
 
 
@@ -766,6 +774,7 @@ def main() -> None:
             namespace=ns,
             logger=logger,
             timeout=args.timeout,
+            cluster_name=args.cluster_name,
         )
 
         try:
