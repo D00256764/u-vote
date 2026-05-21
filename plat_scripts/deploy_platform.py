@@ -785,9 +785,9 @@ class PlatformDeployer:
         """Apply all network policy YAML files in sorted order.
 
         Files are applied from uvote-platform/k8s/network-policies/ in
-        filename order (00-default-deny first … 06-allow-prometheus-scrape
-        last).  test-pods.yaml is skipped — it contains test Pod definitions,
-        not NetworkPolicy objects.
+        filename order (00-default-deny first … 08-allow-grafana-prometheus
+        last). test-pods.yaml lives in uvote-platform/k8s/test/ and is never
+        present in this directory.
 
         Called between phase5_deploy_services and phase6_apply_ingress so
         network isolation is in place before services receive real traffic.
@@ -803,9 +803,7 @@ class PlatformDeployer:
             )
             return True
 
-        policy_files = sorted(
-            f for f in netpol_dir.glob("*.yaml") if f.name != "test-pods.yaml"
-        )
+        policy_files = sorted(netpol_dir.glob("*.yaml"))
 
         if not policy_files:
             self.logger.warning("⚠ No network policy YAML files found — skipping")
@@ -1405,7 +1403,7 @@ class PlatformDeployer:
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
 
-        # Apply Network Policies (00-default-deny … 06-allow-prometheus-scrape)
+        # Apply Network Policies (00-default-deny … 08-allow-grafana-prometheus)
         self.apply_network_policies()
 
         # Phase 6: Apply Ingress
