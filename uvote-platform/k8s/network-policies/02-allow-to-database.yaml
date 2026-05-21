@@ -133,15 +133,9 @@ spec:
           app: results-service
 
     # -------------------------------------------------------------------------
-    # Audit Service (port 8005)
-    # DB user: audit_service
-    # Permissions: INSERT, SELECT on audit_logs
-    # Purpose: Immutable hash-chained event logging, tamper detection
-    # Reference: ARCHITECTURE.MD § "Audit Service"
+    # audit-service — RESERVED, not yet deployed.
+    # Add podSelector app=audit-service here when the service is implemented.
     # -------------------------------------------------------------------------
-    - podSelector:
-        matchLabels:
-          app: audit-service
 
     # -------------------------------------------------------------------------
     # Admin Service (port 8006)
@@ -210,7 +204,7 @@ spec:
       - voting-service
       - election-service
       - results-service
-      - audit-service
+      # audit-service reserved — not yet deployed; add here when implemented
       - admin-service
 
   policyTypes:

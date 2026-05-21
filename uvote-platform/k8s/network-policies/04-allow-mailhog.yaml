@@ -36,10 +36,10 @@
 #
 # Two-policy pattern
 # ------------------
-# This file follows the established pattern from 02-allow-to-database.yaml
-# and 04-allow-audit.yaml: one policy governing egress from the sending pod,
-# and a matching policy governing ingress to the receiving pod. Both are
-# required for traffic to flow under a default-deny architecture.
+# This file follows the established pattern from 02-allow-to-database.yaml:
+# one policy governing egress from the sending pod, and a matching policy
+# governing ingress to the receiving pod. Both are required for traffic to
+# flow under a default-deny architecture.
 #
 # Traffic flow:
 #   admin-service:* → mailhog:1025/TCP (SMTP — this policy)
@@ -50,13 +50,12 @@
 #   uvote-platform/k8s/mailhog/mailhog-deployment.yaml
 #   admin-service/shared/email_util.py
 #   uvote-platform/k8s/network-policies/02-allow-to-database.yaml
-#   uvote-platform/k8s/network-policies/04-allow-audit.yaml
 #
 # =============================================================================
 
 
 # =============================================================================
-# POLICY 1 of 2: EGRESS FROM ADMIN-SERVICE TO MAILHOG (05a)
+# POLICY 1 of 2: EGRESS FROM ADMIN-SERVICE TO MAILHOG (04a)
 # =============================================================================
 # Targets admin-service pods and allows outbound SMTP connections to mailhog
 # on port 1025/TCP, plus DNS so the hostname "mailhog" resolves to a
@@ -76,7 +75,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: mail-testing
-    policy-order: "05a"
+    policy-order: "04a"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets admin-service pods.
@@ -108,7 +107,7 @@ spec:
   # Rule 2: Allow egress to kube-dns on port 53 (UDP + TCP)
   # admin-service must resolve "mailhog" to a cluster IP before connecting.
   # Belt-and-suspenders with 01-allow-dns.yaml — matching the pattern used
-  # in 02-allow-to-database.yaml and 04-allow-audit.yaml.
+  # in 02-allow-to-database.yaml.
   # ---------------------------------------------------------------------------
   - to:
     - namespaceSelector:
@@ -123,7 +122,7 @@ spec:
 ---
 
 # =============================================================================
-# POLICY 2 of 2: INGRESS TO MAILHOG FROM ADMIN-SERVICE (05b)
+# POLICY 2 of 2: INGRESS TO MAILHOG FROM ADMIN-SERVICE (04b)
 # =============================================================================
 # Targets mailhog pods and allows inbound SMTP connections from admin-service
 # on port 1025/TCP only.
@@ -142,7 +141,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: mail-testing
-    policy-order: "05b"
+    policy-order: "04b"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets the mailhog pod.

@@ -512,12 +512,13 @@ def apply_network_policies(k8s_dir: Path) -> bool:
         print_warning("No network policies found, skipping...")
         return True
     
-    # Apply all network policy files
+    # Apply all network policy files. test-pods.yaml lives in k8s/test/ and
+    # is never present here, so no exclusion filter is needed.
     policy_files = sorted(network_policies_dir.glob("*.yaml"))
     if not policy_files:
         print_warning("No network policy YAML files found")
         return True
-    
+
     for policy_file in policy_files:
         print_info(f"Applying {policy_file.name}...")
         success, _, stderr = run_command([
