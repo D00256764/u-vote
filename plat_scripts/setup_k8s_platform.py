@@ -185,6 +185,15 @@ def install_calico() -> bool:
         print_error("Failed to install Calico operator")
         return False
     
+    # Wait for tigera-operator to register its CRDs before applying custom resources
+    print_info("Waiting for tigera-operator deployment to be ready...")
+    rollout_ok, _, _ = run_command([
+        'kubectl', 'rollout', 'status', 'deployment/tigera-operator',
+        '-n', 'tigera-operator', '--timeout=120s'
+    ], check=False)
+    if not rollout_ok:
+        print_warning("tigera-operator rollout wait failed; attempting custom-resources apply anyway")
+
     # Install Calico custom resources (local copy with correct pod CIDR)
     print_info("Installing Calico custom resources...")
     calico_cr = Path(__file__).parent.parent / "uvote-platform" / "k8s" / "calico" / "custom-resources.yaml"
