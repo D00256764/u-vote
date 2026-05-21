@@ -271,20 +271,32 @@ def deploy_database(k8s_dir: Path) -> bool:
     
     db_dir = k8s_dir / "database"
     
-    # Apply secret
-    print_info("Creating database secret...")
+    # Apply secret — only if it does not already exist.
+    # deploy_platform.py generates a random password and patches db-credentials
+    # on every deploy. Re-applying db-secret.yaml after that would overwrite
+    # the generated password with the hardcoded dev value, breaking all service
+    # connections.
+    print_info("Checking for existing db-credentials secret...")
     secret_file = db_dir / "db-secret.yaml"
     if not secret_file.exists():
         print_error(f"Secret file not found: {secret_file}")
         return False
-    
-    success, _, _ = run_command([
-        'kubectl', 'apply', '-f', str(secret_file)
+
+    exists_rc, _, _ = run_command([
+        'kubectl', 'get', 'secret', 'db-credentials', '-n', 'uvote-dev'
     ], check=False)
-    
-    if not success:
-        print_error("Failed to create database secret")
-        return False
+
+    if exists_rc == 0:
+        print_info("db-credentials secret already exists — skipping apply to preserve generated password")
+    else:
+        print_info("Creating database secret...")
+        success, _, _ = run_command([
+            'kubectl', 'apply', '-f', str(secret_file)
+        ], check=False)
+
+        if not success:
+            print_error("Failed to create database secret")
+            return False
     
     # Apply PVC
     print_info("Creating persistent volume claim...")
