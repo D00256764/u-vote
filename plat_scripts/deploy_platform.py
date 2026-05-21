@@ -185,6 +185,7 @@ class PlatformDeployer:
         self.dry_run = dry_run
         self.project_root = Path(__file__).resolve().parent.parent
         self.k8s_services_dir = self.project_root / "uvote-platform" / "k8s" / "services"
+        self.git_sha: Optional[str] = None
         self.results: Dict[str, list] = {
             "images_built": [],
             "images_failed": [],
@@ -324,13 +325,17 @@ class PlatformDeployer:
 
             dockerfile = svc_dir / "Dockerfile"
             self.logger.info(f"Building {svc}...")
+
+            build_cmd = [
+                "docker", "build",
+                "-t", f"{GHCR_PREFIX}/u-vote-{svc}:latest",
+            ]
+            if self.git_sha:
+                build_cmd += ["-t", f"{GHCR_PREFIX}/u-vote-{svc}:{self.git_sha}"]
+            build_cmd += ["-f", str(dockerfile), str(self.project_root)]
+
             rc, out, err = self.run_cmd(
-                [
-                    "docker", "build",
-                    "-t", f"{svc}:latest",
-                    "-f", str(dockerfile),
-                    str(self.project_root),
-                ],
+                build_cmd,
                 check=False,
                 timeout=600,
                 mutating=True,
@@ -344,15 +349,12 @@ class PlatformDeployer:
 
             # Image size
             _, size_out, _ = self.run_cmd(
-                ["docker", "images", svc, "--format", "{{.Size}}"], check=False
+                ["docker", "images", f"{GHCR_PREFIX}/u-vote-{svc}", "--format", "{{.Size}}"],
+                check=False,
             )
             size = size_out.strip().splitlines()[0] if size_out.strip() else "unknown"
 
-            # Tag with GHCR name so Kind loads match what the deployment YAMLs reference
-            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
-            self.run_cmd(["docker", "tag", f"{svc}:latest", ghcr_tag], check=False, mutating=True)
-
-            self.logger.success(f"✓ {svc}:latest built (Size: {size})")
+            self.logger.success(f"✓ {svc} built (Size: {size})")
             self.results["images_built"].append(svc)
 
         return all_ok
@@ -369,23 +371,31 @@ class PlatformDeployer:
                 self.logger.warning(f"⚠ Skipping {svc} (build failed)")
                 continue
 
-            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
-            self.logger.info(f"Loading {svc}:latest into Kind cluster...")
-            rc, out, err = self.run_cmd(
-                ["kind", "load", "docker-image", ghcr_tag,
-                 "--name", self.cluster_name],
-                check=False,
-                timeout=300,
-                mutating=True,
-            )
-            if rc != 0:
-                self.logger.error(f"✗ Failed to load {svc}")
-                self.logger.debug(err)
+            tags_to_load = [f"{GHCR_PREFIX}/u-vote-{svc}:latest"]
+            if self.git_sha:
+                tags_to_load.append(f"{GHCR_PREFIX}/u-vote-{svc}:{self.git_sha}")
+
+            svc_ok = True
+            for tag in tags_to_load:
+                self.logger.info(f"Loading {tag} into Kind cluster...")
+                rc, out, err = self.run_cmd(
+                    ["kind", "load", "docker-image", tag,
+                     "--name", self.cluster_name],
+                    check=False,
+                    timeout=300,
+                    mutating=True,
+                )
+                if rc != 0:
+                    self.logger.error(f"✗ Failed to load {tag}")
+                    self.logger.debug(err)
+                    svc_ok = False
+
+            if svc_ok:
+                self.logger.success(f"✓ {svc} loaded into Kind")
+                self.results["images_loaded"].append(svc)
+            else:
                 self.results["images_load_failed"].append(svc)
                 all_ok = False
-            else:
-                self.logger.success(f"✓ {svc}:latest loaded into Kind (as {ghcr_tag})")
-                self.results["images_loaded"].append(svc)
 
         return all_ok
 
@@ -450,6 +460,7 @@ class PlatformDeployer:
                     "SMTP_HOST": "mailhog",
                     "SMTP_PORT": "1025",
                     "SMTP_USE_TLS": "false",
+                    "SMTP_USE_SSL": "false",
                     "SMTP_FROM": "uvote@test.local",
                     "SMTP_USER": "",
                     "SMTP_PASS": "",
@@ -1347,6 +1358,14 @@ class PlatformDeployer:
         if self.dry_run:
             self.logger.warning("DRY-RUN MODE — no changes will be made")
 
+        # Resolve git SHA once so both build and load phases use the same tag
+        rc, sha, _ = self.run_cmd(["git", "rev-parse", "--short", "HEAD"], check=False)
+        if rc == 0 and sha.strip():
+            self.git_sha = sha.strip()
+            self.logger.info(f"Git SHA: {self.git_sha}")
+        else:
+            self.logger.warning("⚠ Could not determine git SHA — images will only be tagged :latest")
+
         # Phase 1: Pre-flight
         if not self.phase1_preflight_checks():
             self.logger.error("Pre-flight checks failed. Aborting.")
@@ -1360,12 +1379,13 @@ class PlatformDeployer:
             # Verify images exist locally
             for svc in target_services:
                 rc, _, _ = self.run_cmd(
-                    ["docker", "image", "inspect", f"{svc}:latest"], check=False
+                    ["docker", "image", "inspect", f"{GHCR_PREFIX}/u-vote-{svc}:latest"],
+                    check=False,
                 )
                 if rc == 0:
                     self.results["images_built"].append(svc)
                 else:
-                    self.logger.warning(f"⚠ Image {svc}:latest not found locally")
+                    self.logger.warning(f"⚠ Image {GHCR_PREFIX}/u-vote-{svc}:latest not found locally")
                     self.results["images_failed"].append(svc)
 
         # Phase 3: Load into Kind
