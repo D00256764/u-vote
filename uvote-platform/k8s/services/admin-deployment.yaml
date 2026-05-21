@@ -62,12 +62,12 @@ spec:
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: admin-db-credentials
               key: username
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: admin-db-credentials
               key: password
         # Session configuration
         - name: SESSION_SECRET

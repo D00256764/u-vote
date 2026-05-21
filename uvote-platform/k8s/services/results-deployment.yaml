@@ -58,12 +58,12 @@ spec:
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: results-db-credentials
               key: username
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: results-db-credentials
               key: password
         # Inter-service communication
         - name: AUTH_SERVICE_URL

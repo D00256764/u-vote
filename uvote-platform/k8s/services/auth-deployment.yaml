@@ -56,12 +56,12 @@ spec:
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: auth-db-credentials
               key: username
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: auth-db-credentials
               key: password
         # JWT configuration
         - name: JWT_SECRET

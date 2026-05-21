@@ -411,17 +411,12 @@ class PlatformDeployer:
 
         secret_specs = {
             # -------------------------------------------------------------------------
-            # Database credentials — shared superuser (current design)
+            # Database credentials — shared superuser
             #
-            # All six services currently connect as uvote_admin (PostgreSQL superuser)
-            # via the shared db-credentials secret. Per-service least-privilege roles
-            # (auth_service, voting_service, etc.) are defined in create_roles.sql and
-            # exist in the database, but no per-service Kubernetes Secrets are created
-            # for them here.
-            #
-            # This is an accepted gap for Stage 1. The roles are in place for Stage 2
-            # when per-service secrets will be added and deployment manifests updated
-            # to reference them.
+            # uvote_admin is the PostgreSQL superuser used by setup_k8s_platform.py
+            # to apply schema.sql and create_roles.sql on first cluster init. It is
+            # NOT used by any application service pod at runtime — each service
+            # connects via its own least-privilege role (ADR014, see below).
             # -------------------------------------------------------------------------
             "db-credentials": {
                 "type": "generic",
@@ -465,6 +460,48 @@ class PlatformDeployer:
                     "SMTP_USER": "",
                     "SMTP_PASS": "",
                     "FRONTEND_URL": "http://frontend-service:5000",
+                },
+            },
+            # -----------------------------------------------------------------------
+            # Per-service database credentials (ADR014 — least-privilege DB access)
+            # Each service pod connects as its own PostgreSQL role with only the
+            # grants defined in create_roles.sql. Passwords are generated once on
+            # first deploy and preserved on subsequent runs; the PostgreSQL role
+            # password is synced from the live secret at the end of this phase.
+            # -----------------------------------------------------------------------
+            "auth-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "auth_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "voting-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "voting_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "election-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "election_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "results-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "results_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "admin-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "admin_service",
+                    "password": secrets.token_urlsafe(24),
                 },
             },
         }
@@ -572,6 +609,35 @@ class PlatformDeployer:
         if not self._sync_pg_password(current_password):
             return False
 
+        # Sync per-service role passwords from their live secrets (ADR014).
+        # Runs on every deploy so the PostgreSQL password always matches the
+        # Kubernetes Secret, covering both fresh-creation and preserved paths.
+        _service_role_map = [
+            ("auth-db-credentials",     "auth_service"),
+            ("voting-db-credentials",   "voting_service"),
+            ("election-db-credentials", "election_service"),
+            ("results-db-credentials",  "results_service"),
+            ("admin-db-credentials",    "admin_service"),
+        ]
+        for secret_name, pg_role in _service_role_map:
+            self.logger.info(f"Reading {secret_name} password from cluster...")
+            rc, pw_b64, err = self.run_cmd(
+                [
+                    "kubectl", "get", "secret", secret_name,
+                    "-n", self.namespace,
+                    "-o", "jsonpath={.data.password}",
+                ],
+                check=False,
+            )
+            if rc != 0 or not pw_b64.strip():
+                self.logger.error(
+                    f"✗ Could not read {secret_name} password: {err.strip()}"
+                )
+                return False
+            svc_password = base64.b64decode(pw_b64.strip()).decode()
+            if not self._sync_service_role_password(pg_role, svc_password):
+                return False
+
         return True
 
     def _sync_pg_password(self, new_password: str) -> bool:
@@ -609,6 +675,46 @@ class PlatformDeployer:
             return True
         else:
             self.logger.error(f"✗ Failed to sync PostgreSQL password: {err.strip()}")
+            return False
+
+    def _sync_service_role_password(self, pg_role: str, new_password: str) -> bool:
+        """Update a per-service PostgreSQL role password to match its Kubernetes Secret.
+
+        Safe to call even if PostgreSQL is not yet running — returns True and
+        skips in that case.  Executed as uvote_admin (superuser) so it works
+        regardless of whether the service pod has connected yet.
+        """
+        rc, pod_name, _ = self.run_cmd(
+            [
+                "kubectl", "get", "pod", "-n", self.namespace,
+                "-l", "app=postgresql",
+                "-o", "jsonpath={.items[0].metadata.name}",
+            ],
+            check=False,
+        )
+        if rc != 0 or not pod_name.strip():
+            self.logger.debug(
+                f"PostgreSQL not yet running — skipping password sync for {pg_role}"
+            )
+            return True
+
+        pod = pod_name.strip()
+        self.logger.info(f"Syncing PostgreSQL {pg_role} password...")
+        rc, _, err = self.run_cmd(
+            [
+                "kubectl", "exec", "-n", self.namespace, pod, "--",
+                "psql", "-U", "uvote_admin", "-d", "uvote",
+                "-c", f"ALTER USER {pg_role} PASSWORD '{new_password.replace(chr(39), chr(39)*2)}';",
+            ],
+            check=False,
+        )
+        if rc == 0:
+            self.logger.success(f"✓ PostgreSQL {pg_role} password synced")
+            return True
+        else:
+            self.logger.error(
+                f"✗ Failed to sync PostgreSQL password for {pg_role}: {err.strip()}"
+            )
             return False
 
     # -----------------------------------------------------------------------
