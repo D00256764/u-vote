@@ -115,7 +115,7 @@ spec:
           valueFrom:
             secretKeyRef:
               name: smtp-credentials
-              key: SMTP_PASSWORD
+              key: SMTP_PASS
               optional: true
         - name: SMTP_USE_SSL
           valueFrom:
