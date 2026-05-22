@@ -4,7 +4,7 @@
 #           Deployment name and labels use "admin-service" to match network policies
 #
 # Scanned Port: 5002 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5002)
-# Architecture Port: 8006 (from ARCHITECTURE.MD)
+# Architecture Port: 5002 (from ARCHITECTURE.MD)
 # Network Policy Port: 8006 (from 03-allow-from-ingress.yaml)
 # Using Port: 5002 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-admin allows port 8006,

@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Results Service
 # Scanned Port: 5004 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5004)
-# Architecture Port: 8004 (from ARCHITECTURE.MD)
+# Architecture Port: 5004 (from ARCHITECTURE.MD)
 # Network Policy Port: 8004 (from 03-allow-from-ingress.yaml)
 # Using Port: 5004 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-results allows port 8004,
@@ -66,8 +66,6 @@ spec:
               name: results-db-credentials
               key: password
         # Inter-service communication
-        - name: AUTH_SERVICE_URL
-          value: "http://auth-service:5001"
         - name: ELECTION_SERVICE_URL
           value: "http://election-service:5005"
         # Session configuration

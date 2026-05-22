@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Frontend Service
 # Scanned Port: 5000 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5000)
-# Architecture Port: 3000 (from ARCHITECTURE.MD)
+# Architecture Port: 5000 (from ARCHITECTURE.MD)
 # Network Policy Port: 3000 (from 03-allow-from-ingress.yaml)
 # Using Port: 5000 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-frontend allows port 3000,
@@ -8,7 +8,7 @@
 # Framework: FastAPI + Uvicorn + Jinja2
 # Database Access: NO — frontend is blocked from database by network policy
 # External Access: Via Ingress Controller (main entry point for organisers)
-# Health Endpoint: NONE (no /health route found in code — using tcpSocket probe)
+# Health Endpoint: GET /health → 200 (frontend-service/app.py:97)
 # Templates: Yes (Jinja2 — /, /register, /login, /logout)
 # Generated: 2026-02-16
 

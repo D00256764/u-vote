@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Voting Service
 # Scanned Port: 5003 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5003)
-# Architecture Port: 8003 (from ARCHITECTURE.MD)
+# Architecture Port: 5003 (from ARCHITECTURE.MD)
 # Network Policy Port: 8003 (from 03-allow-from-ingress.yaml)
 # Using Port: 5003 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-voting allows port 8003,
