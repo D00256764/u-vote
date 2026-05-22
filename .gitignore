@@ -42,6 +42,10 @@ kubeconfig
 *.kubeconfig
 uvote-platform/k8s/secrets/
 
+# Istio
+istio-*/
+istioctl
+
 # Claude
 .claude
 
