@@ -17,6 +17,11 @@ spec:
         host: auth-service
         port:
           number: 5001
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
 
@@ -39,6 +44,11 @@ spec:
         host: election-service
         port:
           number: 5005
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
 
@@ -54,6 +64,17 @@ spec:
   - uvote-gateway
   http:
   - match:
+    - method:
+        exact: POST
+      uri:
+        prefix: /vote/submit
+    route:
+    - destination:
+        host: voting-service
+        port:
+          number: 5003
+    timeout: 15s
+  - match:
     - uri:
         prefix: /api/voting
     route:
@@ -61,6 +82,11 @@ spec:
         host: voting-service
         port:
           number: 5003
+    timeout: 15s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
 
@@ -83,6 +109,11 @@ spec:
         host: results-service
         port:
           number: 5004
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
 
@@ -105,6 +136,11 @@ spec:
         host: admin-service
         port:
           number: 5002
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
 
@@ -127,3 +163,8 @@ spec:
         host: frontend-service
         port:
           number: 5000
+    timeout: 10s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: gateway-error,connect-failure,retriable-4xx
