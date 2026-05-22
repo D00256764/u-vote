@@ -1,0 +1,101 @@
+# =============================================================================
+# U-Vote Istio Prometheus Scrape Policy
+# =============================================================================
+#
+# Why this policy is needed
+# -------------------------
+# When Istio sidecar injection is enabled on uvote-dev, every service pod gains
+# an Envoy proxy (istio-proxy) container that exposes two Prometheus-compatible
+# metrics endpoints:
+#
+#   Port 15090 — Envoy admin stats in Prometheus text format
+#                (/stats/prometheus).  This is the primary telemetry port
+#                for Envoy mesh metrics (request counts, latencies, circuit
+#                breaker states, upstream cluster health, etc.).
+#
+#   Port 15020 — Pilot-agent merged metrics endpoint.  The pilot-agent
+#                combines application /metrics (if exposed) with Envoy stats
+#                into a single scrape target, reducing Prometheus job config.
+#
+# The Prometheus instance deployed by the Istio addon runs in the
+# istio-system namespace.  Under the default-deny baseline (00-default-deny.yaml),
+# cross-namespace ingress is silently dropped, so Prometheus cannot reach the
+# sidecar metrics ports even though the pods are listening.
+#
+# Relationship to 05-allow-prometheus-scrape.yaml
+# -----------------------------------------------
+# Policy 05 allows a same-namespace Prometheus (app=prometheus in uvote-dev)
+# to scrape application container ports (5000-5005).  This file (11) covers
+# the complementary case: the Istio-addon Prometheus in istio-system scraping
+# the ENVOY SIDECAR ports (15090, 15020) on every pod in uvote-dev.
+#
+# Both policies target different scrape sources and must coexist:
+#   05 → app-level metrics (Flask/FastAPI /metrics)
+#   11 → mesh-level metrics (Envoy sidecar stats)
+#
+# Design: single policy, empty podSelector
+# -----------------------------------------
+# Unlike 05 (one policy per service), a single policy with podSelector: {}
+# is used here because all pods in uvote-dev carry an Envoy sidecar after
+# injection is enabled — there is no meaningful per-service distinction for
+# sidecar metrics ports.
+#
+# The from: rule uses BOTH namespaceSelector AND podSelector in the same
+# entry (AND semantics in Kubernetes NetworkPolicy) to restrict access to
+# pods labelled app=prometheus that are specifically in the istio-system
+# namespace, not any pod in that namespace.
+#
+# Reference: 05-allow-prometheus-scrape.yaml — app-level scrape policy
+# Reference: 09-allow-istiod-egress.yaml     — sidecar egress to istiod
+# Reference: 00-default-deny.yaml            — zero-trust baseline
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape-istio-sidecars
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-prometheus-scraping
+    policy-order: "11"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: {} (empty)
+  # Matches ALL pods in uvote-dev.  Every pod has an Envoy sidecar after
+  # injection is enabled, so there is no reason to restrict by service label.
+  # ---------------------------------------------------------------------------
+  podSelector: {}
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP ingress on Envoy sidecar metrics ports from the Istio-addon
+  # Prometheus pod in istio-system.
+  #
+  # Both selectors in the same from: entry form a logical AND:
+  #   namespaceSelector → only the istio-system namespace
+  #   podSelector       → only pods labelled app=prometheus within that NS
+  #
+  # This prevents any other pod in istio-system from using this allowance
+  # to reach sidecar ports on uvote-dev pods.
+  #
+  # Port 15090: Envoy stats in Prometheus text format (/stats/prometheus)
+  # Port 15020: Pilot-agent merged metrics (Envoy + app /metrics combined)
+  # ---------------------------------------------------------------------------
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+      podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 15090
+    - protocol: TCP
+      port: 15020
