@@ -934,33 +934,37 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 6: Apply Ingress
+    # Phase 6: Apply Istio Routing
     # -----------------------------------------------------------------------
     def phase6_apply_ingress(self) -> bool:
-        self.logger.header("Phase 6: Apply Ingress")
-        ingress_manifest = (
-            self.project_root / "uvote-platform" / "k8s" / "ingress" / "uvote-ingress.yaml"
-        )
+        self.logger.header("Phase 6: Apply Istio Gateway and VirtualServices")
+        istio_dir = self.project_root / "uvote-platform" / "istio"
+        gateway_manifest = istio_dir / "gateway.yaml"
+        vs_manifest = istio_dir / "virtual-services.yaml"
 
-        if not ingress_manifest.exists():
-            self.logger.warning(
-                f"⚠ Ingress manifest not found: {ingress_manifest} — skipping"
+        all_ok = True
+        for manifest in (gateway_manifest, vs_manifest):
+            if not manifest.exists():
+                self.logger.warning(
+                    f"⚠ Istio manifest not found: {manifest} — skipping"
+                )
+                self.results["ingress_applied"] = None
+                return True
+
+            self.logger.info(f"Applying {manifest.name}...")
+            rc, _, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(manifest)], check=False, mutating=True
             )
-            self.results["ingress_applied"] = None
-            return True
+            if rc != 0:
+                self.logger.error(f"✗ Failed to apply {manifest.name}: {err.strip()}")
+                self.results["ingress_applied"] = False
+                all_ok = False
+            else:
+                self.logger.success(f"✓ {manifest.name} applied")
 
-        self.logger.info(f"Applying {ingress_manifest.name}...")
-        rc, out, err = self.run_cmd(
-            ["kubectl", "apply", "-f", str(ingress_manifest)], check=False, mutating=True
-        )
-        if rc != 0:
-            self.logger.error(f"✗ Failed to apply ingress: {err.strip()}")
-            self.results["ingress_applied"] = False
-            return False
-
-        self.logger.success("✓ Ingress applied successfully")
-        self.results["ingress_applied"] = True
-        return True
+        if all_ok:
+            self.results["ingress_applied"] = True
+        return all_ok
 
     # -----------------------------------------------------------------------
     # Phase 7: Health Verification (wait for pods)

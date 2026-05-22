@@ -1,0 +1,129 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-auth
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/auth
+    route:
+    - destination:
+        host: auth-service
+        port:
+          number: 5001
+
+---
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-elections
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/elections
+    route:
+    - destination:
+        host: election-service
+        port:
+          number: 5005
+
+---
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-voting
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/voting
+    route:
+    - destination:
+        host: voting-service
+        port:
+          number: 5003
+
+---
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-results
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/results
+    route:
+    - destination:
+        host: results-service
+        port:
+          number: 5004
+
+---
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-admin
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/admin
+    route:
+    - destination:
+        host: admin-service
+        port:
+          number: 5002
+
+---
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-frontend
+  namespace: uvote-dev
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - uvote-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: frontend-service
+        port:
+          number: 5000
