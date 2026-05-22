@@ -23,8 +23,8 @@
 # This file contains TWO policy groups following the bidirectional pattern
 # established in 02-allow-to-database.yaml:
 #
-#   09a — EGRESS: all pods → istiod (ports 15012, 15010, 15014/TCP)
-#   09b — INGRESS: istio-system → each of the 6 services (their container port)
+#   05a — EGRESS: all pods → istiod (ports 15012, 15010, 15014/TCP)
+#   05b — INGRESS: istio-system → each of the 6 services (their container port)
 #
 # Reference: install_istio.py  § step6_allow_istiod_egress
 # Reference: install_istio.py  § step11_allow_istio_ingress
@@ -36,7 +36,7 @@
 
 
 # =============================================================================
-# POLICY 1 of 2: EGRESS TO ISTIOD (09a)
+# POLICY 1 of 2: EGRESS TO ISTIOD (05a)
 # =============================================================================
 # Applies to ALL pods in uvote-dev (podSelector: {}).
 #
@@ -61,7 +61,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-control-plane
-    policy-order: "09a"
+    policy-order: "05a"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: {} (empty)
@@ -102,7 +102,7 @@ spec:
 ---
 
 # =============================================================================
-# POLICY 2 of 2: INGRESS FROM ISTIO INGRESS GATEWAY (09b)
+# POLICY 2 of 2: INGRESS FROM ISTIO INGRESS GATEWAY (05b)
 # =============================================================================
 # The Istio Ingress Gateway pod runs in the istio-system namespace and
 # forwards external HTTP traffic to services in uvote-dev.  Under the
@@ -117,7 +117,7 @@ spec:
 #   - Easier auditing: kubectl get networkpolicy shows each service clearly
 #
 # The namespaceSelector matches istio-system, mirroring the approach in the
-# 09a egress policy above and in 01-allow-dns.yaml for kube-system.
+# 05a egress policy above and in 01-allow-dns.yaml for kube-system.
 #
 # Services and their container ports (from the service deployment manifests):
 #   frontend-service  port 5000
@@ -144,7 +144,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: frontend-service
 spec:
   podSelector:
@@ -177,7 +177,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: auth-service
 spec:
   podSelector:
@@ -210,7 +210,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: admin-service
 spec:
   podSelector:
@@ -243,7 +243,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: voting-service
 spec:
   podSelector:
@@ -276,7 +276,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: results-service
 spec:
   podSelector:
@@ -309,7 +309,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "09b"
+    policy-order: "05b"
     target-service: election-service
 spec:
   podSelector:

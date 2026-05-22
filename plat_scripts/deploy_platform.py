@@ -891,7 +891,7 @@ class PlatformDeployer:
         """Apply all network policy YAML files in sorted order.
 
         Files are applied from uvote-platform/k8s/network-policies/ in
-        filename order (00-default-deny first … 08-allow-grafana-prometheus
+        filename order (00-default-deny first … 12-allow-kiali
         last). test-pods.yaml lives in uvote-platform/k8s/test/ and is never
         present in this directory.
 
@@ -1525,7 +1525,7 @@ class PlatformDeployer:
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
 
-        # Apply Network Policies (00-default-deny … 08-allow-grafana-prometheus)
+        # Apply Network Policies (00-default-deny … 12-allow-kiali)
         self.apply_network_policies()
 
         # Phase 6: Apply Ingress

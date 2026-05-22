@@ -11,11 +11,11 @@
 # adding one Ingress rule per service, each scoped to the exact container port
 # that service listens on.
 #
-# Relationship to 09-allow-istiod-egress.yaml
+# Relationship to 05-allow-istiod-egress.yaml
 # --------------------------------------------
-# Policy 09 handles the EGRESS side: pods in uvote-dev reaching outward to
+# Policy 05 handles the EGRESS side: pods in uvote-dev reaching outward to
 # istiod (the control plane) so Envoy sidecars can obtain certificates and
-# receive xDS configuration.  This file (10) handles the INGRESS side: the
+# receive xDS configuration.  This file (04) handles the INGRESS side: the
 # Istio Ingress Gateway (also in istio-system) pushing request traffic INTO
 # the application services.  Both directions are required for the mesh to
 # work under a zero-trust policy model.
@@ -39,9 +39,9 @@
 #
 # The namespaceSelector uses the immutable metadata.name label, consistent
 # with the pattern used for kube-system (01-allow-dns.yaml) and istio-system
-# in the egress policy (09-allow-istiod-egress.yaml).
+# in the egress policy (05-allow-istiod-egress.yaml).
 #
-# Reference: 09-allow-istiod-egress.yaml — companion egress policy
+# Reference: 05-allow-istiod-egress.yaml — companion egress policy
 # Reference: 03-allow-from-ingress.yaml  — equivalent policy for Nginx
 # Reference: 00-default-deny.yaml        — the zero-trust baseline
 # Reference: install_istio.py            — § step11_allow_istio_ingress
@@ -65,7 +65,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: frontend-service
 spec:
   podSelector:
@@ -99,7 +99,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: auth-service
 spec:
   podSelector:
@@ -133,7 +133,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: election-service
 spec:
   podSelector:
@@ -167,7 +167,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: voting-service
 spec:
   podSelector:
@@ -201,7 +201,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: results-service
 spec:
   podSelector:
@@ -236,7 +236,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: istio-ingress-access
-    policy-order: "10"
+    policy-order: "04"
     target-service: admin-service
 spec:
   podSelector:

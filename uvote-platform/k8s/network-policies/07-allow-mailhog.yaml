@@ -55,7 +55,7 @@
 
 
 # =============================================================================
-# POLICY 1 of 2: EGRESS FROM ADMIN-SERVICE TO MAILHOG (04a)
+# POLICY 1 of 2: EGRESS FROM ADMIN-SERVICE TO MAILHOG (07a)
 # =============================================================================
 # Targets admin-service pods and allows outbound SMTP connections to mailhog
 # on port 1025/TCP, plus DNS so the hostname "mailhog" resolves to a
@@ -75,7 +75,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: mail-testing
-    policy-order: "04a"
+    policy-order: "07a"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets admin-service pods.
@@ -122,7 +122,7 @@ spec:
 ---
 
 # =============================================================================
-# POLICY 2 of 2: INGRESS TO MAILHOG FROM ADMIN-SERVICE (04b)
+# POLICY 2 of 2: INGRESS TO MAILHOG FROM ADMIN-SERVICE (07b)
 # =============================================================================
 # Targets mailhog pods and allows inbound SMTP connections from admin-service
 # on port 1025/TCP only.
@@ -141,7 +141,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: mail-testing
-    policy-order: "04b"
+    policy-order: "07b"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets the mailhog pod.

@@ -7,7 +7,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: observability
-    policy-order: "06"
+    policy-order: "09"
 spec:
   podSelector:
     matchLabels:

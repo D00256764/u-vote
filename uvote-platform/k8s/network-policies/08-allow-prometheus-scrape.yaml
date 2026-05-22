@@ -33,7 +33,7 @@
 #   election-service  port 5005  (tier=backend)
 #   frontend-service  port 5000  (tier=frontend)
 #
-# Reference: PLATFORM.MD § "Files" — 05-allow-prometheus-scrape.yaml
+# Reference: PLATFORM.MD § "Files" — 08-allow-prometheus-scrape.yaml
 # =============================================================================
 
 
@@ -50,7 +50,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets auth-service pods (tier=backend to exclude test pods)
@@ -92,7 +92,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets admin-service pods (tier=backend)
@@ -132,7 +132,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets voting-service pods (tier=backend)
@@ -172,7 +172,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets results-service pods (tier=backend)
@@ -212,7 +212,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets election-service pods (tier=backend)
@@ -252,7 +252,7 @@ metadata:
     app: uvote
     security: network-policy
     purpose: prometheus-scraping
-    policy-order: "05"
+    policy-order: "08"
 spec:
   # ---------------------------------------------------------------------------
   # Pod Selector: targets frontend-service pods (tier=frontend)
