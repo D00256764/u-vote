@@ -8,6 +8,7 @@ This service owns the election bounded context end-to-end:
 
 Runs on port 5005, exposed to browsers on port 8082.
 """
+import asyncio
 import os
 import secrets
 import sys
@@ -74,26 +75,43 @@ async def auto_manage_elections():
                     "election_opened", row["id"], "system",
                     '{"source": "scheduler"}',
                 )
-                # Auto-send voting tokens to all voters for this election
-                try:
-                    resp = await http_client.post(
-                        f"{ADMIN_SERVICE}/elections/{row['id']}/tokens/generate",
-                        json={"expiry_hours": 168},
-                    )
-                    data = resp.json()
-                    tokens_sent = data.get("tokens_generated", 0)
-                    emails_sent = data.get("emails_sent", 0)
-                    logger.info(
-                        "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
-                        row["id"], tokens_sent, emails_sent,
-                    )
-                    await conn.execute(
-                        "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4::jsonb)",
-                        "tokens_sent", row["id"], "system",
-                        f'{{"tokens_generated": {tokens_sent}, "emails_sent": {emails_sent}}}',
-                    )
-                except Exception as e:
-                    logger.error("Scheduler: failed to send tokens for election %s: %s", row["id"], e)
+                # Auto-send voting tokens to all voters for this election.
+                # Retry up to 3 times (2 s between attempts) in case admin-service
+                # is temporarily unavailable at the moment the election opens.
+                _max_attempts = 3
+                _retry_delay = 2
+                for _attempt in range(1, _max_attempts + 1):
+                    try:
+                        resp = await http_client.post(
+                            f"{ADMIN_SERVICE}/elections/{row['id']}/tokens/generate",
+                            json={"expiry_hours": 168},
+                        )
+                        data = resp.json()
+                        tokens_sent = data.get("tokens_generated", 0)
+                        emails_sent = data.get("emails_sent", 0)
+                        logger.info(
+                            "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
+                            row["id"], tokens_sent, emails_sent,
+                        )
+                        await conn.execute(
+                            "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4::jsonb)",
+                            "tokens_sent", row["id"], "system",
+                            f'{{"tokens_generated": {tokens_sent}, "emails_sent": {emails_sent}}}',
+                        )
+                        break
+                    except Exception as e:
+                        logger.warning(
+                            "Scheduler: token generation for election %s failed (attempt %s/%s): %s",
+                            row["id"], _attempt, _max_attempts, e,
+                        )
+                        if _attempt < _max_attempts:
+                            await asyncio.sleep(_retry_delay)
+                        else:
+                            logger.error(
+                                "Scheduler: token generation failed for election %s after %s attempts"
+                                " — manual intervention may be required",
+                                row["id"], _max_attempts,
+                            )
 
             # Close any open elections whose scheduled_close_at has passed
             to_close = await conn.fetch(
