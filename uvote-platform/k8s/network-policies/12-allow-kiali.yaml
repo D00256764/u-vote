@@ -1,0 +1,80 @@
+# =============================================================================
+# U-Vote Kiali Service Mesh Visibility Policy
+# =============================================================================
+#
+# Why this policy is needed
+# -------------------------
+# Kiali is the Istio service mesh observability console.  It queries Prometheus
+# for metrics and also communicates directly with the Envoy sidecars in the
+# mesh to retrieve health and configuration data, including proxy status and
+# workload-level statistics.
+#
+# Kiali accesses the Envoy admin stats port (15090) on each pod in uvote-dev
+# to build its real-time service graph and health indicators.  Under the
+# default-deny baseline (00-default-deny.yaml), this cross-namespace ingress
+# is silently dropped.
+#
+# Relationship to 11-allow-prometheus-scrape-istio.yaml
+# -------------------------------------------------------
+# Policy 11 allows Prometheus (in istio-system) to scrape sidecar metrics on
+# ports 15090 and 15020.  This file (12) adds the same port-15090 allowance
+# for the Kiali pod.  Both Kiali and Prometheus run in istio-system; they need
+# separate NetworkPolicies so each can be independently revoked without
+# affecting the other.
+#
+# Design: single policy, empty podSelector, AND-scoped from:
+# -----------------------------------------------------------
+# As with policy 11, a single policy with podSelector: {} covers all
+# sidecar-injected pods.  The from: entry uses both namespaceSelector and
+# podSelector in the same item (AND semantics) so only Kiali pods in
+# istio-system — not arbitrary pods in that namespace — can use this
+# allowance.
+#
+# Reference: 11-allow-prometheus-scrape-istio.yaml — companion scrape policy
+# Reference: 09-allow-istiod-egress.yaml           — sidecar control-plane egress
+# Reference: 00-default-deny.yaml                  — zero-trust baseline
+#
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kiali-access
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: kiali-access
+    policy-order: "12"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: {} (empty)
+  # Matches ALL pods in uvote-dev — Kiali needs visibility into every
+  # sidecar-injected workload to build its service graph.
+  # ---------------------------------------------------------------------------
+  podSelector: {}
+
+  policyTypes:
+  - Ingress
+
+  ingress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP port 15090 from the Kiali pod in istio-system.
+  #
+  # Both selectors in the same from: entry form a logical AND:
+  #   namespaceSelector → only the istio-system namespace
+  #   podSelector       → only pods labelled app=kiali within that NS
+  #
+  # Port 15090: Envoy admin stats (/stats/prometheus) — used by Kiali to
+  # query per-workload traffic metrics for the service graph and health view.
+  # ---------------------------------------------------------------------------
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+      podSelector:
+        matchLabels:
+          app: kiali
+    ports:
+    - protocol: TCP
+      port: 15090
