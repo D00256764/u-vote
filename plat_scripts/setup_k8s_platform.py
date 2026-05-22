@@ -286,7 +286,7 @@ def deploy_database(k8s_dir: Path) -> bool:
         'kubectl', 'get', 'secret', 'db-credentials', '-n', 'uvote-dev'
     ], check=False)
 
-    if exists_rc == 0:
+    if exists_rc:
         print_info("db-credentials secret already exists — skipping apply to preserve generated password")
     else:
         print_info("Creating database secret...")
