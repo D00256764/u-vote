@@ -43,6 +43,7 @@ spec:
         tier: backend
         version: v1
     spec:
+      serviceAccountName: admin-service
       containers:
       - name: admin-service
         image: ghcr.io/d00256764/u-vote-admin-service:latest

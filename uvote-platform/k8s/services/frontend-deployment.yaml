@@ -38,6 +38,7 @@ spec:
         tier: frontend
         version: v1
     spec:
+      serviceAccountName: frontend-service
       containers:
       - name: frontend-service
         image: ghcr.io/d00256764/u-vote-frontend-service:latest
