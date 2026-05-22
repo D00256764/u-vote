@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Auth Service
 # Scanned Port: 5001 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5001)
-# Architecture Port: 8001 (from ARCHITECTURE.MD)
+# Architecture Port: 5001 (from ARCHITECTURE.MD)
 # Network Policy Port: 8001 (from 03-allow-from-ingress.yaml)
 # Using Port: 5001 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-auth allows port 8001,
