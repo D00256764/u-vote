@@ -5,4 +5,4 @@ metadata:
   namespace: uvote-dev
 spec:
   mtls:
-    mode: PERMISSIVE
+    mode: STRICT
