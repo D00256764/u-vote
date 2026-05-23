@@ -16,6 +16,7 @@ Requirements:
     - Required packages: click, colorama
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -201,6 +202,7 @@ class PlatformDeployer:
             "health_failed": [],
             "net_passed": [],
             "net_failed": [],
+            "double_spend_test": None,
         }
 
     # -- helpers --------------------------------------------------------------
@@ -1400,9 +1402,128 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 11: Summary
+    # Phase 11: Double-spend integration test
     # -----------------------------------------------------------------------
-    def phase11_generate_summary(self) -> None:
+    def phase11_double_spend_test(self) -> bool:
+        self.logger.header("Phase 11: Double-Spend Integration Test")
+
+        if self.dry_run:
+            self.logger.info("[DRY-RUN] Would run double-spend integration test")
+            return True
+
+        pf_proc: Optional[subprocess.Popen] = None
+        try:
+            # Fetch the PostgreSQL admin password from the cluster secret.
+            rc, pw_b64, err = self.run_cmd(
+                [
+                    "kubectl", "get", "secret", "db-credentials",
+                    "-n", self.namespace,
+                    "-o", "jsonpath={.data.POSTGRES_PASSWORD}",
+                ],
+                check=False,
+            )
+            if rc != 0 or not pw_b64.strip():
+                self.logger.warning(
+                    "  Could not retrieve db-credentials secret — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            try:
+                password = base64.b64decode(pw_b64.strip()).decode()
+            except Exception as exc:
+                self.logger.warning(
+                    f"  Could not base64-decode POSTGRES_PASSWORD: {exc} — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            # Start a background port-forward so the test can reach PostgreSQL.
+            self.logger.info("  Starting kubectl port-forward svc/postgresql 5432:5432 ...")
+            pf_proc = subprocess.Popen(
+                [
+                    "kubectl", "port-forward",
+                    "svc/postgresql", "5432:5432",
+                    "-n", self.namespace,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            # Poll until the port accepts connections (max 10 s).
+            deadline = time.time() + 10
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection(("localhost", 5432), timeout=1):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.2)
+
+            if not ready:
+                self.logger.warning(
+                    "  Port-forward to PostgreSQL did not become ready within 10 s — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            self.logger.info("  PostgreSQL port-forward ready")
+
+            # Build env with POSTGRES_TEST_URL injected.
+            postgres_url = (
+                f"postgresql://uvote_admin:{password}@localhost:5432/uvote"
+            )
+            env = {**os.environ, "POSTGRES_TEST_URL": postgres_url}
+
+            self.logger.info(
+                "  Running: pytest voting-service/tests/test_integration_double_spend.py -v"
+            )
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "pytest",
+                    "voting-service/tests/test_integration_double_spend.py",
+                    "-v",
+                ],
+                env=env,
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+            )
+
+            # Log full pytest output so it appears in the deploy log.
+            for line in result.stdout.splitlines():
+                self.logger.info(f"  {line}")
+            for line in result.stderr.splitlines():
+                self.logger.info(f"  {line}")
+
+            if result.returncode == 0:
+                self.logger.success("  Double-spend integration test PASSED")
+                self.results["double_spend_test"] = True
+            else:
+                self.logger.error(
+                    f"  Double-spend integration test FAILED (exit {result.returncode})"
+                )
+                self.results["double_spend_test"] = False
+
+        finally:
+            if pf_proc is not None:
+                if pf_proc.poll() is None:
+                    pf_proc.terminate()
+                    try:
+                        pf_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pf_proc.kill()
+
+        return True  # non-blocking — never fails the deploy
+
+    # -----------------------------------------------------------------------
+    # Phase 12: Summary
+    # -----------------------------------------------------------------------
+    def phase12_generate_summary(self) -> None:
         r = self.results
         sep = "=" * 56
 
@@ -1442,6 +1563,10 @@ class PlatformDeployer:
             self.logger.success("MailHog:            Ready")
         elif r["mailhog_deployed"] is False:
             self.logger.warning("MailHog:            Not ready (warning only)")
+        if r["double_spend_test"] is True:
+            self.logger.success("Double-Spend Test:  Passed")
+        elif r["double_spend_test"] is False:
+            self.logger.error("Double-Spend Test:  Failed (warning only)")
         if r["ingress_applied"] is True:
             self.logger.success("Ingress Applied:    Yes")
         elif r["ingress_applied"] is False:
@@ -1626,8 +1751,12 @@ class PlatformDeployer:
         else:
             self.logger.info("[DRY-RUN] Would run network and health tests")
 
-        # Phase 11: Summary
-        self.phase11_generate_summary()
+        # Phase 11: Double-spend integration test (non-blocking)
+        if not skip_tests and not self.dry_run:
+            self.phase11_double_spend_test()
+
+        # Phase 12: Summary
+        self.phase12_generate_summary()
 
         return len(self.results["services_failed"]) == 0
 
