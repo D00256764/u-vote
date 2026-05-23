@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,6 +41,7 @@ logger = logging.getLogger('election-service')
 
 from database import Database
 from schemas import ElectionCreate, HealthResponse
+from csrf import generate_csrf_token, validate_csrf_token
 
 # ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -180,6 +181,13 @@ def get_flashed_messages(request: Request) -> list[dict]:
     return request.session.pop("_messages", [])
 
 
+async def check_csrf(request: Request):
+    form = await request.form()
+    submitted_token = form.get("csrf_token")
+    if not validate_csrf_token(request.session, submitted_token):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
@@ -219,7 +227,7 @@ async def list_elections(request: Request, organiser_id: int):
     }
 
 
-@app.post("/elections", status_code=201)
+@app.post("/elections", status_code=201, dependencies=[Depends(check_csrf)])
 async def create_election(request: Request, organiser_id: int, data: ElectionCreate):
     """Create a new election with options."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -255,11 +263,13 @@ async def create_election_page(request: Request):
     if redirect:
         return redirect
     return templates.TemplateResponse("create_election.html", {
-        "request": request, "messages": get_flashed_messages(request),
+        "request": request,
+        "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/elections/create", response_class=HTMLResponse)
+@app.post("/elections/create", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def create_election_form(request: Request):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -392,10 +402,11 @@ async def edit_election_page(request: Request, election_id: int):
             "scheduled_close_at": fmt_dt(election["scheduled_close_at"]),
         },
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/elections/{election_id}/edit", response_class=HTMLResponse)
+@app.post("/elections/{election_id}/edit", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def edit_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -506,7 +517,7 @@ async def get_election(request: Request, election_id: int, organiser_id: int | N
     }
 
 
-@app.post("/elections/{election_id}/open")
+@app.post("/elections/{election_id}/open", dependencies=[Depends(check_csrf)])
 async def open_election(request: Request, election_id: int, organiser_id: int):
     """Open a draft election for voting."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -529,7 +540,7 @@ async def open_election(request: Request, election_id: int, organiser_id: int):
     return {"message": "Election opened successfully"}
 
 
-@app.post("/elections/{election_id}/close")
+@app.post("/elections/{election_id}/close", dependencies=[Depends(check_csrf)])
 async def close_election(request: Request, election_id: int, organiser_id: int):
     """Close an open election."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -786,7 +797,7 @@ async def election_detail_page(request: Request, election_id: int):
     })
 
 
-@app.post("/elections/{election_id}/open/confirm")
+@app.post("/elections/{election_id}/open/confirm", dependencies=[Depends(check_csrf)])
 async def open_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -808,7 +819,7 @@ async def open_election_form(request: Request, election_id: int):
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
 
 
-@app.post("/elections/{election_id}/close/confirm")
+@app.post("/elections/{election_id}/close/confirm", dependencies=[Depends(check_csrf)])
 async def close_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)

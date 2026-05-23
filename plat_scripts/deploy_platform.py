@@ -194,7 +194,6 @@ class PlatformDeployer:
             "images_load_failed": [],
             "services_deployed": [],
             "services_failed": [],
-            "ingress_applied": None,
             "mailhog_deployed": None,
             "pods_running": [],
             "pods_failed": [],
@@ -1009,39 +1008,6 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 7: Apply Istio Routing
-    # -----------------------------------------------------------------------
-    def phase7_apply_ingress(self) -> bool:
-        self.logger.header("Phase 7: Apply Istio Gateway and VirtualServices")
-        istio_dir = self.project_root / "uvote-platform" / "istio"
-        gateway_manifest = istio_dir / "gateway.yaml"
-        vs_manifest = istio_dir / "virtual-services.yaml"
-
-        all_ok = True
-        for manifest in (gateway_manifest, vs_manifest):
-            if not manifest.exists():
-                self.logger.warning(
-                    f"⚠ Istio manifest not found: {manifest} — skipping"
-                )
-                self.results["ingress_applied"] = None
-                return True
-
-            self.logger.info(f"Applying {manifest.name}...")
-            rc, _, err = self.run_cmd(
-                ["kubectl", "apply", "-f", str(manifest)], check=False, mutating=True
-            )
-            if rc != 0:
-                self.logger.error(f"✗ Failed to apply {manifest.name}: {err.strip()}")
-                self.results["ingress_applied"] = False
-                all_ok = False
-            else:
-                self.logger.success(f"✓ {manifest.name} applied")
-
-        if all_ok:
-            self.results["ingress_applied"] = True
-        return all_ok
-
-    # -----------------------------------------------------------------------
     # Phase 8: Health Verification (wait for pods)
     # -----------------------------------------------------------------------
     def phase8_verify_health(self, timeout: int = 300) -> bool:
@@ -1418,7 +1384,7 @@ class PlatformDeployer:
                 [
                     "kubectl", "get", "secret", "db-credentials",
                     "-n", self.namespace,
-                    "-o", "jsonpath={.data.POSTGRES_PASSWORD}",
+                    "-o", "jsonpath={.data.password}",
                 ],
                 check=False,
             )
@@ -1434,7 +1400,7 @@ class PlatformDeployer:
                 password = base64.b64decode(pw_b64.strip()).decode()
             except Exception as exc:
                 self.logger.warning(
-                    f"  Could not base64-decode POSTGRES_PASSWORD: {exc} — "
+                    f"  Could not base64-decode password: {exc} — "
                     "skipping double-spend test (non-blocking)"
                 )
                 self.results["double_spend_test"] = None
@@ -1537,7 +1503,6 @@ class PlatformDeployer:
         has_failures = (
             r["images_failed"]
             or r["services_failed"]
-            or r["ingress_applied"] is False
             or r["pods_failed"]
             or r["health_failed"]
         )
@@ -1567,10 +1532,6 @@ class PlatformDeployer:
             self.logger.success("Double-Spend Test:  Passed")
         elif r["double_spend_test"] is False:
             self.logger.error("Double-Spend Test:  Failed (warning only)")
-        if r["ingress_applied"] is True:
-            self.logger.success("Ingress Applied:    Yes")
-        elif r["ingress_applied"] is False:
-            self.logger.error("Ingress Applied:    No (failed)")
         if total_pods:
             self.logger.info(
                 f"Pods Running:       {len(r['pods_running'])}/{total_pods}"
@@ -1718,12 +1679,6 @@ class PlatformDeployer:
             self.logger.error("Secret management failed. Aborting.")
             return False
 
-        # Kibana service account token — runs after secrets on every deploy.
-        # Requires Elasticsearch to be running in the monitoring namespace.
-        # If Elasticsearch is not yet up, logs a warning and continues — the
-        # main uvote-dev deploy is not blocked by the monitoring stack.
-        self.create_kibana_service_token()
-
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
 
@@ -1733,8 +1688,8 @@ class PlatformDeployer:
         # Phase 6: Deploy MailHog (non-blocking)
         self.phase6_deploy_mailhog()
 
-        # Phase 7: Apply Ingress
-        self.phase7_apply_ingress()
+        # Phase 7 (Istio Gateway + VirtualServices) is owned by install_istio.py
+        # and applied there before this script runs. No re-application needed.
 
         # Phase 8: Wait for healthy pods
         if not self.dry_run:

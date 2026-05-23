@@ -16,7 +16,7 @@ from io import StringIO
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,6 +41,7 @@ logger = logging.getLogger('admin-service')
 from database import Database
 from security import generate_voting_token, generate_token_expiry
 from email_util import send_voting_token_email
+from csrf import generate_csrf_token, validate_csrf_token
 from schemas import (
     VoterAddRequest, TokenGenerateRequest,
     TokenValidateResponse, HealthResponse,
@@ -81,6 +82,13 @@ def get_flashed_messages(request: Request) -> list[dict]:
     return request.session.pop("_messages", [])
 
 
+async def check_csrf(request: Request):
+    form = await request.form()
+    submitted_token = form.get("csrf_token")
+    if not validate_csrf_token(request.session, submitted_token):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
@@ -100,7 +108,7 @@ async def csv_template(election_id: int):
     )
 
 
-@app.post("/elections/{election_id}/voters/upload", status_code=201)
+@app.post("/elections/{election_id}/voters/upload", status_code=201, dependencies=[Depends(check_csrf)])
 async def upload_voters(request: Request, election_id: int, file: UploadFile = File(...)):
     """Upload voter list from CSV (requires email column; phone_number optional)."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -137,7 +145,7 @@ async def upload_voters(request: Request, election_id: int, file: UploadFile = F
     }
 
 
-@app.post("/elections/{election_id}/voters", status_code=201)
+@app.post("/elections/{election_id}/voters", status_code=201, dependencies=[Depends(check_csrf)])
 async def add_voter(request: Request, election_id: int, data: VoterAddRequest):
     """Add a single voter."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -156,7 +164,7 @@ async def add_voter(request: Request, election_id: int, data: VoterAddRequest):
     return {"message": "Voter added successfully", "voter_id": row["id"]}
 
 
-@app.delete("/elections/{election_id}/voters/pii", status_code=200)
+@app.delete("/elections/{election_id}/voters/pii", status_code=200, dependencies=[Depends(check_csrf)])
 async def delete_voter_pii(request: Request, election_id: int):
     """GDPR right-to-erasure: delete all voter PII for a closed election.
 
@@ -243,7 +251,7 @@ async def get_voters(request: Request, election_id: int):
     }
 
 
-@app.post("/elections/{election_id}/tokens/generate", status_code=200)
+@app.post("/elections/{election_id}/tokens/generate", status_code=200, dependencies=[Depends(check_csrf)])
 async def generate_tokens(request: Request, election_id: int, data: TokenGenerateRequest | None = None):
     """Generate voting tokens for all voters without an active token, then email each voter."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -414,10 +422,11 @@ async def manage_voters_page(request: Request, election_id: int):
         "election_title": election_row["title"] if election_row else "",
         "voters": voters,
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/elections/{election_id}/voters/upload/form")
+@app.post("/elections/{election_id}/voters/upload/form", dependencies=[Depends(check_csrf)])
 async def upload_voters_form(request: Request, election_id: int, file: UploadFile = File(...)):
     """HTML form handler for CSV upload — redirects back to manage voters page."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -467,7 +476,7 @@ async def upload_voters_form(request: Request, election_id: int, file: UploadFil
     return RedirectResponse(url=f"/elections/{election_id}/voters/manage", status_code=303)
 
 
-@app.post("/elections/{election_id}/tokens/generate/form")
+@app.post("/elections/{election_id}/tokens/generate/form", dependencies=[Depends(check_csrf)])
 async def generate_tokens_form(request: Request, election_id: int):
     """HTML form handler for token generation — redirects back to manage voters page."""
     logger.info('Request received: %s %s', request.method, request.url.path)
