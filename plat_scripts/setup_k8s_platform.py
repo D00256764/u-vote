@@ -205,15 +205,20 @@ def install_calico() -> bool:
     print_info("Waiting for Calico to be ready (this may take 2-3 minutes)...")
     time.sleep(30)  # Initial wait
     
-    success, _, _ = run_command([
-        'kubectl', 'wait', '--for=condition=Ready',
-        'pods', '--all', '-n', 'calico-system',
-        '--timeout=300s'
-    ], check=False)
-    
-    if not success:
-        print_warning("Calico pods may still be starting")
-        return True  # Continue anyway
+    calico_selectors = [
+        ('k8s-app=calico-kube-controllers', 'calico-kube-controllers'),
+        ('k8s-app=calico-node',             'calico-node'),
+        ('k8s-app=calico-typha',            'calico-typha'),
+    ]
+    for selector, name in calico_selectors:
+        success, _, _ = run_command([
+            'kubectl', 'wait', '--for=condition=Ready',
+            'pods', '-l', selector, '-n', 'calico-system',
+            '--timeout=300s'
+        ], check=False)
+        if not success:
+            print_warning(f"{name} pods may still be starting")
+            return True  # Continue anyway
     
     print_success("Calico installed and ready")
     
@@ -576,10 +581,16 @@ def verify_setup() -> bool:
         print_error("Nodes not ready")
         checks_passed = False
     
-    # Check Calico
+    # Check Calico — only the three networking-critical pod types; csi-node-driver
+    # is excluded because it frequently ImagePullBackOffs in Kind and is not
+    # required for pod networking.
     print_info("Checking Calico pods...")
+    calico_selector = (
+        'k8s-app in (calico-kube-controllers,calico-node,calico-typha)'
+    )
     success, stdout, _ = run_command([
-        'kubectl', 'get', 'pods', '-n', 'calico-system'
+        'kubectl', 'get', 'pods', '-n', 'calico-system',
+        '-l', calico_selector
     ], capture_output=True, check=False)
     if success and 'Running' in stdout:
         running_count = stdout.count('Running')

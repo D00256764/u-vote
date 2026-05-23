@@ -11,8 +11,7 @@ Steps performed:
   3. Wait for all istio-system pods to be Running
   4. Remove Nginx ingress controller (skippable via --skip-nginx-removal)
   5. Label uvote-dev for sidecar injection
-  6. Annotate all 6 service deployments with excludeOutboundPorts=5432
-  7. Apply Istio resources from disk:
+  6. Apply Istio resources from disk:
        uvote-platform/istio/gateway.yaml
        uvote-platform/istio/virtual-services.yaml
        uvote-platform/istio/peer-authentication.yaml
@@ -20,10 +19,8 @@ Steps performed:
        uvote-platform/istio/destination-rules.yaml
        uvote-platform/k8s/network-policies/05-allow-istiod-egress.yaml
        uvote-platform/k8s/network-policies/04-allow-istio-ingress.yaml
-  8. Patch istio-ingressgateway to run on control-plane node (hostPort 80)
-  9. Restart all 6 service deployments and wait for rollouts
- 10. Wait for all service pods to show 2/2 READY (sidecar injected)
- 11. Verify: istioctl analyze -n uvote-dev, curl http://localhost
+  7. Patch istio-ingressgateway to run on control-plane node (hostPort 80)
+  8. Verify: istioctl analyze -n uvote-dev, curl http://localhost
 
 Usage:
     python plat_scripts/install_istio.py [OPTIONS]
@@ -31,7 +28,7 @@ Usage:
 Requirements:
     - istioctl on PATH (or in <project-root>/istio-*/bin/), or pass --istioctl-path
     - kubectl configured for kind-uvote context
-    - Kind cluster 'uvote' running with uvote-dev services deployed
+    - Kind cluster 'uvote' running with uvote-dev namespace created
     - Python 3.8+
     - pip packages: click, colorama
 """
@@ -40,10 +37,7 @@ import glob as _glob
 import os
 import subprocess
 import sys
-import time
 import json
-import urllib.request
-import urllib.error
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -65,15 +59,6 @@ except ImportError:
 # ---------------------------------------------------------------------------
 CLUSTER_NAME = "uvote"
 NAMESPACE = "uvote-dev"
-
-SERVICE_DEPLOYMENTS = [
-    "auth-service",
-    "election-service",
-    "voting-service",
-    "results-service",
-    "admin-service",
-    "frontend-service",
-]
 
 # Container port each service listens on
 SERVICE_PORTS = {
@@ -309,43 +294,10 @@ def step5_label_namespace() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Step 6 — Annotate all 6 service deployments
+# Step 6 — Apply Istio resources from disk
 # ---------------------------------------------------------------------------
-def step6_annotate_deployments() -> bool:
-    log.header("Step 6: Annotate service deployments (excludeOutboundPorts=5432)")
-
-    patch = json.dumps({
-        "spec": {
-            "template": {
-                "metadata": {
-                    "annotations": {
-                        "sidecar.istio.io/excludeOutboundPorts": "5432"
-                    }
-                }
-            }
-        }
-    })
-
-    all_ok = True
-    for dep in SERVICE_DEPLOYMENTS:
-        log.info(f"Patching {dep}...")
-        rc, _, err = run(
-            ["kubectl", "patch", "deployment", dep, "-n", NAMESPACE, "--patch", patch]
-        )
-        if rc != 0:
-            log.error(f"Failed to patch {dep}: {err.strip()}")
-            all_ok = False
-        else:
-            log.success(f"{dep} annotated")
-
-    return all_ok
-
-
-# ---------------------------------------------------------------------------
-# Step 7 — Apply Istio resources from disk
-# ---------------------------------------------------------------------------
-def step7_apply_istio_resources(project_root: Path) -> bool:
-    log.header("Step 7: Apply Istio resources from disk")
+def step6_apply_istio_resources(project_root: Path) -> bool:
+    log.header("Step 6: Apply Istio resources from disk")
 
     istio_dir = project_root / "uvote-platform" / "istio"
     netpol_dir = project_root / "uvote-platform" / "k8s" / "network-policies"
@@ -378,10 +330,10 @@ def step7_apply_istio_resources(project_root: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Step 8 — Patch ingressgateway to control-plane node with hostPort 80
+# Step 7 — Patch ingressgateway to control-plane node with hostPort 80
 # ---------------------------------------------------------------------------
-def step8_patch_ingressgateway(rollout_timeout: int = 180) -> bool:
-    log.header("Step 8: Patch istio-ingressgateway → control-plane node (hostPort 80)")
+def step7_patch_ingressgateway(rollout_timeout: int = 180) -> bool:
+    log.header("Step 7: Patch istio-ingressgateway → control-plane node (hostPort 80)")
 
     # Add nodeSelector for control-plane and hostPort 80 on containerPort 8080
     # (port index 1 in the demo profile's container ports list)
@@ -450,130 +402,45 @@ def step8_patch_ingressgateway(rollout_timeout: int = 180) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Step 9 — Restart deployments and wait for rollouts
+# Step 8 — Verify
 # ---------------------------------------------------------------------------
-def step9_restart_and_wait(rollout_timeout: int = 240) -> bool:
-    log.header("Step 9: Restart service deployments and wait for rollouts")
+def step8_verify(istioctl: str) -> bool:
+    log.header("Step 8: Verify")
 
-    for dep in SERVICE_DEPLOYMENTS:
-        log.info(f"Restarting {dep}...")
-        rc, _, err = run(
-            ["kubectl", "rollout", "restart", "deployment", dep, "-n", NAMESPACE]
-        )
-        if rc != 0:
-            log.error(f"Failed to restart {dep}: {err.strip()}")
-            return False
-
-    all_ok = True
-    for dep in SERVICE_DEPLOYMENTS:
-        log.info(f"Waiting for {dep} rollout (timeout {rollout_timeout}s)...")
-        rc, out, err = run(
-            [
-                "kubectl", "rollout", "status", "deployment", dep,
-                "-n", NAMESPACE, f"--timeout={rollout_timeout}s",
-            ],
-            timeout=rollout_timeout + 30,
-        )
-        if rc != 0:
-            log.error(f"Rollout for {dep} did not complete: {err.strip()}")
-            all_ok = False
-        else:
-            log.success(f"{dep} rollout complete")
-
-    return all_ok
-
-
-# ---------------------------------------------------------------------------
-# Step 10 — Wait for service pods to show 2/2 READY
-# ---------------------------------------------------------------------------
-def step10_wait_for_sidecars(timeout_secs: int = 300) -> bool:
-    log.header("Step 10: Wait for service pods to reach 2/2 READY")
-
-    log.info(
-        f"Polling for up to {timeout_secs}s "
-        f"(postgresql 1/1 is not included in this check)..."
-    )
-    deadline = time.time() + timeout_secs
-
-    while time.time() < deadline:
-        rc, out, _ = run(["kubectl", "get", "pods", "-n", NAMESPACE, "-o", "json"])
-        if rc != 0:
-            time.sleep(5)
-            continue
-
-        pods = json.loads(out).get("items", [])
-        # Filter to only our 6 service pods — postgresql (app=postgresql, 1/1) is excluded
-        svc_pods = [
-            p for p in pods
-            if p["metadata"].get("labels", {}).get("app") in SERVICE_DEPLOYMENTS
-        ]
-
-        if not svc_pods:
-            time.sleep(5)
-            continue
-
-        not_ready = []
-        for pod in svc_pods:
-            name = pod["metadata"]["name"]
-            statuses = pod["status"].get("containerStatuses", [])
-            total = len(statuses)
-            ready_count = sum(1 for cs in statuses if cs.get("ready", False))
-            if total != 2 or ready_count != 2:
-                not_ready.append(f"{name} ({ready_count}/{total})")
-
-        if not not_ready:
-            log.success(f"All {len(svc_pods)} service pods are 2/2 READY")
-            return True
-
-        remaining = int(deadline - time.time())
-        log.info(f"Waiting for 2/2: {', '.join(not_ready)} ({remaining}s remaining)")
-        time.sleep(10)
-
-    log.error("Timed out waiting for service pods to reach 2/2 READY")
-    return False
-
-
-# ---------------------------------------------------------------------------
-# Step 11 — Verify
-# ---------------------------------------------------------------------------
-def step11_verify(istioctl: str) -> bool:
-    log.header("Step 11: Verify")
-    all_ok = True
-
-    # 11a — istioctl analyze
+    # istioctl analyze — IST0101 ("Referenced host not found") fires for every
+    # VirtualService whose backing Kubernetes Service doesn't exist yet.  At
+    # boot time this is always the case because deploy_platform.py (Step 4)
+    # hasn't run yet.  Treat IST0101 as an expected warning; any other IST
+    # error code is a genuine configuration problem and should fail the step.
     log.info("Running: istioctl analyze -n uvote-dev")
     rc, out, err = run([istioctl, "analyze", "-n", NAMESPACE], timeout=60)
     combined = out + err
-    errors = [l for l in combined.splitlines() if l.strip().startswith("Error")]
-    if errors:
-        for e in errors:
+
+    error_lines  = [l for l in combined.splitlines() if l.strip().startswith("Error")]
+    ist0101_lines = [l for l in error_lines if "IST0101" in l]
+    real_errors   = [l for l in error_lines if "IST0101" not in l]
+
+    if real_errors:
+        for e in real_errors:
             log.error(e)
-        all_ok = False
+        return False
+
+    if ist0101_lines:
+        log.warning(
+            "istioctl analyze: IST0101 (Referenced host not found) — "
+            "expected before services are deployed, will resolve after deploy_platform.py"
+        )
+        for line in ist0101_lines:
+            log.warning(line)
     else:
-        warnings = [l for l in combined.splitlines() if l.strip().startswith("Warning")]
-        if warnings:
-            for w in warnings:
-                log.warning(w)
-        log.success("istioctl analyze: no errors")
+        other_warnings = [l for l in combined.splitlines() if l.strip().startswith("Warning")]
+        for w in other_warnings:
+            log.warning(w)
 
-    # 11b — curl http://localhost
-    log.info("Testing curl http://localhost...")
-    time.sleep(2)
-    try:
-        resp = urllib.request.urlopen("http://localhost", timeout=10)
-        if resp.status == 200:
-            log.success("curl http://localhost → 200 OK")
-        else:
-            log.error(f"curl http://localhost → {resp.status}")
-            all_ok = False
-    except urllib.error.HTTPError as exc:
-        log.error(f"curl http://localhost → HTTP {exc.code}")
-        all_ok = False
-    except Exception as exc:
-        log.error(f"curl http://localhost failed: {exc}")
-        all_ok = False
-
-    return all_ok
+    log.success(
+        "Istio config looks good — service hosts will resolve after deploy_platform.py runs"
+    )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -604,18 +471,11 @@ def step11_verify(istioctl: str) -> bool:
     show_default=True,
     help="Seconds to wait for istio-system pods to become Ready.",
 )
-@click.option(
-    "--sidecar-wait-timeout",
-    default=300,
-    show_default=True,
-    help="Seconds to poll for service pods to reach 2/2 READY.",
-)
 def main(
     istioctl_path: str,
     skip_nginx_removal: bool,
     rollout_timeout: int,
     istio_wait_timeout: int,
-    sidecar_wait_timeout: int,
 ) -> None:
     """Install Istio on the uvote Kind cluster and configure sidecar injection.
 
@@ -657,12 +517,9 @@ def main(
 
     steps += [
         ("Step 5: Label namespace",        step5_label_namespace),
-        ("Step 6: Annotate deployments",   step6_annotate_deployments),
-        ("Step 7: Apply Istio resources",  lambda: step7_apply_istio_resources(project_root)),
-        ("Step 8: Patch ingressgateway",   lambda: step8_patch_ingressgateway(rollout_timeout)),
-        ("Step 9: Restart & wait",         lambda: step9_restart_and_wait(rollout_timeout)),
-        ("Step 10: Wait for sidecars",     lambda: step10_wait_for_sidecars(sidecar_wait_timeout)),
-        ("Step 11: Verify",                lambda: step11_verify(istioctl_resolved)),
+        ("Step 6: Apply Istio resources",  lambda: step6_apply_istio_resources(project_root)),
+        ("Step 7: Patch ingressgateway",   lambda: step7_patch_ingressgateway(rollout_timeout)),
+        ("Step 8: Verify",                 lambda: step8_verify(istioctl_resolved)),
     ]
 
     for label, fn in steps:
@@ -673,7 +530,7 @@ def main(
     log.header("Istio installation complete")
     log.success("All steps passed.")
     log.info("Useful commands:")
-    log.info(f"  kubectl get pods -n {NAMESPACE}          # Check 2/2 sidecars")
+    log.info(f"  kubectl get pods -n {NAMESPACE}          # Check pod status after deploy")
     log.info( "  istioctl analyze -n uvote-dev            # Validate config")
     log.info( "  curl http://localhost                     # Reach frontend")
     log.info( "  istioctl proxy-status                    # Sidecar sync status")

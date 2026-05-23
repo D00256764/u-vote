@@ -7,8 +7,8 @@ order, stopping immediately on any failure:
 
   Step 1 — Cluster setup     plat_scripts/setup_k8s_platform.py
   Step 2 — Istio             plat_scripts/install_istio.py
-  Step 3 — Observability     plat_scripts/install_observability.py
-  Step 4 — App deployment    plat_scripts/deploy_platform.py
+  Step 3 — App deployment    plat_scripts/deploy_platform.py
+  Step 4 — Observability     plat_scripts/install_observability.py
 
 Usage:
     python boot_platform.py
@@ -87,6 +87,12 @@ def print_summary(
 
 @click.command()
 @click.option(
+    "--skip-deploy",
+    is_flag=True,
+    default=False,
+    help="Skip Step 3: application service deployment.",
+)
+@click.option(
     "--skip-istio",
     is_flag=True,
     default=False,
@@ -96,13 +102,7 @@ def print_summary(
     "--skip-observability",
     is_flag=True,
     default=False,
-    help="Skip Step 3: observability addons (Prometheus, Grafana, Kiali, Jaeger).",
-)
-@click.option(
-    "--skip-deploy",
-    is_flag=True,
-    default=False,
-    help="Skip Step 4: application service deployment.",
+    help="Skip Step 4: observability addons (Prometheus, Grafana, Kiali, Jaeger).",
 )
 @click.option(
     "--cluster-name",
@@ -129,16 +129,16 @@ def main(
     Boot sequence:
       Step 1  setup_k8s_platform.py     always
       Step 2  install_istio.py          skipped with --skip-istio
-      Step 3  install_observability.py  skipped with --skip-observability
-      Step 4  deploy_platform.py        skipped with --skip-deploy
+      Step 3  deploy_platform.py        skipped with --skip-deploy
+      Step 4  install_observability.py  skipped with --skip-observability
 
     \b
     Notes:
-      --skip-nginx-removal is always passed to install_istio.py because Nginx
-      removal is managed by setup_k8s_platform.py, not the boot script.
-
       --skip-build is always passed to deploy_platform.py because images are
       expected to be pre-built before running the boot sequence.
+
+      --skip-nginx-removal is always passed to install_istio.py because Nginx
+      removal is managed by setup_k8s_platform.py, not the boot script.
     """
     # Set up logging
     logs_dir = PROJECT_ROOT / "logs"
@@ -149,10 +149,10 @@ def main(
 
     # Boot plan — (step_id, script_name, skipped)
     plan: List[Tuple[str, str, bool]] = [
-        ("Step 1", "setup_k8s_platform.py",    False),
-        ("Step 2", "install_istio.py",          skip_istio),
-        ("Step 3", "install_observability.py",  skip_observability),
-        ("Step 4", "deploy_platform.py",        skip_deploy),
+        ("Step 1", "setup_k8s_platform.py",   False),
+        ("Step 2", "install_istio.py",         skip_istio),
+        ("Step 3", "deploy_platform.py",       skip_deploy),
+        ("Step 4", "install_observability.py", skip_observability),
     ]
 
     log.header("U-Vote Platform Boot")
@@ -189,7 +189,7 @@ def main(
         outcomes["Step 2"] = "skip"
     else:
         # --skip-nginx-removal is unconditional: Nginx removal is handled by
-        # setup_k8s_platform.py context, not the boot script.
+        # setup_k8s_platform.py, not the boot script.
         cmd2 = [sys.executable, str(ISTIO_SCRIPT), "--skip-nginx-removal"]
         if run_step(log, "Step 2 (install_istio.py)", cmd2):
             outcomes["Step 2"] = "pass"
@@ -201,14 +201,20 @@ def main(
             sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Step 3 — install_observability.py
+    # Step 3 — deploy_platform.py
     # ------------------------------------------------------------------
-    if skip_observability:
-        log.info("Step 3 skipped (--skip-observability)")
+    if skip_deploy:
+        log.info("Step 3 skipped (--skip-deploy)")
         outcomes["Step 3"] = "skip"
     else:
-        cmd3 = [sys.executable, str(OBSERVABILITY_SCRIPT)]
-        if run_step(log, "Step 3 (install_observability.py)", cmd3):
+        # --skip-build: images are expected to be pre-built in the boot sequence.
+        cmd3 = [
+            sys.executable, str(DEPLOY_SCRIPT),
+            "--skip-build",
+            "--cluster-name", cluster_name,
+            "--namespace", namespace,
+        ]
+        if run_step(log, "Step 3 (deploy_platform.py)", cmd3):
             outcomes["Step 3"] = "pass"
         else:
             outcomes["Step 3"] = "fail"
@@ -218,20 +224,14 @@ def main(
             sys.exit(1)
 
     # ------------------------------------------------------------------
-    # Step 4 — deploy_platform.py
+    # Step 4 — install_observability.py
     # ------------------------------------------------------------------
-    if skip_deploy:
-        log.info("Step 4 skipped (--skip-deploy)")
+    if skip_observability:
+        log.info("Step 4 skipped (--skip-observability)")
         outcomes["Step 4"] = "skip"
     else:
-        # --skip-build: images are expected to be pre-built in the boot sequence.
-        cmd4 = [
-            sys.executable, str(DEPLOY_SCRIPT),
-            "--skip-build",
-            "--cluster-name", cluster_name,
-            "--namespace", namespace,
-        ]
-        if run_step(log, "Step 4 (deploy_platform.py)", cmd4):
+        cmd4 = [sys.executable, str(OBSERVABILITY_SCRIPT)]
+        if run_step(log, "Step 4 (install_observability.py)", cmd4):
             outcomes["Step 4"] = "pass"
         else:
             outcomes["Step 4"] = "fail"

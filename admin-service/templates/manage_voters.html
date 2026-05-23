@@ -74,6 +74,7 @@
 
                 <form method="POST" action="/elections/{{ election_id }}/voters/upload/form"
                       enctype="multipart/form-data" id="uploadForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
                         <div class="upload-icon"><i class="bi bi-upload"></i></div>
                         <p class="fw-semibold" style="color:#1a1a2e;">Drag and drop your CSV file here</p>
@@ -103,6 +104,7 @@
                            oninput="filterVoters()">
                     <form method="POST" action="/elections/{{ election_id }}/tokens/generate/form"
                           onsubmit="return confirm('Generate and email tokens to all voters without one?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                         <button type="submit" class="btn btn-success text-nowrap"
                                 style="border-radius:8px;font-size:0.875rem;">
                             <i class="bi bi-send"></i> Send Tokens to All

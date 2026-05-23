@@ -38,6 +38,8 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/excludeOutboundPorts: "5432"
       labels:
         app: admin-service
         tier: backend
