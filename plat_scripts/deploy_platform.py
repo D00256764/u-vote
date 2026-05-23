@@ -194,6 +194,7 @@ class PlatformDeployer:
             "services_deployed": [],
             "services_failed": [],
             "ingress_applied": None,
+            "mailhog_deployed": None,
             "pods_running": [],
             "pods_failed": [],
             "health_passed": [],
@@ -885,6 +886,78 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
+    # Phase 6: Deploy MailHog (test SMTP server — non-blocking)
+    # -----------------------------------------------------------------------
+    def phase6_deploy_mailhog(self) -> bool:
+        self.logger.header("Phase 6: Deploy MailHog")
+
+        mailhog_manifest = (
+            self.project_root / "uvote-platform" / "k8s" / "mailhog" / "mailhog-deployment.yaml"
+        )
+        mailhog_netpol = (
+            self.project_root / "uvote-platform" / "k8s" / "network-policies" / "07-allow-mailhog.yaml"
+        )
+
+        if not mailhog_manifest.exists():
+            self.logger.warning(f"⚠ MailHog manifest not found: {mailhog_manifest} — skipping")
+            self.results["mailhog_deployed"] = False
+            return True
+
+        self.logger.info("Applying MailHog deployment manifest...")
+        rc, out, err = self.run_cmd(
+            ["kubectl", "apply", "-f", str(mailhog_manifest)],
+            check=False,
+            mutating=True,
+        )
+        if rc != 0:
+            self.logger.warning(f"⚠ Failed to apply MailHog manifest: {err.strip()}")
+            self.results["mailhog_deployed"] = False
+            return True
+
+        for line in out.strip().splitlines():
+            self.logger.info(f"  {line}")
+
+        if mailhog_netpol.exists():
+            self.logger.info("Applying MailHog network policy...")
+            rc, out, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(mailhog_netpol)],
+                check=False,
+                mutating=True,
+            )
+            if rc != 0:
+                self.logger.warning(f"⚠ Failed to apply MailHog network policy: {err.strip()}")
+            else:
+                for line in out.strip().splitlines():
+                    self.logger.info(f"  {line}")
+        else:
+            self.logger.warning(f"⚠ MailHog network policy not found: {mailhog_netpol} — skipping")
+
+        if self.dry_run:
+            self.logger.info("  [DRY-RUN] Would wait for MailHog pod")
+            self.results["mailhog_deployed"] = True
+            return True
+
+        self.logger.info("  Waiting for MailHog pod to be ready (timeout: 120s)...")
+        rc, _, err = self.run_cmd(
+            [
+                "kubectl", "wait", "deployment/mailhog",
+                "--for=condition=Available",
+                "--timeout=120s",
+                "-n", self.namespace,
+            ],
+            check=False,
+            timeout=130,
+        )
+        if rc == 0:
+            self.logger.success("✓ MailHog is ready")
+            self.results["mailhog_deployed"] = True
+        else:
+            self.logger.warning("⚠ MailHog did not become ready within 120s — continuing")
+            self.results["mailhog_deployed"] = False
+
+        return True
+
+    # -----------------------------------------------------------------------
     # Apply Network Policies
     # -----------------------------------------------------------------------
     def apply_network_policies(self) -> bool:
@@ -934,10 +1007,10 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 6: Apply Istio Routing
+    # Phase 7: Apply Istio Routing
     # -----------------------------------------------------------------------
-    def phase6_apply_ingress(self) -> bool:
-        self.logger.header("Phase 6: Apply Istio Gateway and VirtualServices")
+    def phase7_apply_ingress(self) -> bool:
+        self.logger.header("Phase 7: Apply Istio Gateway and VirtualServices")
         istio_dir = self.project_root / "uvote-platform" / "istio"
         gateway_manifest = istio_dir / "gateway.yaml"
         vs_manifest = istio_dir / "virtual-services.yaml"
@@ -967,10 +1040,10 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 7: Health Verification (wait for pods)
+    # Phase 8: Health Verification (wait for pods)
     # -----------------------------------------------------------------------
-    def phase7_verify_health(self, timeout: int = 300) -> bool:
-        self.logger.header("Phase 7: Health Verification")
+    def phase8_verify_health(self, timeout: int = 300) -> bool:
+        self.logger.header("Phase 8: Health Verification")
 
         if not self.results["services_deployed"]:
             self.logger.warning("⚠ No services were deployed — skipping health verification")
@@ -1089,7 +1162,7 @@ class PlatformDeployer:
         return False
 
     # -----------------------------------------------------------------------
-    # Phase 8: Network Policy Testing
+    # Phase 9: Network Policy Testing
     # -----------------------------------------------------------------------
     def _resolve_pod_name(self, deploy_name: str) -> str:
         """Return 'pod/<name>' for the first real service pod, or fall back to
@@ -1148,8 +1221,8 @@ class PlatformDeployer:
         )
         return rc == 0
 
-    def phase8_test_network_policies(self) -> bool:
-        self.logger.header("Phase 8: Network Policy Testing")
+    def phase9_test_network_policies(self) -> bool:
+        self.logger.header("Phase 9: Network Policy Testing")
         all_ok = True
 
         if self.dry_run:
@@ -1215,7 +1288,7 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 9: Health Endpoint Testing
+    # Phase 10: Health Endpoint Testing
     # -----------------------------------------------------------------------
     def _health_via_port_forward(
         self, deploy_name: str, container_port: int, path: str
@@ -1291,8 +1364,8 @@ class PlatformDeployer:
             except subprocess.TimeoutExpired:
                 pf_proc.kill()
 
-    def phase9_test_health_endpoints(self) -> bool:
-        self.logger.header("Phase 9: Health Endpoint Testing")
+    def phase10_test_health_endpoints(self) -> bool:
+        self.logger.header("Phase 10: Health Endpoint Testing")
 
         if self.dry_run:
             self.logger.info("[DRY-RUN] Would test health endpoints")
@@ -1327,9 +1400,9 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 10: Summary
+    # Phase 11: Summary
     # -----------------------------------------------------------------------
-    def phase10_generate_summary(self) -> None:
+    def phase11_generate_summary(self) -> None:
         r = self.results
         sep = "=" * 56
 
@@ -1365,6 +1438,10 @@ class PlatformDeployer:
         self.logger.info(
             f"Services Deployed:  {len(r['services_deployed'])}/{total_svc}"
         )
+        if r["mailhog_deployed"] is True:
+            self.logger.success("MailHog:            Ready")
+        elif r["mailhog_deployed"] is False:
+            self.logger.warning("MailHog:            Not ready (warning only)")
         if r["ingress_applied"] is True:
             self.logger.success("Ingress Applied:    Yes")
         elif r["ingress_applied"] is False:
@@ -1528,26 +1605,29 @@ class PlatformDeployer:
         # Apply Network Policies (00-default-deny … 12-allow-kiali)
         self.apply_network_policies()
 
-        # Phase 6: Apply Ingress
-        self.phase6_apply_ingress()
+        # Phase 6: Deploy MailHog (non-blocking)
+        self.phase6_deploy_mailhog()
 
-        # Phase 7: Wait for healthy pods
+        # Phase 7: Apply Ingress
+        self.phase7_apply_ingress()
+
+        # Phase 8: Wait for healthy pods
         if not self.dry_run:
-            self.phase7_verify_health(timeout=timeout)
+            self.phase8_verify_health(timeout=timeout)
         else:
             self.logger.info("[DRY-RUN] Would wait for pods to be ready")
 
-        # Phase 8 & 9: Tests
+        # Phase 9 & 10: Tests
         if not skip_tests and not self.dry_run:
-            self.phase8_test_network_policies()
-            self.phase9_test_health_endpoints()
+            self.phase9_test_network_policies()
+            self.phase10_test_health_endpoints()
         elif skip_tests:
             self.logger.info("Skipping tests (--skip-tests)")
         else:
             self.logger.info("[DRY-RUN] Would run network and health tests")
 
-        # Phase 10: Summary
-        self.phase10_generate_summary()
+        # Phase 11: Summary
+        self.phase11_generate_summary()
 
         return len(self.results["services_failed"]) == 0
 
