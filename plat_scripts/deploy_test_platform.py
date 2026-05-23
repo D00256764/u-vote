@@ -381,7 +381,7 @@ class MailHogDeployer:
             f"[{self.namespace}] Phase 4: Apply MailHog Network Policy"
         )
 
-        policy = self.k8s_dir / "network-policies" / "05-allow-mailhog.yaml"
+        policy = self.k8s_dir / "network-policies" / "07-allow-mailhog.yaml"
         if not policy.exists():
             self.logger.error(f"✗ Network policy not found: {policy}")
             return self._record("Phase 4: Network Policy", False)
