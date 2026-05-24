@@ -120,11 +120,6 @@ spec:
               name: smtp-credentials
               key: SMTP_PASS
               optional: true
-        - name: SMTP_USE_SSL
-          valueFrom:
-            secretKeyRef:
-              name: smtp-credentials
-              key: SMTP_USE_SSL
         - name: FRONTEND_URL
           valueFrom:
             secretKeyRef:
