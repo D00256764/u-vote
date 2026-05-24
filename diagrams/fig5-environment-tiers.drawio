@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net">
+  <diagram name="Figure 5 - Environment Tiers">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1020" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Docker Compose
+(Development)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8ffe8;strokeColor=#00aa00;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="40" y="40" width="280" height="540" as="geometry" /></mxCell>
+        <mxCell id="3" value="docker compose up -d" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="90" width="240" height="30" as="geometry" /></mxCell>
+        <mxCell id="4" value="NGINX  :80" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="135" width="240" height="40" as="geometry" /></mxCell>
+        <mxCell id="5" value="Frontend  :5000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="190" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="6" value="Auth  :5001" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="235" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="7" value="Admin  :5002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="280" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="8" value="Voting  :5003" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="325" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="9" value="Results  :5004" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="370" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="10" value="Election  :5005" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="415" width="240" height="35" as="geometry" /></mxCell>
+        <mxCell id="11" value="PostgreSQL 15" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="60" y="460" width="110" height="50" as="geometry" /></mxCell>
+        <mxCell id="12" value="MailHog SMTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="190" y="460" width="110" height="50" as="geometry" /></mxCell>
+        <mxCell id="13" value="Kind Cluster
+(Test / Platform)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#4472C4;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="360" y="40" width="290" height="540" as="geometry" /></mxCell>
+        <mxCell id="14" value="kubectl apply -f uvote-platform/k8s/" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="375" y="90" width="260" height="30" as="geometry" /></mxCell>
+        <mxCell id="15" value="NGINX Ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="380" y="135" width="250" height="40" as="geometry" /></mxCell>
+        <mxCell id="16" value="uvote-dev  (prod-equivalent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f0fe;strokeColor=#4472C4;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="380" y="190" width="250" height="170" as="geometry" /></mxCell>
+        <mxCell id="17" value="Auth / Admin / Voting
+Results / Election / Frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="395" y="230" width="220" height="50" as="geometry" /></mxCell>
+        <mxCell id="18" value="PostgreSQL" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="395" y="300" width="100" height="45" as="geometry" /></mxCell>
+        <mxCell id="19" value="MailHog" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="510" y="300" width="100" height="45" as="geometry" /></mxCell>
+        <mxCell id="20" value="uvote-test  (ephemeral)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e0;strokeColor=#d6b656;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="380" y="375" width="250" height="70" as="geometry" /></mxCell>
+        <mxCell id="21" value="Freshly built images
+torn down after each run" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="390" y="400" width="230" height="35" as="geometry" /></mxCell>
+        <mxCell id="22" value="Prometheus + Grafana
+Elasticsearch + Fluent Bit + Kibana" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="380" y="460" width="250" height="50" as="geometry" /></mxCell>
+        <mxCell id="23" value="11 NetworkPolicy files
+enforced by kindnet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff0cc;strokeColor=#d79b00;fontSize=9;" vertex="1" parent="1"><mxGeometry x="380" y="520" width="250" height="40" as="geometry" /></mxCell>
+        <mxCell id="24" value="AWS EKS
+(Production — planned)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0e0;strokeColor=#cc0000;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="690" y="40" width="290" height="540" as="geometry" /></mxCell>
+        <mxCell id="25" value="terraform apply" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="90" width="260" height="30" as="geometry" /></mxCell>
+        <mxCell id="26" value="NGINX Ingress + NLB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="135" width="250" height="40" as="geometry" /></mxCell>
+        <mxCell id="27" value="EKS Managed Node Group
+t3.medium  ×2–4 (auto-scale)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0e0;strokeColor=#cc0000;fontStyle=1;fontSize=12;verticalAlign=top;dashed=1;" vertex="1" parent="1"><mxGeometry x="710" y="190" width="250" height="60" as="geometry" /></mxCell>
+        <mxCell id="28" value="Auth / Admin / Voting
+Results / Election / Frontend" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="720" y="265" width="230" height="50" as="geometry" /></mxCell>
+        <mxCell id="29" value="Amazon RDS
+PostgreSQL 15
+Multi-AZ" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="330" width="115" height="65" as="geometry" /></mxCell>
+        <mxCell id="30" value="Amazon ECR
+(6 repos)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="845" y="330" width="115" height="65" as="geometry" /></mxCell>
+        <mxCell id="31" value="IAM roles
+(no image pull secrets)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="410" width="250" height="35" as="geometry" /></mxCell>
+        <mxCell id="32" value="Prometheus + Grafana
+Elasticsearch + Fluent Bit + Kibana" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="460" width="250" height="50" as="geometry" /></mxCell>
+        <mxCell id="33" value="Terraform in terraform/
+All config version-controlled" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="710" y="520" width="250" height="40" as="geometry" /></mxCell>
+        <mxCell id="34" value="same images
+same code" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="330" y="275" width="25" height="50" as="geometry" /></mxCell>
+        <mxCell id="35" value="same images
+same code" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=11;" vertex="1" parent="1"><mxGeometry x="655" y="275" width="25" height="50" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -110,6 +110,9 @@ metadata:
   namespace: uvote-dev
 spec:
   host: frontend-service
+  subsets:
+    - name: stable
+    - name: canary
   trafficPolicy:
     connectionPool:
       http:
