@@ -1,0 +1,32 @@
+# Prometheus alerting rules — evaluated by prometheus in uvote-dev.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+data:
+  uvote-alerts.yml: |
+    groups:
+      - name: uvote-demo
+        rules:
+          - alert: UVoteHighErrorRate
+            expr: |
+              (
+                sum(rate(http_requests_total{status=~"5.."}[5m])) by (job)
+                /
+                clamp_min(sum(rate(http_requests_total[5m])) by (job), 0.001)
+              ) > 0.05
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High 5xx rate on {{ $labels.job }}"
+              description: "More than 5% of requests returned 5xx for 2 minutes."
+
+          - alert: UVoteServiceDown
+            expr: up{job=~"auth-service|admin-service|voting-service|results-service|election-service|frontend-service"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape /metrics for {{ $labels.job }}."

@@ -1,0 +1,40 @@
+# U-Vote Kubernetes Manifest: Frontend Service
+# Scanned Port: 5000 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5000)
+# Architecture Port: 5000 (from ARCHITECTURE.MD)
+# Network Policy Port: 3000 (from 03-allow-from-ingress.yaml)
+# Using Port: 5000 (code port — what the container actually binds to)
+# WARNING: Network policy 03-allow-from-ingress-to-frontend allows port 3000,
+#          but container listens on 5000. Update network policy OR app.py to align.
+# Framework: FastAPI + Uvicorn + Jinja2
+# Database Access: NO — frontend is blocked from database by network policy
+# External Access: Via Ingress Controller (main entry point for organisers)
+# Health Endpoint: GET /health → 200 (frontend-service/app.py:97)
+# Templates: Yes (Jinja2 — /, /register, /login, /logout)
+# Generated: 2026-02-16
+
+# Deployment replaced by frontend-rollout.yaml (Argo Rollouts canary).
+# Workload: kubectl get rollout frontend-service -n uvote-dev
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend-service
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend-service
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+
+# Quick Commands:
+# Deploy:  kubectl apply -f frontend-deployment.yaml
+# Status:  kubectl get pods -n uvote-dev -l app=frontend-service
+# Logs:    kubectl logs -n uvote-dev -l app=frontend-service --tail=100 -f
+# Exec:    kubectl exec -it -n uvote-dev deployment/frontend-service -- /bin/bash
+# Delete:  kubectl delete -f frontend-deployment.yaml

@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: election-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: election-service
+          env:
+            - name: FEATURE_QUICK_SETUP
+              value: "true"
