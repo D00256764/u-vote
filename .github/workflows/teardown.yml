@@ -1,0 +1,53 @@
+name: Teardown Environments
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which environment to tear down"
+        required: true
+        default: both
+        type: choice
+        options:
+          - staging
+          - production
+          - both
+
+permissions:
+  contents: read
+
+jobs:
+  teardown-gate:
+    name: "Gate: Approve environment teardown"
+    runs-on: ubuntu-latest
+    environment: teardown
+    steps:
+      - run: echo "Teardown approved for — ${{ github.event.inputs.environment }}"
+
+  teardown:
+    name: Scale down ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: teardown-gate
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name uvote-eks-cluster --region ${{ vars.AWS_REGION }}
+
+      - name: Scale down staging (uvote-dev)
+        if: github.event.inputs.environment == 'staging' || github.event.inputs.environment == 'both'
+        run: |
+          kubectl scale deployment --all --replicas=0 -n uvote-dev 2>/dev/null || true
+          kubectl scale rollout --all --replicas=0 -n uvote-dev 2>/dev/null || true
+          echo "Staging (uvote-dev) scaled to zero"
+
+      - name: Scale down production (uvote-prod)
+        if: github.event.inputs.environment == 'production' || github.event.inputs.environment == 'both'
+        run: |
+          kubectl scale deployment --all --replicas=0 -n uvote-prod 2>/dev/null || true
+          kubectl scale rollout --all --replicas=0 -n uvote-prod 2>/dev/null || true
+          echo "Production (uvote-prod) scaled to zero"

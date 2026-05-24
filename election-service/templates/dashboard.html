@@ -17,6 +17,38 @@
     </a>
 </div>
 
+{% if show_quick_setup %}
+<div class="mb-4 p-4" style="background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%); border: 1px solid #bfdbfe; border-radius: 12px;">
+    <div class="d-flex align-items-center gap-2 mb-3">
+        <span style="background:#2563eb;color:white;font-size:0.7rem;font-weight:700;padding:0.2rem 0.55rem;border-radius:20px;letter-spacing:0.04em;">NEW</span>
+        <span class="fw-semibold" style="font-size:0.95rem;color:#1a1a2e;">Quick Setup Guide</span>
+    </div>
+    <div class="d-flex gap-4 flex-wrap">
+        <div class="d-flex align-items-start gap-2">
+            <div style="width:24px;height:24px;background:#2563eb;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;">1</div>
+            <div>
+                <div style="font-size:0.85rem;font-weight:600;color:#1a1a2e;">Create an election</div>
+                <div style="font-size:0.78rem;color:#6b7280;">Set title, candidates, and schedule</div>
+            </div>
+        </div>
+        <div class="d-flex align-items-start gap-2">
+            <div style="width:24px;height:24px;background:#2563eb;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;">2</div>
+            <div>
+                <div style="font-size:0.85rem;font-weight:600;color:#1a1a2e;">Upload your voter list</div>
+                <div style="font-size:0.78rem;color:#6b7280;">CSV import — tokens sent automatically</div>
+            </div>
+        </div>
+        <div class="d-flex align-items-start gap-2">
+            <div style="width:24px;height:24px;background:#16a34a;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;flex-shrink:0;">3</div>
+            <div>
+                <div style="font-size:0.85rem;font-weight:600;color:#1a1a2e;">Go live</div>
+                <div style="font-size:0.78rem;color:#6b7280;">Election opens automatically at your scheduled time</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <div id="activityPanel" class="mb-4" style="display:none;">
     <div style="font-size:0.7rem;font-weight:600;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.6rem;">
         <i class="bi bi-bell-fill me-1"></i> Recent Activity

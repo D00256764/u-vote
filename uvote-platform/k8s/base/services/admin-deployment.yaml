@@ -1,0 +1,191 @@
+# U-Vote Kubernetes Manifest: Admin Service
+# CRITICAL: Network policy 03-allow-from-ingress-to-admin uses label "app: admin-service"
+#           Code lives in admin-service/ directory, image is admin-service:latest
+#           Deployment name and labels use "admin-service" to match network policies
+#
+# Scanned Port: 5002 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5002)
+# Architecture Port: 5002 (from ARCHITECTURE.MD)
+# Network Policy Port: 8006 (from 03-allow-from-ingress.yaml)
+# Using Port: 5002 (code port — what the container actually binds to)
+# WARNING: Network policy 03-allow-from-ingress-to-admin allows port 8006,
+#          but container listens on 5002. Update network policy OR app.py to align.
+# Framework: FastAPI + Uvicorn + Jinja2
+# Database Access: Yes (asyncpg — voters, voting_tokens, voter_mfa)
+# External Access: Via Ingress Controller
+# Health Endpoint: GET /health → {"status": "healthy", "service": "admin"}
+# Templates: Yes (Jinja2 — /elections/{id}/voters)
+# Special: CSV voter import, token generation, email sending (aiosmtplib)
+# Generated: 2026-02-16
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+  labels:
+    app: admin-service
+    tier: backend
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/excludeOutboundPorts: "5432"
+      labels:
+        app: admin-service
+        tier: backend
+        version: v1
+    spec:
+      serviceAccountName: admin-service
+      containers:
+      - name: admin-service
+        image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service:47b912f
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5002
+          name: http
+          protocol: TCP
+        env:
+        # Database credentials
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: host
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: port
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: admin-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: admin-db-credentials
+              key: password
+        # Session configuration
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: flask-secret
+              key: secret
+        # Email configuration (aiosmtplib for sending voting tokens)
+        # All SMTP values come from the smtp-credentials Secret (ADR011).
+        # The manifest is environment-agnostic — dev points to MailHog,
+        # production points to a real SMTP provider. No inline values here.
+        - name: SMTP_HOST
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_HOST
+        - name: SMTP_PORT
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PORT
+        - name: SMTP_USE_TLS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USE_TLS
+        - name: SMTP_FROM
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_FROM
+        - name: SMTP_USER
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_USER
+              optional: true
+        - name: SMTP_PASS
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PASS
+              optional: true
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: SMTP_PASS
+              optional: true
+        - name: FRONTEND_URL
+          valueFrom:
+            secretKeyRef:
+              name: smtp-credentials
+              key: FRONTEND_URL
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://localhost"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5002
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+  labels:
+    app: admin-service
+spec:
+  type: ClusterIP
+  selector:
+    app: admin-service
+  ports:
+  - port: 5002
+    targetPort: 5002
+    protocol: TCP
+    name: http
+
+# Quick Commands:
+# Deploy:  kubectl apply -f admin-deployment.yaml
+# Status:  kubectl get pods -n uvote-dev -l app=admin-service
+# Logs:    kubectl logs -n uvote-dev -l app=admin-service --tail=100 -f
+# Exec:    kubectl exec -it -n uvote-dev deployment/admin-service -- /bin/bash
+# Delete:  kubectl delete -f admin-deployment.yaml

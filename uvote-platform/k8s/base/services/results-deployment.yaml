@@ -1,0 +1,143 @@
+# U-Vote Kubernetes Manifest: Results Service
+# Scanned Port: 5004 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5004)
+# Architecture Port: 5004 (from ARCHITECTURE.MD)
+# Network Policy Port: 8004 (from 03-allow-from-ingress.yaml)
+# Using Port: 5004 (code port — what the container actually binds to)
+# WARNING: Network policy 03-allow-from-ingress-to-results allows port 8004,
+#          but container listens on 5004. Update network policy OR app.py to align.
+# Framework: FastAPI + Uvicorn + Jinja2
+# Database Access: Yes (asyncpg — READ ONLY: elections, election_options, voting_tokens, votes)
+# External Access: Via Ingress Controller
+# Health Endpoint: GET /health → {"status": "healthy", "service": "results"}
+# Templates: Yes (Jinja2 — /elections/{id}/results/view)
+# Special: Hash-chain verification for audit trail, vote timeline aggregation
+# Generated: 2026-02-16
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: results-service
+  labels:
+    app: results-service
+    tier: backend
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: results-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/excludeOutboundPorts: "5432"
+      labels:
+        app: results-service
+        tier: backend
+        version: v1
+    spec:
+      serviceAccountName: results-service
+      containers:
+      - name: results-service
+        image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service:47b912f
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5004
+          name: http
+          protocol: TCP
+        env:
+        # Database credentials (read-only access)
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: host
+        - name: DB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: port
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: database
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: results-db-credentials
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: results-db-credentials
+              key: password
+        # Inter-service communication
+        - name: ELECTION_SERVICE_URL
+          value: "http://election-service:5005"
+        # Session configuration
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: flask-secret
+              key: secret
+        # External base URL — set to the ingress hostname (e.g. http://uvote.example.com)
+        # Used by _require_login redirects and Jinja2 templates.
+        - name: BASE_URL
+          value: "http://localhost"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false  # FastAPI/Jinja2 needs to write temp files
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: results-service
+  labels:
+    app: results-service
+spec:
+  type: ClusterIP
+  selector:
+    app: results-service
+  ports:
+  - port: 5004
+    targetPort: 5004
+    protocol: TCP
+    name: http
+
+# Quick Commands:
+# Deploy:  kubectl apply -f results-deployment.yaml
+# Status:  kubectl get pods -n uvote-dev -l app=results-service
+# Logs:    kubectl logs -n uvote-dev -l app=results-service --tail=100 -f
+# Exec:    kubectl exec -it -n uvote-dev deployment/results-service -- /bin/bash
+# Delete:  kubectl delete -f results-deployment.yaml

@@ -1,12 +1,12 @@
-# Staging ArgoCD Application
-# Watches staging branch → deploys to uvote-dev (staging)
+# Production ArgoCD Application
+# Watches main branch → deploys to uvote-prod via Argo Rollouts canary
 #
 # Bootstrap (once per cluster):
-#   kubectl apply -n argocd -f uvote-platform/k8s/argocd/application.yaml
+#   kubectl apply -n argocd -f uvote-platform/k8s/argocd/prod-application.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: uvote-staging
+  name: uvote-production
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -15,12 +15,12 @@ spec:
 
   source:
     repoURL: https://github.com/D00256764/u-vote
-    targetRevision: staging
-    path: uvote-platform/k8s/overlays/staging
+    targetRevision: main
+    path: uvote-platform/k8s/overlays/production
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: uvote-dev
+    namespace: uvote-prod
 
   syncPolicy:
     automated:

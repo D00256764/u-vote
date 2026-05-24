@@ -739,6 +739,7 @@ async def dashboard_page(request: Request):
         "request": request, "elections": elections,
         "messages": get_flashed_messages(request),
         "notifications": notifications,
+        "show_quick_setup": os.getenv("FEATURE_QUICK_SETUP", "false").lower() == "true",
     })
 
 

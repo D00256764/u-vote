@@ -1,0 +1,34 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Services
+  - services/auth-deployment.yaml
+  - services/admin-deployment.yaml
+  - services/voting-deployment.yaml
+  - services/results-deployment.yaml
+  - services/election-deployment.yaml
+  - services/frontend-rollout.yaml
+  - services/service-accounts.yaml
+  # Network policies
+  - network-policies/00-default-deny.yaml
+  - network-policies/01-allow-dns.yaml
+  - network-policies/02-allow-to-database.yaml
+  - network-policies/02c-allow-rds-egress.yaml
+  - network-policies/03-allow-from-ingress.yaml
+  - network-policies/04-allow-istio-ingress.yaml
+  - network-policies/05-allow-istiod-egress.yaml
+  - network-policies/06-allow-inter-service.yaml
+  - network-policies/07-allow-mailhog.yaml
+  - network-policies/08-allow-prometheus-scrape.yaml
+  - network-policies/09-allow-prometheus-egress.yaml
+  - network-policies/10-allow-grafana-prometheus.yaml
+  - network-policies/11-allow-prometheus-scrape-istio.yaml
+  - network-policies/12-allow-kiali.yaml
+  # Mailhog (safe email sink for both envs)
+  - mailhog/mailhog-deployment.yaml
+  # Monitoring — each environment gets its own independently observable stack
+  - monitoring/alertmanager.yaml
+  - monitoring/grafana.yaml
+  - monitoring/prometheus-rules.yaml
+  - monitoring/prometheus.yaml

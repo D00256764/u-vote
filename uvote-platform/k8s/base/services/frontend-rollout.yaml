@@ -1,0 +1,149 @@
+# Frontend canary rollout — 5% → 25% → 50% → 100% with Prometheus analysis gates.
+# Requires: Argo Rollouts controller, Istio subsets on frontend-service, uvote-frontend VS.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend-service
+    tier: frontend
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: frontend-service
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/excludeOutboundPorts: "5432"
+      labels:
+        app: frontend-service
+        tier: frontend
+    spec:
+      serviceAccountName: frontend-service
+      containers:
+        - name: frontend-service
+          image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service:47b912f
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: AUTH_SERVICE_URL
+              value: "http://auth-service:5001"
+            - name: ELECTION_DASHBOARD_URL
+              value: "http://localhost/dashboard"
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: flask-secret
+                  key: secret
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+  strategy:
+    canary:
+      stableService: frontend-service
+      canaryService: frontend-service-canary
+      trafficRouting:
+        istio:
+          virtualService:
+            name: uvote-frontend
+            routes:
+              - primary
+          destinationRule:
+            name: frontend-service
+            stableSubsetName: stable
+            canarySubsetName: canary
+      steps:
+        - setWeight: 5
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: frontend-success-rate
+        - setWeight: 25
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: frontend-success-rate
+        - setWeight: 50
+        - pause: { duration: 2m }
+        - analysis:
+            templates:
+              - templateName: frontend-success-rate
+        - setWeight: 100
+
+---
+# AnalysisTemplate — gates each canary step.
+# Aborts if error rate rises >0.5% above stable OR p99 latency rises >50ms.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: frontend-success-rate
+spec:
+  args:
+    - name: service
+      value: frontend-service
+  metrics:
+    - name: error-rate
+      interval: 60s
+      count: 3
+      successCondition: result[0] < 0.005
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus.uvote-dev.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{job="frontend-service",status=~"5.."}[2m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="frontend-service"}[2m])), 0.001)
+
+    - name: p99-latency
+      interval: 60s
+      count: 3
+      successCondition: result[0] < 0.55
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus.uvote-dev.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{job="frontend-service"}[2m])) by (le)
+            )
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service-canary
+  labels:
+    app: frontend-service
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend-service
+  ports:
+    - port: 5000
+      targetPort: 5000
+      name: http
