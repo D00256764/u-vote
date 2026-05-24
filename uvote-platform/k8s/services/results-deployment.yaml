@@ -44,7 +44,7 @@ spec:
       serviceAccountName: results-service
       containers:
       - name: results-service
-        image: PLACEHOLDER_ECR_REGISTRY/uvote/results-service:latest
+        image: 375810804590.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service:e9552c3
         imagePullPolicy: Always
         ports:
         - containerPort: 5004
