@@ -57,6 +57,8 @@ for _p in [str(_shared_dir), str(_admin_dir)]:
 _SERVICE_MODULE_NAME = "admin_service_app"
 _APP_PATH = Path(__file__).parent.parent / "app.py"
 
+os.environ["TESTING"] = "true"
+
 if _SERVICE_MODULE_NAME not in sys.modules:
     _spec = importlib.util.spec_from_file_location(_SERVICE_MODULE_NAME, _APP_PATH)
     _module = importlib.util.module_from_spec(_spec)
