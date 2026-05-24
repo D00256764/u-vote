@@ -127,7 +127,11 @@ def create_kind_cluster(kind_config: Path) -> bool:
     
     if check_cluster_exists():
         print_warning("Cluster 'uvote' already exists")
-        response = input("Delete and recreate? (y/n): ").lower()
+        if sys.stdin.isatty():
+            response = input("Delete and recreate? (y/n): ").lower()
+        else:
+            print_info("Non-interactive mode: reusing existing cluster")
+            response = 'n'
         if response == 'y':
             print_info("Deleting existing cluster...")
             run_command(['kind', 'delete', 'cluster', '--name', 'uvote'])
@@ -169,12 +173,12 @@ def install_calico() -> bool:
     
     # Install Calico operator
     print_info("Installing Calico operator...")
-    success, _, stderr = run_command([
-        'kubectl', 'create', '-f',
+    success, _, _ = run_command([
+        'kubectl', 'apply', '-f',
         'https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/tigera-operator.yaml'
-    ], check=False)
-    
-    if not success and 'already exists' not in stderr:
+    ], check=False, capture_output=True)
+
+    if not success:
         print_error("Failed to install Calico operator")
         return False
     
@@ -193,11 +197,11 @@ def install_calico() -> bool:
     if not calico_cr.exists():
         print_error(f"Calico custom-resources.yaml not found: {calico_cr}")
         return False
-    success, _, stderr = run_command([
+    success, _, _ = run_command([
         'kubectl', 'apply', '-f', str(calico_cr)
-    ], check=False)
+    ], check=False, capture_output=True)
 
-    if not success and 'already exists' not in stderr:
+    if not success:
         print_error("Failed to install Calico custom resources")
         return False
     
@@ -693,7 +697,10 @@ Examples:
     else:
         print_info("Skipping Calico installation")
     
-    # Apply namespaces
+    # Apply namespaces — this is the single authoritative point in the boot
+    # sequence where uvote-dev (and all other U-Vote namespaces) are created.
+    # Both install_istio.py (Step 2) and deploy_platform.py (Step 3) check
+    # that uvote-dev exists and abort if it is missing.  They do NOT create it.
     if not apply_namespaces(k8s_dir):
         print_error("Namespace creation failed")
         sys.exit(1)
@@ -708,9 +715,21 @@ Examples:
         print_error("Schema application failed")
         sys.exit(1)
     
-    # Apply network policies
-    if not apply_network_policies(k8s_dir):
-        print_warning("Network policy application had issues (non-critical)")
+    # Network policies are NOT applied here.
+    #
+    # Several policies in k8s/network-policies/ reference Istio objects
+    # (04-allow-istio-ingress.yaml, 05-allow-istiod-egress.yaml).  Applying
+    # them before install_istio.py runs (Step 2) is harmless for the policies
+    # themselves, but it creates an unclear ownership model: the same files
+    # would be applied by setup (Step 1), install_istio (Step 2), and
+    # deploy_platform (Step 3).  Whichever script runs last wins, making the
+    # final policy state unpredictable if any step fails mid-run.
+    #
+    # deploy_platform.py owns the authoritative network-policy apply via its
+    # apply_network_policies() call (between phase5_deploy_services and
+    # phase6_deploy_mailhog).  By that point Istio is installed and all
+    # Istio-dependent policies are meaningful.
+    print_info("Network policies will be applied by deploy_platform.py after Istio is ready")
     
     # Install ingress
     if not args.skip_ingress:

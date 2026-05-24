@@ -9,8 +9,7 @@ Steps performed:
   1. Pre-flight: verify istioctl available and uvote cluster reachable
   2. Install Istio (demo profile) via istioctl
   3. Wait for all istio-system pods to be Running
-  4. Remove Nginx ingress controller (skippable via --skip-nginx-removal)
-  5. Label uvote-dev for sidecar injection
+  4. Label uvote-dev for sidecar injection
   6. Apply Istio resources from disk:
        uvote-platform/istio/gateway.yaml
        uvote-platform/istio/virtual-services.yaml
@@ -184,10 +183,16 @@ def step1_preflight(project_root: Path, istioctl_path: str) -> Optional[str]:
             log.error(f"Cannot switch to context {expected_ctx}: {err2.strip()}")
             return None
 
-    # 1c — Verify uvote-dev namespace exists (confirms cluster is live)
+    # 1c — Verify uvote-dev namespace exists.
+    # The namespace is created by setup_k8s_platform.py (Step 1) via
+    # uvote-platform/k8s/namespaces/namespaces.yaml.  If it is missing,
+    # run setup_k8s_platform.py before this script.
     rc, _, _ = run(["kubectl", "get", "namespace", NAMESPACE])
     if rc != 0:
-        log.error(f"Namespace '{NAMESPACE}' not found — is the cluster running?")
+        log.error(
+            f"Namespace '{NAMESPACE}' not found — "
+            "run setup_k8s_platform.py (Step 1) before install_istio.py"
+        )
         return None
 
     log.success(
@@ -241,39 +246,6 @@ def step3_wait_istio_system(timeout_secs: int = 300) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Step 4 — Remove Nginx ingress controller
-# ---------------------------------------------------------------------------
-def step4_remove_nginx(project_root: Path) -> bool:
-    log.header("Step 4: Remove Nginx Ingress Controller")
-
-    ingress_yaml = (
-        project_root / "uvote-platform" / "k8s" / "ingress" / "uvote-ingress.yaml"
-    )
-
-    log.info("Deleting namespace ingress-nginx (--ignore-not-found)...")
-    rc, _, err = run(
-        ["kubectl", "delete", "namespace", "ingress-nginx", "--ignore-not-found"],
-        timeout=120,
-    )
-    if rc != 0:
-        log.warning(f"Could not delete ingress-nginx namespace: {err.strip()}")
-
-    if ingress_yaml.exists():
-        log.info(f"Deleting {ingress_yaml.name} from cluster (--ignore-not-found)...")
-        rc, _, err = run(
-            ["kubectl", "delete", "-f", str(ingress_yaml), "--ignore-not-found"],
-            timeout=60,
-        )
-        if rc != 0:
-            log.warning(f"Could not delete ingress resource: {err.strip()}")
-    else:
-        log.info(f"Ingress manifest not found at {ingress_yaml} — already removed")
-
-    log.success("Nginx ingress controller removal complete")
-    return True
-
-
-# ---------------------------------------------------------------------------
 # Step 5 — Label uvote-dev for sidecar injection
 # ---------------------------------------------------------------------------
 def step5_label_namespace() -> bool:
@@ -294,22 +266,103 @@ def step5_label_namespace() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Step 5b — Restart pre-Istio pods so they receive sidecar injection
+# ---------------------------------------------------------------------------
+def step5b_restart_pre_istio_pods() -> bool:
+    """Roll every Deployment in uvote-dev that was running before injection was enabled.
+
+    step5_label_namespace() sets istio-injection=enabled, but the Kubernetes
+    mutating webhook only fires for new pods.  Any pod already Running (e.g.
+    postgresql, deployed by setup_k8s_platform.py) keeps its pre-label spec
+    and starts without an Envoy sidecar.
+
+    peer-authentication.yaml (applied in step6) enforces STRICT mTLS for the
+    whole uvote-dev namespace.  If PostgreSQL has no sidecar when application
+    services (deployed with sidecars by deploy_platform.py) connect to it, the
+    mTLS handshake fails and every database-backed service crashes at startup.
+
+    Rolling the deployments here — after labeling, before applying peer-auth —
+    breaks that cycle: PostgreSQL restarts with a sidecar, and by the time
+    STRICT mTLS is active every pod in the namespace is covered.
+    """
+    log.header(f"Step 5b: Restart pre-Istio pods in {NAMESPACE} for sidecar injection")
+
+    rc, out, err = run(
+        [
+            "kubectl", "get", "deployments", "-n", NAMESPACE,
+            "-o", "jsonpath={.items[*].metadata.name}",
+        ],
+        timeout=30,
+    )
+    if rc != 0:
+        log.warning(
+            f"Could not list deployments in {NAMESPACE}: {err.strip()} — skipping restart"
+        )
+        return True
+
+    names = [n for n in out.strip().split() if n]
+    if not names:
+        log.info(f"No deployments found in {NAMESPACE} — nothing to restart")
+        return True
+
+    for name in names:
+        log.info(f"  Rolling restart: deployment/{name} ...")
+        rc, _, err = run(
+            ["kubectl", "rollout", "restart", f"deployment/{name}", "-n", NAMESPACE],
+            timeout=30,
+        )
+        if rc != 0:
+            log.warning(f"  Could not restart {name}: {err.strip()} (continuing)")
+        else:
+            log.success(f"  deployment/{name} restarted")
+
+    all_ok = True
+    for name in names:
+        log.info(f"  Waiting for deployment/{name} rollout (timeout 120s)...")
+        rc, _, err = run(
+            [
+                "kubectl", "rollout", "status", f"deployment/{name}",
+                "-n", NAMESPACE, "--timeout=120s",
+            ],
+            timeout=150,
+        )
+        if rc != 0:
+            log.warning(f"  deployment/{name} rollout did not complete: {err.strip()}")
+            all_ok = False
+
+    if all_ok:
+        log.success(
+            f"All pre-Istio deployments in {NAMESPACE} restarted — sidecars injected"
+        )
+    else:
+        log.warning(
+            "Some rollouts did not finish within 120s — peer-authentication may still "
+            "block connections until those pods restart.  Check 'kubectl get pods -n "
+            f"{NAMESPACE}' for pods without a ready Istio sidecar."
+        )
+    return True  # non-fatal: warn but do not abort the Istio installation
+
+
+# ---------------------------------------------------------------------------
 # Step 6 — Apply Istio resources from disk
 # ---------------------------------------------------------------------------
 def step6_apply_istio_resources(project_root: Path) -> bool:
     log.header("Step 6: Apply Istio resources from disk")
 
     istio_dir = project_root / "uvote-platform" / "istio"
-    netpol_dir = project_root / "uvote-platform" / "k8s" / "network-policies"
 
+    # Istio CRD / config resources applied here (install-time concerns).
+    # Network-policy files 04-allow-istio-ingress.yaml and
+    # 05-allow-istiod-egress.yaml are intentionally NOT listed here.
+    # deploy_platform.py:apply_network_policies() is the single authoritative
+    # owner of all files in k8s/network-policies/ and applies them after
+    # services are deployed and Istio is fully operational.
     manifests = [
-        istio_dir  / "gateway.yaml",
-        istio_dir  / "virtual-services.yaml",
-        istio_dir  / "peer-authentication.yaml",
-        istio_dir  / "authorization-policies.yaml",
-        istio_dir  / "destination-rules.yaml",
-        netpol_dir / "05-allow-istiod-egress.yaml",
-        netpol_dir / "04-allow-istio-ingress.yaml",
+        istio_dir / "gateway.yaml",
+        istio_dir / "virtual-services.yaml",
+        istio_dir / "peer-authentication.yaml",
+        istio_dir / "authorization-policies.yaml",
+        istio_dir / "destination-rules.yaml",
     ]
 
     all_ok = True
@@ -409,14 +462,18 @@ def step8_verify(istioctl: str) -> bool:
 
     # istioctl analyze — IST0101 ("Referenced host not found") fires for every
     # VirtualService whose backing Kubernetes Service doesn't exist yet.  At
-    # boot time this is always the case because deploy_platform.py (Step 4)
+    # boot time this is always the case because deploy_platform.py (Step 3)
     # hasn't run yet.  Treat IST0101 as an expected warning; any other IST
     # error code is a genuine configuration problem and should fail the step.
     log.info("Running: istioctl analyze -n uvote-dev")
     rc, out, err = run([istioctl, "analyze", "-n", NAMESPACE], timeout=60)
     combined = out + err
 
-    error_lines  = [l for l in combined.splitlines() if l.strip().startswith("Error")]
+    # Only consider lines that are actual Istio analysis messages — they always
+    # contain "[ISTxxxx]".  The "Error: Analyzers found issues..." summary line
+    # emitted by istioctl itself has no IST code and must be excluded.
+    error_lines  = [l for l in combined.splitlines()
+                    if l.strip().startswith("Error") and "[IST" in l]
     ist0101_lines = [l for l in error_lines if "IST0101" in l]
     real_errors   = [l for l in error_lines if "IST0101" not in l]
 
@@ -454,12 +511,6 @@ def step8_verify(istioctl: str) -> bool:
     help="Path to istioctl binary.",
 )
 @click.option(
-    "--skip-nginx-removal",
-    is_flag=True,
-    default=False,
-    help="Skip removal of the Nginx ingress controller (step 4).",
-)
-@click.option(
     "--rollout-timeout",
     default=240,
     show_default=True,
@@ -473,7 +524,6 @@ def step8_verify(istioctl: str) -> bool:
 )
 def main(
     istioctl_path: str,
-    skip_nginx_removal: bool,
     rollout_timeout: int,
     istio_wait_timeout: int,
 ) -> None:
@@ -486,9 +536,6 @@ def main(
 
       # Use a specific istioctl binary
       python plat_scripts/install_istio.py --istioctl-path ~/istio-1.22.3/bin/istioctl
-
-      # Skip Nginx removal (if already gone)
-      python plat_scripts/install_istio.py --skip-nginx-removal
     """
     project_root = Path(__file__).resolve().parent.parent
 
@@ -508,18 +555,15 @@ def main(
         ("Step 3: Wait for istio-system", lambda: step3_wait_istio_system(istio_wait_timeout)),
     ]
 
-    if not skip_nginx_removal:
-        steps.append(
-            ("Step 4: Remove Nginx",       lambda: step4_remove_nginx(project_root))
-        )
-    else:
-        log.info("Skipping Step 4 (--skip-nginx-removal)")
-
     steps += [
-        ("Step 5: Label namespace",        step5_label_namespace),
-        ("Step 6: Apply Istio resources",  lambda: step6_apply_istio_resources(project_root)),
-        ("Step 7: Patch ingressgateway",   lambda: step7_patch_ingressgateway(rollout_timeout)),
-        ("Step 8: Verify",                 lambda: step8_verify(istioctl_resolved)),
+        ("Step 5:  Label namespace",            step5_label_namespace),
+        # Step 5b must run AFTER labeling and BEFORE peer-authentication is applied.
+        # It restarts pods (e.g. postgresql) that were created before the injection
+        # label existed so they receive Envoy sidecars before STRICT mTLS is enforced.
+        ("Step 5b: Restart pre-Istio pods",     step5b_restart_pre_istio_pods),
+        ("Step 6:  Apply Istio resources",      lambda: step6_apply_istio_resources(project_root)),
+        ("Step 7:  Patch ingressgateway",       lambda: step7_patch_ingressgateway(rollout_timeout)),
+        ("Step 8:  Verify",                     lambda: step8_verify(istioctl_resolved)),
     ]
 
     for label, fn in steps:
