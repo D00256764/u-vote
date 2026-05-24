@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net">
+  <diagram name="Figure 12 - Service Interactions">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="1"><mxGeometry x="40" y="300" width="110" height="50" as="geometry" /></mxCell>
+        <mxCell id="3" value="NGINX
+Gateway :80" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1"><mxGeometry x="200" y="295" width="130" height="60" as="geometry" /></mxCell>
+        <mxCell id="4" value="Frontend
+:5000" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="400" y="120" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="5" value="Auth
+:5001" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="600" y="60" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="6" value="Admin
+:5002" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="600" y="200" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="7" value="Voting
+:5003" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="400" y="300" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="8" value="Results
+:5004" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="600" y="340" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="9" value="Election
+:5005" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1"><mxGeometry x="400" y="460" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="10" value="PostgreSQL 15" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1"><mxGeometry x="800" y="270" width="140" height="60" as="geometry" /></mxCell>
+        <mxCell id="11" value="Twilio
+SMS API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="400" y="520" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="12" value="MailHog
+SMTP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1"><mxGeometry x="600" y="460" width="130" height="50" as="geometry" /></mxCell>
+        <mxCell id="13" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="2" target="3" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="14" value="HTML pages" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="4" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="15" value="POST /voting/*" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="7" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="16" value="POST /auth/*" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="5" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="17" value="POST /admin/*" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="6" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="18" value="GET /results/*" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="8" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="19" value="GET /election/*" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="3" target="9" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="20" value="POST /auth/login
+POST /auth/register" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="4" target="5" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="21" value="GET  /elections" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="4" target="9" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="22" value="GET  /results" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="4" target="8" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="23" value="POST /admin/voters" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="4" target="6" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="24" value="POST /auth/validate-token" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="7" target="5" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="25" value="POST /results/finalise" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="9" target="8" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="26" value="POST /admin/distribute-tokens" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="9" target="6" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="27" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="5" target="10" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="28" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="6" target="10" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="29" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="7" target="10" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="30" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="8" target="10" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="31" value="" style="endArrow=block;endFill=1;html=1;fontSize=10;" edge="1" source="9" target="10" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="32" value="OTP SMS" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="7" target="11" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="33" value="tokens" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="6" target="12" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="34" value="confirm" style="endArrow=block;endFill=1;html=1;fontSize=10;dashed=1;strokeColor=#666666;" edge="1" source="5" target="12" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -155,14 +155,23 @@ spec:
   gateways:
   - uvote-gateway
   http:
-  - match:
+  - name: primary
+    match:
     - uri:
         prefix: /
     route:
     - destination:
         host: frontend-service
+        subset: stable
         port:
           number: 5000
+      weight: 100
+    - destination:
+        host: frontend-service
+        subset: canary
+        port:
+          number: 5000
+      weight: 0
     timeout: 10s
     retries:
       attempts: 3

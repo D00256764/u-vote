@@ -110,9 +110,9 @@ output "ci_secret_access_key" {
 output "github_secrets_summary" {
   description = "Values to set as GitHub Actions secrets"
   value = {
-    AWS_ACCOUNT_ID       = data.aws_caller_identity.current.account_id
-    AWS_REGION           = var.aws_region
-    AWS_ACCESS_KEY_ID    = aws_iam_access_key.ci.id
-    EKS_CLUSTER_NAME     = module.eks.cluster_name
+    AWS_ACCOUNT_ID    = data.aws_caller_identity.current.account_id
+    AWS_REGION        = var.aws_region
+    AWS_ACCESS_KEY_ID = aws_iam_access_key.ci.id
+    EKS_CLUSTER_NAME  = module.eks.cluster_name
   }
 }

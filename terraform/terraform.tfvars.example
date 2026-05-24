@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and fill in values (terraform.tfvars is gitignored).
+aws_region   = "eu-west-1"
+project_name = "uvote"
+environment  = "dev"
+cluster_name = "uvote"
+
+# Required — use a strong password; never commit terraform.tfvars
+db_password = "CHANGE_ME_use_a_long_random_password"
