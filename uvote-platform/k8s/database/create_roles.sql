@@ -18,12 +18,12 @@
 -- CREATE ROLES
 -- ============================================================================
 
-CREATE USER auth_service     WITH PASSWORD 'auth_pass_CHANGE_ME';
-CREATE USER voting_service   WITH PASSWORD 'voting_pass_CHANGE_ME';
-CREATE USER election_service WITH PASSWORD 'election_pass_CHANGE_ME';
-CREATE USER results_service  WITH PASSWORD 'results_pass_CHANGE_ME';
-CREATE USER audit_service    WITH PASSWORD 'audit_pass_CHANGE_ME';
-CREATE USER admin_service    WITH PASSWORD 'admin_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS auth_service     WITH PASSWORD 'auth_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS voting_service   WITH PASSWORD 'voting_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS election_service WITH PASSWORD 'election_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS results_service  WITH PASSWORD 'results_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS audit_service    WITH PASSWORD 'audit_pass_CHANGE_ME';
+CREATE USER IF NOT EXISTS admin_service    WITH PASSWORD 'admin_pass_CHANGE_ME';
 
 -- ============================================================================
 -- Grant permissions: Auth Service

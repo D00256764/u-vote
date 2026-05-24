@@ -45,6 +45,7 @@
 
         <div class="auth-card">
             <form method="POST" action="/login">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="mb-3">
                     <label class="form-label">Email Address</label>
                     <input type="email" name="email" class="form-control" placeholder="you@example.com" required autofocus>

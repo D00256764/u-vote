@@ -1,0 +1,2391 @@
+Summary,Issue key,Issue id,Issue Type,Status,Project key,Project name,Project type,Project lead,Project lead id,Project description,Priority,Resolution,Assignee,Assignee Id,Reporter,Reporter Id,Creator,Creator Id,Created,Updated,Last Viewed,Resolved,Due date,Votes,Description,Environment,Watchers,Watchers Id,Original estimate,Remaining Estimate,Time Spent,Work Ratio,Σ Original Estimate,Σ Remaining Estimate,Σ Time Spent,Security Level,Custom field (Development),Custom field (Issue color),Custom field (Rank),Custom field (Start date),Custom field (Team),Custom field (Vulnerability),Comment,Comment,Comment,Status Category,Status Category Changed
+Add pytest unit tests for results-service,CV-14,10305,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:58 PM,23/Mar/26 10:06 PM,23/Mar/26 9:50 PM,,,0,"Create results-service/tests/test_results.py with pytest unit tests.
+
+Key functions to test in results-service/app.py:
+
+  GET /elections/{id}/results
+
+* Returns 400/403 while election is still open (tested in test_api.py
+Stage 4 — must be preserved)
+* Returns 200 with correct structure after election is closed:
+total_votes, candidates with vote counts and percentages, winner
+* Returns 404 for non-existent election
+
+  GET /elections/{id}/audit
+
+* Returns hash-chained audit trail for a closed election
+* Each entry should have a valid hash linking to the previous entry
+
+  GET /elections/{id}/statistics
+
+* Returns detailed stats and timeline for a closed election
+
+Note: results-service/app.py has logging.getLogger(""results-service"")
+declared but never called anywhere. The JSON API endpoints (get_results,
+get_audit_trail, get_statistics) have no try/except blocks at all.
+The HTML view results_page() only catches HTTPException — DB and network
+errors propagate unhandled.
+
+Tests should use a mock DB pool to simulate DB failures and assert that
+a meaningful error is returned rather than an unformatted 500.
+
+results-service uses the results_service DB role which has SELECT only
+on votes — tests should verify it cannot INSERT or UPDATE votes.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000fk:,,,,,,,In Progress,23/Mar/26 9:34 AM
+Add pytest unit tests for auth-service,CV-10,10301,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:56 PM,23/Mar/26 9:59 AM,23/Mar/26 9:34 AM,,,0,"Create auth-service/tests/test_auth.py with pytest unit tests using
+FastAPI's TestClient.
+
+Key functions to test in auth-service/app.py:
+
+  POST /register
+
+* Returns 201 with organiser_id on valid input
+* Returns 409 when email already exists (checks ""unique"" in str(e) — this
+raw error handling should be tested to confirm it catches the right case)
+* Returns 422 on missing fields
+
+  POST /login
+
+* Returns 200 with JWT token on valid credentials
+* Returns 401 on wrong password
+* JWT payload contains organiser_id, email, exp fields
+
+  GET /tokens/{token}/validate
+
+* Returns {""valid"": true} for valid unused token
+* Returns {""valid"": false} for used/expired token
+
+  POST /mfa/verify
+
+* Returns 200 on correct date_of_birth
+* Returns 403 on wrong date_of_birth (current message: ""Date of birth
+does not match our records"" — auth-service/app.py lines 218-222)
+
+Note: login(), validate_voting_token(), mfa_status(), and issue_ballot_token()
+currently have no try/except blocks. DB errors propagate as unformatted 500s.
+Tests should use a mock DB pool (via conftest.py fixture) to simulate failures
+and assert they return 500 without leaking raw error strings.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000fl:,,,,,,,In Progress,23/Mar/26 9:34 AM
+Fix test_db.py immutability and hash trigger assertions against current schema,CV-42,10429,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 8:27 AM,23/Mar/26 8:39 AM,23/Mar/26 8:28 AM,,,0,"Tests 5 and 6 in tests/test_db.py were written against the old schema and
+reference a votes table and triggers that no longer exist. Both tests fail
+on every run against the live cluster.
+
+Current failures:
+  ❌ Test 5 — Immutability triggers not found on votes table
+  ❌ Test 6 — Hash generation trigger not found on votes table
+
+----
+
+BACKGROUND:
+
+Old schema (now gone):
+  Table:               votes
+  Immutability:        prevent_vote_update, prevent_vote_delete on votes
+  Hash trigger:        generate_vote_hash_trigger on votes
+
+Current schema.sql:
+  Table:               encrypted_ballots
+  Immutability:        immutable_ballots (function: prevent_ballot_modification)
+                       on encrypted_ballots
+  Hash trigger:        auto_ballot_hash (function: generate_ballot_hash)
+                       on encrypted_ballots
+  Audit immutability:  immutable_audit (function: prevent_audit_modification)
+                       on audit_log
+  Audit hash trigger:  auto_audit_hash (function: generate_audit_hash)
+                       on audit_log
+
+----
+
+DELIVERABLES:
+
+Test 5 — Vote Immutability:
+
+  Update trigger assertions to target encrypted_ballots instead of votes.
+  Assert the following triggers exist:
+    - immutable_ballots on encrypted_ballots
+    - immutable_audit on audit_log
+
+  Update the immutability test to verify the trigger fires by attempting
+  an UPDATE or DELETE on encrypted_ballots and asserting it raises an
+  exception containing:
+    ""Encrypted ballots are immutable""
+
+Test 6 — Hash Generation:
+
+  Update hash trigger assertion to target encrypted_ballots instead of votes.
+  Assert the following trigger exists:
+    - auto_ballot_hash on encrypted_ballots
+
+  Update the hash generation test to verify the trigger fires by inserting
+  a row into encrypted_ballots and asserting that ballot_hash is populated
+  automatically.
+
+  Note: inserting into encrypted_ballots requires pgp_sym_encrypt. If a
+  live insert is too complex to set up in the test, assert trigger existence
+  via the pg_trigger catalogue query instead:
+    SELECT trigger_name FROM information_schema.triggers
+    WHERE event_object_table = 'encrypted_ballots'
+    AND trigger_name = 'auto_ballot_hash';
+
+  Update all comments, docstrings, and log messages in both tests to
+  reflect the new table and trigger names.
+
+----
+
+CONSTRAINTS:
+
+* Read schema.sql in full before editing to confirm exact trigger names
+* Do not change any test other than Tests 5 and 6
+* Do not modify schema.sql, create_roles.sql, or seed_data.sql
+* Run python3 tests/test_db.py --quick after changes and confirm output
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* python3 tests/test_db.py --quick passes all 10 tests against live cluster
+* Tests 5 and 6 assert correct trigger names on correct tables
+* No other test results change from their current pass/fail state",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000fn:,,,,,,,In Progress,23/Mar/26 8:27 AM
+Add python-json-logger to all service requirements.txt,CV-1,10292,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:35 PM,20/Mar/26 9:07 PM,,,,0,"Add {{python-json-logger}} as a dependency to the requirements.txt of all 6 services:
+auth-service, election-service, voting-service, results-service, voter-service, frontend-service.
+
+No service currently has this dependency. All services use Python's built-in logging
+module with unstructured text output, which cannot be parsed by log aggregators.
+
+Add to each requirements.txt:
+  python-json-logger==2.0.7
+
+Note: frontend-service already has 3 unused dependencies (asyncpg, passlib, bcrypt).
+Remove these at the same time to keep the file clean.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000fr:,,,,,,,In Progress,20/Mar/26 9:07 PM
+Replace basic logging with structured JSON formatter,CV-2,10293,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:36 PM,21/Mar/26 5:08 AM,,,,0,"Replace the existing unstructured logging setup in all 6 services with structured JSON output using {{python-json-logger}}, centralised through a shared configuration module.
+
+*Current state per service:*
+
+* {{auth-service}}: {{logging.getLogger(""auth-service"")}} declared but never called
+* {{election-service}}: no logger declared at all
+* {{voting-service}}: no logger declared at all
+* {{results-service}}: {{logging.getLogger(""results-service"")}} declared but never called
+* {{voter-service}}: logger used in 2 places (email failures only)
+* {{frontend-service}}: no logger declared at all
+
+----
+
+*Step 1 — Create* {{shared/logging_config.py}}
+
+Create a new file at {{shared/logging_config.py}}:
+
+{noformat}import logging
+import logging.config
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'json': {
+            'format': '%(asctime)s %(name)s %(levelname)s %(message)s',
+            'datefmt': '%Y-%m-%dT%H:%M:%SZ',
+            'class': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+        }
+    },
+    'handlers': {
+        'stdout': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'json',
+        }
+    },
+    'loggers': {
+        '': {
+            'handlers': ['stdout'],
+            'level': 'INFO',
+        }
+    },
+}
+
+def configure_logging():
+    logging.config.dictConfig(LOGGING)
+{noformat}
+
+----
+
+*Step 2 — Update each service* {{app.py}}
+
+In every {{app.py}}, remove any existing inline logging setup and replace with:
+
+{noformat}import logging
+from logging_config import configure_logging
+
+configure_logging()
+logger = logging.getLogger('service-name')
+{noformat}
+
+{quote}Note: import as {{from logging_config import configure_logging}} (not {{from shared.logging_config}}) since {{shared/}} is added directly to {{sys.path}} by each service's path-resolution block. {{frontend-service}} requires the {{sys.path}} block to be added as it currently has none.{quote}
+
+Logger names: {{auth-service}}, {{election-service}}, {{voting-service}}, {{results-service}}, {{voter-service}}, {{frontend-service}}.
+
+----
+
+*Step 3 — Add structured log calls*
+
+Use {{%}}-style formatting (not f-strings) throughout.
+
+* *INFO* at the entry point of every route handler:
+
+{noformat}logger.info('Request received: %s %s', request.method, request.url.path)
+{noformat}
+
+All JSON API route handlers that do not already accept {{request: Request}} must have it added as a parameter.
+
+* *WARNING* on auth failure or invalid token (401/403 rejections):
+
+{noformat}logger.warning('Auth failure: %s', reason)
+{noformat}
+
+Apply in: {{auth-service}} ({{login}}, {{verify_token}}), {{voter-service}} ({{verify_identity}} DOB mismatch), {{frontend-service}} ({{login}}).
+
+* *ERROR* on caught DB errors — replace raw {{str(e)}} returned to the client with:
+
+{noformat}logger.error('Database error in %s: %s', function_name, e)
+{noformat}
+
+Return a generic {{""Internal server error""}} message to the client. Apply in: {{auth-service}} {{register()}} and {{voter-service}} {{add_voter()}}.
+
+* *ERROR* on failed external {{httpx}} calls in {{voting-service}} and {{frontend-service}} (currently unhandled):
+
+{noformat}logger.error('External service call failed: %s %s — %s', method, url, e)
+{noformat}
+
+Return a service unavailable response after logging. Do not interpolate token values into the URL string in log messages.
+
+----
+
+*Constraints*
+
+* Do not log any sensitive values — no passwords, tokens, or voter identifiers.
+* Do not change any business logic, route behaviour, or response structures beyond what is described above.
+* Only modify {{shared/logging_config.py}} and the six {{app.py}} files.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000fz:,,,,"20/Mar/26 9:31 PM;63bb170a2341bff4fff5d364;I updated the ticket to have a central logger in the /shared directory over the different logger in each service.
+
+Old Description:
+Replace the existing unstructured logging setup in all 6 services with structured
+JSON output using python-json-logger.
+
+Current state per service:
+
+* auth-service: logging.getLogger(""auth-service"") declared but never called
+* election-service: no logger declared at all
+* voting-service: no logger declared at all
+* results-service: logging.getLogger(""results-service"") declared but never called
+* voter-service: logging.getLogger(*name*) used in 2 places (email failures only)
+* frontend-service: no logger declared at all
+
+Replace with this pattern in every app.py:
+
+import logging
+from pythonjsonlogger import jsonlogger
+
+logger = logging.getLogger(""service-name"")
+handler = logging.StreamHandler()
+handler.setFormatter(jsonlogger.JsonFormatter(
+fmt=""%(asctime)s %(name)s %(levelname)s %(message)s""
+))
+logger.addHandler(handler)
+logger.setLevel([http://logging.INFO|http://logging.INFO|smart-link]  )
+
+Add structured log calls at key points in each service:
+
+* Request received (INFO)
+* Auth failure / invalid token (WARNING)
+* DB error caught in except blocks (ERROR) — currently auth-service register()
+and voter-service add_voter() log raw str(e) directly to the client response,
+which must be replaced with logger.error() calls
+* External HTTP call failures in voting-service and frontend-service httpx calls
+(currently completely unhandled — would produce unformatted 500s)",20/Mar/26 9:31 PM;63bb170a2341bff4fff5d364;Updated Description to reflect more accurate changes made.,"21/Mar/26 5:08 AM;63bb170a2341bff4fff5d364;Used following guide for help:
+
+[https://betterstack.com/community/guides/logging/python/python-logging-best-practices/|https://betterstack.com/community/guides/logging/python/python-logging-best-practices/|smart-link] ",In Progress,20/Mar/26 9:31 PM
+Deploy MailHog to cluster as a test SMTP server,CV-3,10294,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:36 PM,21/Mar/26 8:42 AM,21/Mar/26 8:40 AM,,,0,"Deploy MailHog as an in-cluster SMTP server so the test suite can receive and inspect emails without requiring external SMTP access.
+
+*Background*
+
+The cluster's {{00-default-deny}} network policy blocks all outbound traffic. Port 587 to {{smtp.gmail.com}} has no egress policy, so emails cannot leave the cluster. The current {{test_api.py}} works around this at line 387 by inserting voting tokens directly into the database via {{kubectl exec psql}}, bypassing the email flow entirely. MailHog replaces this workaround by catching emails inside the cluster.
+
+Additionally, {{SMTP_USER}} and {{SMTP_PASS}} are currently missing from {{admin-deployment.yaml}} entirely. This causes Gmail auth to silently fail — {{SMTP_PASS}} defaults to {{""""}} in {{shared/email_util.py}}, which short-circuits the credentials check before any connection is attempted.
+
+----
+
+*Deliverable 1 — Create* {{k8s/mailhog/mailhog-deployment.yaml}}
+
+MailHog is a *local development tool only*. This manifest must be scoped to {{uvote-dev}} and must never be promoted to {{uvote-test}} or {{uvote-prod}}.
+
+* Image: {{mailhog/mailhog:latest}}
+* SMTP port: {{1025}} (receives emails from services)
+* HTTP API port: {{8025}} (used by tests to retrieve emails)
+* Namespace: {{uvote-dev}}
+* Service type: {{ClusterIP}} (internal only, not exposed via Ingress)
+
+----
+
+*Deliverable 2 — Create network policy:* {{k8s/network-policies/05-allow-mailhog.yaml}}
+
+Create two {{NetworkPolicy}} resources following the established two-policy pattern from {{02-allow-to-database.yaml}} and {{04-allow-audit.yaml}}:
+
+* {{allow-mailhog-egress}} (policy-order: {{05a}}): egress from {{app: admin-service}} to {{mailhog:1025}}, plus DNS
+* {{allow-mailhog-ingress}} (policy-order: {{05b}}): ingress to {{app: mailhog}} from {{app: admin-service}} on port {{1025}}
+
+Note: {{voter-service/}} source code is deployed as a Kubernetes Deployment named {{admin-service}} with label {{app: admin-service}}. This is the service that sends voting token emails via {{shared/email_util.py}}.
+
+----
+
+*Deliverable 3 — Update* {{admin-deployment.yaml}} *and* {{deploy_platform.py}}
+
+Per *ADR011*, SMTP credentials must never be stored as inline {{value:}} fields in deployment manifests. They are created at deploy time by {{deploy_platform.py}} using {{kubectl create secret}}, and pods reference them via {{secretKeyRef}}. This is the same pattern used for {{db-credentials}}, {{jwt-secret}}, and {{flask-secret}}.
+
+{{admin-deployment.yaml}} — replace any existing inline SMTP {{value:}} fields with {{secretKeyRef}} entries pointing to an {{smtp-credentials}} Secret:
+
+{noformat}- name: SMTP_HOST
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_HOST
+- name: SMTP_PORT
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_PORT
+- name: SMTP_USE_TLS
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_USE_TLS
+- name: SMTP_FROM
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_FROM
+- name: SMTP_USER
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_USER
+      optional: true
+- name: SMTP_PASS
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: SMTP_PASS
+      optional: true
+- name: FRONTEND_URL
+  valueFrom:
+    secretKeyRef:
+      name: smtp-credentials
+      key: FRONTEND_URL
+{noformat}
+
+The manifest must remain identical and valid across all environments. No environment-specific values ({{mailhog}}, {{1025}}, etc.) may appear as inline {{value:}} fields.
+
+{{deploy_platform.py}} — add an {{smtp-credentials}} secret creation block in the secrets section, with a prominent comment marking it as dev/local only:
+
+{noformat}# -----------------------------------------------------------------------
+# SMTP credentials — DEV/LOCAL ONLY (MailHog)
+# This secret points to the in-cluster MailHog fake SMTP server.
+# MailHog is NOT deployed in uvote-test or uvote-prod.
+# For production namespaces, replace these values with real SMTP provider
+# credentials before creating this secret.
+# admin-deployment.yaml is environment-agnostic — it reads SMTP config
+# from this secret via secretKeyRef regardless of environment.
+# -----------------------------------------------------------------------
+kubectl create secret generic smtp-credentials \
+  --from-literal=SMTP_HOST=mailhog \
+  --from-literal=SMTP_PORT=1025 \
+  --from-literal=SMTP_USE_TLS=false \
+  --from-literal=SMTP_FROM=uvote@test.local \
+  --from-literal=SMTP_USER="""" \
+  --from-literal=SMTP_PASS="""" \
+  --from-literal=FRONTEND_URL=http://frontend-service:5000 \
+  --namespace=uvote-dev \
+  --dry-run=client -o yaml | kubectl apply -f -
+{noformat}
+
+----
+
+*Implementation Note — Why* {{secretKeyRef}} *instead of inline values*
+
+The original ticket described setting env vars as inline {{value:}} fields. During implementation this was revised to use {{secretKeyRef}} in order to comply with ADR011 and keep {{admin-deployment.yaml}} environment-agnostic. Inline MailHog values in the base manifest would be inherited by {{uvote-test}} and {{uvote-prod}} on promotion, pointing those environments at a service that does not exist outside {{uvote-dev}}. The {{secretKeyRef}} pattern isolates all environment-specific SMTP configuration to {{deploy_platform.py}}, which is the established and approved approach for all credentials in this project.
+
+----
+
+*Acceptance Criteria*
+
+* {{k8s/mailhog/mailhog-deployment.yaml}} exists, deploys to {{uvote-dev}} only, exposes ports {{1025}} and {{8025}}
+* {{05-allow-mailhog.yaml}} permits egress from {{admin-service}} to {{mailhog:1025}} and ingress to {{mailhog}} from {{admin-service}}
+* {{admin-deployment.yaml}} contains zero inline {{value:}} fields for SMTP configuration — all SMTP env vars use {{secretKeyRef}} pointing to {{smtp-credentials}}
+* {{deploy_platform.py}} creates the {{smtp-credentials}} secret with MailHog values for {{uvote-dev}}, with a comment clearly marking it as dev-only
+* No MailHog references appear in {{shared/email_util.py}} or any production application code",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000g7:,,,,21/Mar/26 6:16 AM;63bb170a2341bff4fff5d364;Updated the ticket to better reflect the project requirements and ADRs ,,,In Progress,21/Mar/26 5:54 AM
+Configure email-service to point to MailHog in test environment,CV-4,10295,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:37 PM,21/Mar/26 10:22 AM,21/Mar/26 10:10 AM,,,0,"Update the SMTP environment variables in the voter-service Kubernetes manifest
+to route emails to MailHog instead of [smtp.gmail.com|http://smtp.gmail.com].
+
+Current state in admin-deployment.yaml (voter-service is deployed here):
+
+* name: SMTP_HOST
+value: ""[smtp.gmail.com|http://smtp.gmail.com]""
+* name: SMTP_PORT
+value: ""587""
+SMTP_USER, SMTP_PASS, SMTP_FROM, FRONTEND_URL are all missing — they fall
+back to defaults in shared/email_util.py, causing silent auth failure.
+
+Update to:
+  SMTP_HOST:    mailhog
+  SMTP_PORT:    ""1025""
+  SMTP_USE_TLS: ""false""
+  SMTP_FROM:    ""uvote@test.local""
+  FRONTEND_URL: ""[http://frontend-service:5000|http://frontend-service:5000]""
+
+SMTP_USER and SMTP_PASS should be left unset or empty — MailHog accepts
+unauthenticated connections.
+
+This unblocks the full token generation flow in tests, removing the need for
+the kubectl exec psql workaround in test_api.py line 387.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000g9:,,,,"21/Mar/26 10:11 AM;63bb170a2341bff4fff5d364;All aspects apart from the test_api.py is completed.
+I will leave the test_api.py till when I am working on other tests in the file.
+Currently I am focused on the test functionality.",,,In Progress,21/Mar/26 8:42 AM
+Write test helper function to query MailHog API and extract voting token URL,CV-5,10296,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:37 PM,21/Mar/26 10:16 AM,21/Mar/26 10:14 AM,,,0,"Write a helper function that queries the MailHog HTTP API to retrieve the
+voting token URL sent by voter-service after token generation.
+
+The voter-service sends voting token emails via send_voting_token_email() in
+shared/email_util.py. The email contains a direct voting URL in the format:
+  {FRONTEND_URL}/vote/{token}
+
+There is no OTP code to extract — the token IS the credential. The test helper
+needs to parse the URL from the email body.
+
+Note: send_otp_email() in shared/email_util.py is completely unused dead code —
+it is never called from any service. Do not reference it in tests.
+
+Implement in tests/helpers/mailhog.py:
+
+  import httpx
+
+  MAILHOG_API = ""[http://localhost:8025/api/v2/messages|http://localhost:8025/api/v2/messages]""
+
+  async def get_latest_voting_token(voter_email: str) -> str:
+      """"""Query MailHog API, find email to voter_email, extract /vote/{token} URL.""""""
+      response = await httpx.AsyncClient().get(MAILHOG_API)
+      messages = response.json()[""items""]
+      for msg in messages:
+          recipients = [r[""Mailbox""] + ""@"" + r[""Domain""]
+                        for r in msg[""To""]]
+          if voter_email in recipients:
+              body = msg[""Content""][""Body""]
+              # Extract token from URL: /vote/{token}
+              token = body.split(""/vote/"")[1].split('""')[0].strip()
+              return token
+      raise AssertionError(f""No email found for {voter_email} in MailHog"")",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000gb:,,,,,,,In Progress,21/Mar/26 8:42 AM
+Add MailHog OTP extraction to conftest.py as a shared pytest fixture,CV-6,10297,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:38 PM,22/Mar/26 8:30 AM,22/Mar/26 8:29 AM,,,0,"Add a shared pytest fixture in tests/conftest.py that provides the MailHog
+email helper to all test suites.
+
+The fixture should:
+
+# Port-forward MailHog API port 8025 to localhost for the test session
+# Provide a get_voting_token(email) async helper
+# Clear all MailHog messages before each test via DELETE /api/v1/messages
+
+This replaces the current workaround in test_api.py line 387 where the voting
+token is inserted directly into the database via kubectl exec psql because
+outbound SMTP was blocked. With MailHog deployed, the full email flow can
+be tested properly.
+
+Example fixture:
+
+  @pytest.fixture(scope=""session"")
+  def mailhog():
+      return MailHogHelper(base_url=""[http://localhost:8025|http://localhost:8025]"")
+
+  @pytest.fixture(autouse=True)
+  async def clear_mailhog(mailhog):
+      await mailhog.clear_all()
+      yield",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000gv:,,,,,,,In Progress,21/Mar/26 8:42 AM
+"Fix voter-service health endpoint returning ""voter"" instead of ""admin""",CV-7,10298,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:38 PM,22/Mar/26 8:40 AM,22/Mar/26 8:40 AM,,,0,"voter-service/app.py returns the wrong service identifier in its health endpoint.
+
+Current response (voter-service/app.py line ~81):
+  {""status"": ""healthy"", ""service"": ""voter""}
+
+This service is deployed as admin-service in the cluster
+(admin-deployment.yaml, label: app: admin-service). Any health check
+asserting the deployed service name will fail.
+
+Fix: change the health response to match the deployment identity:
+  {""status"": ""healthy"", ""service"": ""admin""}
+
+Note: frontend-service has NO /health endpoint at all. The deploy script
+cannot health-check it. Add a basic health endpoint to frontend-service/app.py:
+
+  @app.get(""/health"")
+  async def health():
+      return {""status"": ""healthy"", ""service"": ""frontend""}",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000gx:,,,,,,,In Progress,22/Mar/26 8:31 AM
+Fix test_db.py schema mismatch against current database schema,CV-17,10308,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 8:56 PM,23/Mar/26 8:26 AM,23/Mar/26 8:13 AM,,,0,"test_db.py was written against an older version of the schema and references
+table names and role names that likely differ from the current schema in
+uvote-platform/k8s/database/schema.sql.
+
+The following tests are at risk of failing against the live database:
+
+  Test 3 (Tables Exist):
+    Currently asserts these 7 tables exist:
+      admins, elections, candidates, voters, voting_tokens, votes, audit_logs
+    Current schema may use different names e.g.:
+      organisers (instead of admins)
+      election_options (instead of candidates)
+      audit_log (instead of audit_logs)
+    Verify all 7 table names against schema.sql and update assertions.
+
+  Test 4 (Sample Data):
+    Asserts admins, elections, candidates each have at least 1 seed row.
+    If table names have changed, these queries will fail with ""relation
+    does not exist"" rather than a meaningful assertion failure.
+
+  Test 7 (User Permissions):
+    Asserts auth_service role can SELECT from admins.
+    Asserts results_service role can SELECT from votes but cannot INSERT.
+    If the admins table is now named organisers, the SELECT will fail.
+    Verify all role names and their target tables against schema.sql GRANT
+    statements before running.
+
+  Test 8 (Complex Queries):
+    Runs a multi-table JOIN: candidates LEFT JOIN votes.
+    If candidates is now election_options, this query will fail.
+
+Action:
+
+# Read uvote-platform/k8s/database/schema.sql in full
+# Compare every table name and role name referenced in test_db.py
+against the actual schema
+# Update all mismatched references
+# Run test_db.py --quick against the live cluster to confirm all
+10 tests pass before marking this ticket done",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000gz:,,,,,,,In Progress,22/Mar/26 8:30 AM
+Convert existing test files to pytest framework and add conftest.py,CV-9,10300,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:55 PM,23/Mar/26 9:31 AM,23/Mar/26 9:32 AM,,,0,"Neither test_api.py nor test_db.py uses pytest. Both are standalone scripts
+run as: python tests/test_api.py
+
+They use no pytest imports, no fixtures, no test discovery, and no assertions
+via pytest.assert. They implement their own PASS/FAIL tracking with counters.
+
+Convert to pytest by:
+
+# Rename test functions to follow pytest naming: test_*()
+# Replace manual PASS/FAIL counters with pytest assertions
+# Create tests/conftest.py with shared fixtures:
+#* db_connection: connects via kubectl exec to PostgreSQL pod
+#* api_client: httpx.AsyncClient pointed at port-forwarded services
+#* auth_token: logs in and returns a valid JWT for use in protected tests
+#* mailhog: MailHog helper (from MailHog ticket)
+# Add pytest and pytest-asyncio to a top-level requirements-dev.txt:
+  pytest==8.0.0
+  pytest-asyncio==0.23.0
+  httpx==0.27.0
+
+The sequential state-passing pattern in test_api.py (JWT → election_id →
+voter_id → voting_token passed between stages) should be refactored into
+session-scoped fixtures in conftest.py.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000hj:,,,,"23/Mar/26 8:43 AM;63bb170a2341bff4fff5d364;I split the ticket into 2 parts, one for API Tests and the other for DB tests.
+
+The commit will show CV-9a and CV-9b",,,In Progress,23/Mar/26 8:39 AM
+Add pytest unit tests for voting-service,CV-11,10302,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:56 PM,23/Mar/26 10:18 AM,23/Mar/26 9:59 AM,,,0,"Create voting-service/tests/test_voting.py with pytest unit tests.
+
+Key functions to test in voting-service/app.py:
+
+  GET /vote/{token} (ballot page)
+
+* Returns 200 with ballot HTML for valid token
+* Redirects or returns error for invalid/used token
+
+  POST /vote/submit
+
+* Returns 200 with receipt on valid ballot token + candidate selection
+* Rejects duplicate submission (same ballot token used twice) — this is
+tested in test_api.py Stage 3 and must be preserved
+* Returns error on invalid ballot token
+
+  GET /receipt/{receipt_token}
+
+* Returns 200 with verified=True for a valid receipt token
+
+Important: voting-service makes httpx calls to auth-service with no try/except.
+Mock the httpx client in tests to simulate auth-service being unreachable and
+assert that a meaningful error (not an unformatted 500) is returned.
+
+voting-service uses safe_json() to silently swallow JSONDecodeError from
+auth-service responses. Test that safe_json() returns None on malformed JSON
+and that the calling code handles None correctly.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000hz:,,,,,,,In Progress,23/Mar/26 9:34 AM
+Add pytest unit tests for election-service,CV-12,10303,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:57 PM,23/Mar/26 4:16 PM,23/Mar/26 3:58 PM,,,0,"Create election-service/tests/test_election.py with pytest unit tests.
+
+Key functions to test in election-service/app.py:
+
+  POST /elections
+
+* Returns 201 with election_id on valid input (title, description, options)
+* Returns 400/422 on missing required fields
+
+  GET /elections
+
+* Returns list of elections for authenticated organiser
+* Returns 401/403 for unauthenticated request
+
+  GET /elections/{id}
+
+* Returns election detail for valid id
+* Returns 404 for non-existent election
+
+  POST /elections/{id}/open
+
+* Returns 200 and changes status from draft to open
+* Returns 400/403 if election is already open
+
+  POST /elections/{id}/close
+
+* Returns 200 and changes status from open to closed
+* Results blocked while election is open (tested in test_api.py Stage 4)
+
+Note: election-service/app.py has NO try/except blocks anywhere and NO
+logger declared. All DB and HTTP errors propagate completely unhandled.
+Tests should use a mock DB pool to simulate DB failures and confirm that
+FastAPI's default 500 handler is triggered rather than a silent hang.
+
+HTML form handlers use flash() for user-visible errors — test both the
+JSON API endpoints and the form endpoints separately.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000i7:,,,,23/Mar/26 4:16 PM;63bb170a2341bff4fff5d364;Found a bug in the code where the html form endpoint has no server side validation,,,In Progress,23/Mar/26 9:34 AM
+Add pytest unit tests for frontend-service,CV-13,10304,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:57 PM,23/Mar/26 9:14 PM,23/Mar/26 9:13 PM,,,0,"Create frontend-service/tests/test_frontend.py with pytest unit tests.
+
+Key functions to test in frontend-service/app.py:
+
+  GET /
+
+* Returns 200 with HTML landing page (already tested in test_api.py Stage 6
+as a single smoke test — expand this with content assertions)
+
+  GET /health (new endpoint — depends on health check fix ticket)
+
+* Returns {""status"": ""healthy"", ""service"": ""frontend""}
+
+  Auth-proxied routes (login, dashboard, etc.)
+
+* Unauthenticated requests redirect to login page
+* Authenticated requests with valid JWT render correct template
+
+Note: frontend-service has 3 unused dependencies that should be removed
+before writing tests:
+  asyncpg==0.29.0    (no DB access in this service)
+  passlib[bcrypt]==1.7.4  (unused)
+  bcrypt==4.0.1      (unused)
+
+frontend-service makes httpx calls to auth-service with no try/except.
+Use mock httpx in tests to simulate auth-service being unreachable.
+The safe_json() helper silently swallows JSONDecodeError — test that
+the UI returns a meaningful error page rather than a blank 500.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000if:,,,,,,,In Progress,23/Mar/26 9:34 AM
+Add pytest unit tests for voter-service (admin-service),CV-15,10306,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:59 PM,23/Mar/26 9:35 PM,23/Mar/26 9:35 PM,,,0,"Create voter-service/tests/test_voter.py with pytest unit tests.
+
+Note on naming: voter-service/app.py is deployed as admin-service in the
+cluster (admin-deployment.yaml). The health endpoint currently returns
+{""service"": ""voter""} — this will return {""service"": ""admin""} after the
+health endpoint fix ticket is resolved.
+
+Key functions to test in voter-service/app.py:
+
+  POST /elections/{id}/voters
+
+* Returns 201 with voter_id on valid input (email, date_of_birth)
+* Returns 409 when voter email already exists in election — currently
+catches broad Exception and checks ""unique"" in str(e), same pattern
+as auth-service register(). Test that the 409 is returned correctly
+and that raw str(e) is NOT leaked in the response body.
+* Returns 422 on missing fields
+
+  POST /elections/{id}/voters/upload (CSV upload)
+
+* Returns 200 with voters_added and voters_skipped counts
+* Silently skips invalid rows (current behaviour in upload_voters())
+* Test with a mixed CSV containing valid and duplicate rows
+
+  POST /elections/{id}/tokens/generate
+
+* Returns 200 with emails_sent and emails_failed counts
+* Token is inserted into voting_tokens table with 7-day expiry
+* Uses secrets.token_urlsafe(32) — 43 URL-safe characters
+* Email failures are non-fatal: emails_failed is incremented but
+the request still succeeds and tokens exist in DB
+* With MailHog deployed, assert email is received and contains
+the correct /vote/{token} URL
+
+  POST /mfa/verify
+
+* Returns 200 on correct date_of_birth
+* Returns 403 on wrong date_of_birth
+* Note: this endpoint is duplicated in both voter-service and
+auth-service — both implementations should be tested identically
+
+voter-service is the only service that actively uses its logger —
+logger.error() is called on SMTP failures in generate_tokens().
+Test that this log call fires when MailHog is unreachable.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000iv:,,,,,,,In Progress,23/Mar/26 9:34 AM
+Replace kubectl exec psql workaround in test_api.py with MailHog email flow,CV-16,10307,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 8:55 PM,23/Mar/26 11:23 PM,23/Mar/26 11:22 PM,,,0,"test_api.py currently bypasses the email flow entirely at line 387 with a
+direct database insert via kubectl exec psql:
+
+h1. Generate voting token directly via DB (SMTP unavailable in test cluster)
+
+h1. The tokens/generate endpoint generates tokens then emails them; the email
+
+h1. step hangs because outbound SMTP is blocked by network policy.
+
+  kubectl exec -n uvote-dev deployment/postgresql -- psql -U uvote_admin \
+  -d uvote -c ""INSERT INTO voting_tokens (token, voter_id, election_id, \
+  expires_at) VALUES ('<64-char hex token>', <voter_id>, <election_id>, \
+  NOW() + INTERVAL '7 days')""
+
+This workaround exists because port 587 to [smtp.gmail.com|http://smtp.gmail.com] is blocked by
+00-default-deny network policy and SMTP credentials are missing from
+admin-deployment.yaml.
+
+Once MailHog is deployed and SMTP env vars are updated, replace this
+workaround with the proper flow:
+
+# Call POST /elections/{id}/tokens/generate via the API
+# Use the MailHog helper from conftest.py to retrieve the email
+sent to the test voter address
+# Extract the /vote/{token} URL from the email body
+# Use that token for the remainder of the test stages
+
+This means the full voter journey — token generation → email delivery →
+token extraction → MFA → ballot → vote — is tested end to end without
+any direct DB manipulation.
+
+Depends on:
+
+* Deploy MailHog to cluster as a test SMTP server
+* Configure email-service to point to MailHog in test environment
+* Write test helper function to query MailHog API and extract voting token URL
+* Add MailHog extraction to conftest.py as a shared pytest fixture",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000j3:,,,,23/Mar/26 11:23 PM;63bb170a2341bff4fff5d364;this was completed as part of cv-9,,,In Progress,23/Mar/26 11:22 PM
+Add pytest unit tests for shared/ utilities,CV-18,10309,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 8:56 PM,20/Mar/26 10:09 PM,,,,0,"The shared/ directory contains 3 modules that every service depends on,
+none of which have any tests:
+
+  shared/security.py
+  shared/schemas.py
+  shared/database.py
+
+Create tests/test_shared.py covering:
+
+  security.py:
+
+* Token generation: secrets.token_urlsafe(32) produces a 43-character
+URL-safe string — assert length and character set
+* BALLOT_TOKEN_SECRET: assert that the hardcoded fallback default is
+not used when the env var is set (this is the security risk flagged
+in the audit at shared/security.py lines 64-66)
+* bcrypt password hashing: assert hash is produced and verify() returns
+True for correct password, False for wrong password
+* JWT encoding/decoding: assert payload round-trips correctly with
+organiser_id, email, exp fields intact
+
+  schemas.py:
+
+* Pydantic model validation: assert that required fields raise
+ValidationError when missing
+* EmailStr fields: assert invalid email formats are rejected
+* Assert that TokenVerifyResponse only exposes {valid, organiser_id,
+email, error} — election_id and voter_id are intentionally stripped
+from the HTTP response (noted in test_api.py Check 4 comments)
+
+  database.py:
+
+* Connection pool initialisation: mock asyncpg.create_pool and assert
+it is called with the correct DATABASE_URL env var
+* Assert pool is singleton — calling init_db() twice does not create
+a second pool
+* Assert get_db() raises a meaningful error if pool is not initialised
+
+Add to requirements-dev.txt if not already present:
+  pytest-asyncio==0.23.0  (required for async pool tests)
+  pytest-mock==3.12.0     (required for mocking asyncpg and env vars)",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000jj:,,,,,,,In Progress,20/Mar/26 10:09 PM
+Reconcile database schema and separate concerns into three files,CV-34,10357,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 7:38 AM,21/Mar/26 8:27 AM,21/Mar/26 7:46 AM,,,0,"The project currently has two divergent SQL schema files that are causing runtime failures across all application services:
+
+{{uvote-platform/k8s/database/schema.sql}} (Luke) — simple schema used by the Kubernetes cluster. Contains {{admins}}, {{elections}}, {{candidates}}, {{voters}}, {{voting_tokens}}, {{votes}}, {{audit_logs}}. Also contains {{CREATE USER}}, {{GRANT}}, and {{INSERT}} seed data mixed into the same file.
+
+{{database/init.sql}} (Hafsa) — full production schema used by Docker Compose. Contains {{organisations}}, {{organisers}}, {{elections}}, {{voters}}, {{voter_mfa}}, {{election_options}}, {{voting_tokens}}, {{blind_tokens}}, {{encrypted_ballots}}, {{vote_receipts}}, {{tallied_votes}}. Has pgcrypto, anonymity bridge design, and automatic hash triggers. Missing: {{audit_log}} table, database roles, and GRANTs.
+
+All application services were written against {{init.sql}}. The Kubernetes cluster runs {{schema.sql}}. This mismatch causes {{UndefinedTableError}} at runtime — for example {{auth-service}} crashes with {{relation ""organisers"" does not exist}} because the cluster is missing the correct tables.
+
+----
+
+*Root Cause*
+
+The two schemas were developed independently without coordination. The cluster schema and the application code are pointing at different table names throughout.
+
+----
+
+*Deliverables*
+
+Produce three new files that replace {{schema.sql}} on the cluster. {{database/init.sql}} must not be modified.
+
+*File 1 —* {{uvote-platform/k8s/database/schema.sql}} *(replace existing)*
+
+Combined schema containing table definitions, indexes, triggers, and extensions only. No {{CREATE USER}}, no {{GRANT}}, no {{INSERT}}.
+
+* Base: {{init.sql}} — use as-is, it is the correct application schema
+* Add: {{audit_log}} table following the {{init.sql}} design pattern ({{event_type}}, {{actor_type}}, {{actor_id}}, {{detail JSONB}}, {{event_hash}}, {{previous_hash}})
+* Add: immutability trigger on {{audit_log}} matching the {{encrypted_ballots}} pattern ({{prevent_audit_modification}}, {{immutable_audit}})
+* Add: auto-hash trigger on {{audit_log}} matching the {{generate_ballot_hash}} pattern ({{generate_audit_hash}}, {{auto_audit_hash}})
+* Keep: {{DROP TABLE IF EXISTS}} block at top covering all tables in dependency order
+* Keep: {{CREATE EXTENSION IF NOT EXISTS pgcrypto;}} after the DROP block
+* Add header comment documenting: anonymity vs accountability design principle, table groups (tenancy, identity, election, ballot auth, ledger, audit), and that roles and seed data are in separate files
+
+*File 2 —* {{uvote-platform/k8s/database/create_roles.sql}} *(new file)*
+
+All {{CREATE USER}} and {{GRANT}} statements only. No table definitions, no seed data. Applied after {{schema.sql}}.
+
+Take the role definitions from {{schema.sql}} and update all table and sequence names to match the combined schema:
+
+||Role||Access||
+|{{auth_service}}|{{organisers}} (not {{admins}})|
+|{{voting_service}}|{{encrypted_ballots}} (not {{votes}}), {{election_options}} (not {{candidates}}), {{blind_tokens}}|
+|{{election_service}}|{{elections}}, {{election_options}} (not {{candidates}})|
+|{{results_service}}|{{encrypted_ballots}}, {{elections}}, {{election_options}}, {{tallied_votes}}|
+|{{audit_service}}|{{audit_log}} (not {{audit_logs}})|
+|{{admin_service}}|{{voters}}, {{election_options}}, {{voting_tokens}}, {{organisations}}, {{organisers}}|
+
+Add header comment explaining: per-service least-privilege grants, placeholder passwords overridden at deploy time by {{deploy_platform.py}}, apply order.
+
+*File 3 —* {{uvote-platform/k8s/database/seed_data.sql}} *(new file)*
+
+All {{INSERT}} statements only. No table definitions, no roles. Applied after {{create_roles.sql}}.
+
+* {{INSERT INTO organisations}} — Demo University
+* {{INSERT INTO organisers}} — {{admin@uvote.com}} / bcrypt hash of {{admin123}}, {{org_id = 1}}
+* {{INSERT INTO elections}} — Student Council 2026, {{organiser_id = 1}}
+* {{INSERT INTO election_options}} (not {{candidates}}) — Alice Johnson, Bob Smith, Carol White, {{election_id = 1}}
+
+All table names must match the combined schema. Add header comment warning that this is development/test seed data only and the admin password must be changed before any real deployment.
+
+----
+
+*Apply order*
+
+{noformat}schema.sql → create_roles.sql → seed_data.sql
+{noformat}
+
+{{deploy_platform.py}} must be updated to apply all three files in this order. This is a follow-up task within this ticket.
+
+----
+
+*Constraints*
+
+* Do not modify {{database/init.sql}}
+* Do not modify any application service code
+* {{schema.sql}} must contain zero {{CREATE USER}}, {{GRANT}}, or {{INSERT}} statements
+* {{create_roles.sql}} must contain zero {{CREATE TABLE}} statements
+* {{seed_data.sql}} must contain zero {{CREATE TABLE}} statements
+* All three files must be valid PostgreSQL
+* If {{init.sql}} already contains an {{audit_log}} table use it as-is — do not create a duplicate
+
+----
+
+*Acceptance Criteria*
+
+* {{uvote-platform/k8s/database/schema.sql}} contains only table definitions, indexes, triggers, and extensions
+* {{uvote-platform/k8s/database/create_roles.sql}} exists and contains all role creation and grant statements with correct table names
+* {{uvote-platform/k8s/database/seed_data.sql}} exists and contains all seed data with correct table names
+* {{deploy_platform.py}} applies all three files in order during cluster setup
+* Running {{setup_k8s_platform.py}} followed by {{deploy_platform.py}} produces a cluster where {{auth-service}} starts without {{UndefinedTableError}}
+* {{test_db.py --quick}} passes all 10 tests against the rebuilt cluster",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000jn:,,,,,,,In Progress,21/Mar/26 7:38 AM
+Add unit tests for shared/logging_config.py,CV-19,10310,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 9:34 PM,20/Mar/26 9:43 PM,,,,0,"Create a pytest unit test file at {{tests/test_logging_config.py}} that validates the centralised logging configuration introduced in {{shared/logging_config.py}}. The tests must run without a live database or running services — no cluster, no Docker, no external dependencies.
+
+----
+
+*Test Cases*
+
+*1 —* {{configure_logging()}} *installs a handler on the root logger*
+
+Call {{configure_logging()}} and assert that {{logging.getLogger('')}} has at least one handler attached. This confirms {{dictConfig}} applied successfully.
+
+*2 — Output is valid JSON*
+
+After calling {{configure_logging()}}, redirect the root logger's stream handler to a {{io.StringIO}} buffer, emit one {{logger.info(...)}} call, and assert the captured line parses with {{json.loads()}} without raising an exception.
+
+*3 — Required fields are present in every log line*
+
+Parse the captured JSON and assert all four fields are present: {{asctime}}, {{name}}, {{levelname}}, {{message}}.
+
+*4 —* {{asctime}} *matches the configured date format*
+
+Assert the {{asctime}} value matches the pattern {{%Y-%m-%dT%H:%M:%SZ}} (e.g. {{2026-03-20T14:00:00Z}}). Use {{datetime.strptime()}} to validate — do not use regex.
+
+*5 — Logger name is preserved correctly*
+
+Call {{logging.getLogger('auth-service')}} after {{configure_logging()}}, emit a log line, and assert the {{name}} field in the JSON output equals {{""auth-service""}}. Repeat for one other service name (e.g. {{""voter-service""}}).
+
+*6 — Log level is reflected in output*
+
+Emit one {{logger.info(...)}} and one {{logger.warning(...)}} call, capture both lines, and assert {{levelname}} is {{""INFO""}} and {{""WARNING""}} respectively.
+
+*7 — Messages below INFO are suppressed*
+
+Emit a {{logger.debug(...)}} call and assert nothing is written to the buffer (i.e. the root logger level of {{INFO}} is enforced).
+
+*8 —* {{configure_logging()}} *is idempotent*
+
+Call {{configure_logging()}} twice and assert the root logger does not accumulate duplicate handlers (i.e. {{len(logging.getLogger('').handlers)}} does not increase on the second call). If the current implementation does not handle this, the test should document the behaviour and be marked {{xfail}} until fixed.
+
+----
+
+*Implementation Notes*
+
+* Use {{pytest}} with {{io.StringIO}} to capture log output — do not write to disk or use {{capfd}}.
+* Add a {{@pytest.fixture(autouse=True)}} that resets {{logging.root.handlers}} to {{[]}} before each test to prevent state leakage between cases (mirrors the function-scoped rollback pattern used in {{test_api.py}}).
+* {{pythonjsonlogger}} must be installed in the test environment. Add it to a {{requirements-test.txt}} or the existing {{requirements.txt}} in {{shared/}} if not already present.
+* Run with: {{python3 -m pytest tests/test_logging_config.py -v}}
+
+----
+
+*Acceptance Criteria*
+
+* [ ] All 8 test cases implemented in {{tests/test_logging_config.py}}
+* [ ] All tests pass with {{pytest}} and produce no warnings
+* [ ] No running cluster, database, or service is required to execute the suite
+* [ ] Tests are isolated — passing or failing one does not affect another",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000jr:,,,,,,,In Progress,20/Mar/26 9:43 PM
+Add health check assertions for all services to test_api.py,CV-8,10299,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,20/Mar/26 7:38 PM,21/Mar/26 7:26 AM,21/Mar/26 7:26 AM,,,0,"test_api.py currently has no health check stage. The first assertion is an
+auth registration call. Add a Stage 0 health check that runs before all other
+stages and fails fast if any service is unreachable.
+
+Expected responses per service:
+  auth-service     GET /health → {""status"": ""healthy"", ""service"": ""auth""}
+  election-service GET /health → {""status"": ""healthy"", ""service"": ""election""}
+  voting-service   GET /health → {""status"": ""healthy"", ""service"": ""voting""}
+  results-service  GET /health → {""status"": ""healthy"", ""service"": ""results""}
+  voter-service    GET /health → {""status"": ""healthy"", ""service"": ""admin""}
+                   (returns ""admin"" after fix in preceding ticket)
+  frontend-service GET /health → {""status"": ""healthy"", ""service"": ""frontend""}
+                   (endpoint does not exist yet — depends on preceding ticket)
+
+The health check stage should assert both status == ""healthy"" AND the correct
+service name field. The current audit found these are shallow checks with no
+DB connectivity probe — that is acceptable for now.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000jz:,,,,,,,In Progress,20/Mar/26 9:52 PM
+Fix setup_k8s_platform.py to apply create_roles.sql and seed_data.sql,CV-35,10358,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 8:14 AM,21/Mar/26 8:15 AM,21/Mar/26 8:15 AM,,,0,"setup_k8s_platform.py apply_database_schema() (line 323) applies only
+schema.sql. The two additional SQL files at the same path are never applied:
+
+  uvote-platform/k8s/database/create_roles.sql
+  uvote-platform/k8s/database/seed_data.sql
+
+Current code:
+  schema_file = k8s_dir / ""database"" / ""schema.sql""
+
+h1. only this file is piped to psql — nothing else
+
+Impact:
+
+* seed_data.sql not applied → no default organiser account ([admin@uvote.com|mailto:admin@uvote.com]),
+no sample election, no election options → system is unrunnable after fresh
+cluster setup. BREAKING.
+* create_roles.sql not applied → six per-service PostgreSQL users
+(auth_service, voting_service, election_service, results_service,
+audit_service, admin_service) and their GRANT statements are never
+created. All services currently fall back to uvote_admin superuser.
+
+Fix: After applying schema.sql, apply create_roles.sql then seed_data.sql
+in the correct order using the same kubectl exec psql pattern already
+in the function:
+
+h1. Step 1 — already done
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote < schema.sql
+
+h1. Step 2 — add this
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote < create_roles.sql
+
+h1. Step 3 — add this
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote < seed_data.sql
+
+Order is critical — create_roles.sql depends on tables existing (schema.sql
+must be applied first), and seed_data.sql depends on roles existing
+(create_roles.sql must be applied second).",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000k3:,,,,,,,In Progress,21/Mar/26 8:14 AM
+Expose /metrics endpoint on all FastAPI services,CV-21,10344,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:23 AM,23/Mar/26 11:50 PM,23/Mar/26 11:24 PM,,,0,"Wire prometheus-fastapi-instrumentator into all 6 FastAPI app.py files
+to expose a /metrics endpoint on each service.
+
+Add the following to each app.py after app initialisation:
+
+  from prometheus_fastapi_instrumentator import Instrumentator
+  Instrumentator().instrument(app).expose(app)
+
+This automatically instruments all existing routes and exposes:
+
+* http_requests_total (counter by method, path, status)
+* http_request_duration_seconds (histogram — p50/p95/p99 latency)
+* http_requests_in_progress (gauge)
+
+Services and their ports for Prometheus scrape config:
+  auth-service:     5001/metrics
+  election-service: 5002/metrics
+  voting-service:   5003/metrics
+  results-service:  5004/metrics
+  voter-service:    5002/metrics (deployed as admin-service)
+  frontend-service: 5000/metrics
+
+The platform infrastructure doc identifies these SLIs as targets:
+
+* Request rate per service per endpoint
+* Response time percentiles (p50, p95, p99)
+* Error rate per service (5xx_responses / total_responses * 100)
+* Active DB connections per pool
+
+Note: the zero-trust network policies (00-default-deny) will block
+Prometheus from scraping /metrics unless an egress policy is added
+allowing Prometheus pod → each service on the service port.
+Create k8s/network-policies/05-allow-prometheus-scrape.yaml as part
+of this ticket.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000kf:,,,,,,,In Progress,23/Mar/26 11:24 PM
+Add prometheus-fastapi-instrumentator to all service requirements.txt,CV-20,10343,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:23 AM,23/Mar/26 11:51 PM,23/Mar/26 11:50 PM,,,0,"Add prometheus-fastapi-instrumentator as a dependency to the requirements.txt
+of all 6 services: auth-service, election-service, voting-service,
+results-service, voter-service, frontend-service.
+
+No service currently exposes a /metrics endpoint. The platform infrastructure
+doc confirms this is fully absent — grep for ""/metrics"" across all app.py
+files returns 0 matches.
+
+Add to each requirements.txt:
+  prometheus-fastapi-instrumentator==6.1.0
+
+This is a prerequisite for the /metrics endpoint ticket. Prometheus cannot
+scrape any service until this is installed and wired up.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000kj:,,,,,,,In Progress,23/Mar/26 11:24 PM
+Deploy Prometheus to local Kind cluster,CV-22,10345,Task,In Progress,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Hafsa Moin,63b0b6722c70aae1e6fa7a97,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:24 AM,24/Mar/26 7:36 AM,23/Mar/26 11:56 PM,,,0,"Deploy Prometheus to the uvote-dev namespace on the local Kind cluster
+using the kube-prometheus-stack Helm chart.
+
+The platform infrastructure doc confirms Prometheus is fully absent —
+grep for ""prometheus"" in k8s/ returns 0 YAML matches, only ADR references.
+
+Install via Helm:
+  helm repo add prometheus-community \
+    [https://prometheus-community.github.io/helm-charts|https://prometheus-community.github.io/helm-charts|smart-link] 
+  helm install prometheus prometheus-community/kube-prometheus-stack \
+    --namespace monitoring --create-namespace \
+    -f k8s/monitoring/prometheus-values.yaml
+
+Create k8s/monitoring/prometheus-values.yaml with scrape config
+targeting all 6 UVote services:
+
+  additionalScrapeConfigs:
+    - job_name: uvote-services
+      static_configs:
+        - targets:
+          - auth-service.uvote-dev:5001
+          - election-service.uvote-dev:5002
+          - voting-service.uvote-dev:5003
+          - results-service.uvote-dev:5004
+          - admin-service.uvote-dev:5002
+          - frontend-service.uvote-dev:5000
+      metrics_path: /metrics
+      scrape_interval: 15s
+
+Verify Prometheus is scraping all 6 services by checking
+Prometheus UI → Status → Targets — all should show State: UP.
+
+Key security metrics to monitor per the network security doc:
+
+* Failed admin login attempts > 10/min → P1 alert
+* NetworkPolicy deny count > 100/min sustained → P1 alert
+* Pod restart count > 3 in 5 minutes → P2 alert
+* DB connection count > 80% of max_connections → P2 alert",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000kn:,,,,,,,In Progress,23/Mar/26 11:24 PM
+Deploy Grafana to local Kind cluster and configure Prometheus datasource,CV-23,10346,Task,In Progress,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Hafsa Moin,63b0b6722c70aae1e6fa7a97,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:24 AM,24/Mar/26 7:36 AM,21/Mar/26 5:24 AM,,,0,"Deploy Grafana to the monitoring namespace on the local Kind cluster.
+Grafana is included in the kube-prometheus-stack Helm chart installed
+in the previous ticket — enable it via prometheus-values.yaml:
+
+  grafana:
+    enabled: true
+    adminPassword: ""uvote-grafana-admin""
+    service:
+      type: ClusterIP
+
+Configure Prometheus as the default datasource:
+  grafana:
+    datasources:
+      datasources.yaml:
+        apiVersion: 1
+        datasources:
+          - name: Prometheus
+            type: prometheus
+            url: [http://prometheus-kube-prometheus-prometheus:9090|http://prometheus-kube-prometheus-prometheus:9090]
+            isDefault: true
+
+Verify by port-forwarding Grafana:
+  kubectl port-forward -n monitoring svc/prometheus-grafana 3001:80
+
+Login with admin / uvote-grafana-admin and confirm Prometheus
+datasource shows green / ""Data source is working"".
+
+The platform infrastructure doc planned architecture is:
+  Application Pods → /metrics endpoint
+  → Prometheus (scrapes every 15s)
+  → Grafana (dashboards + alerting)",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000kv:,,,,,,,In Progress,23/Mar/26 11:24 PM
+Create Grafana SLI dashboard for UVote services,CV-24,10347,Task,In Progress,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Hafsa Moin,63b0b6722c70aae1e6fa7a97,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:24 AM,24/Mar/26 7:36 AM,21/Mar/26 5:24 AM,,,0,"Create a Grafana dashboard covering the SLIs defined in the platform
+infrastructure doc for all 6 UVote services.
+
+Create k8s/monitoring/dashboards/uvote-sli-dashboard.json with panels for:
+
+# Request Rate (req/s per service)
+PromQL: rate(http_requests_total{job=""uvote-services""}[1m])
+# Error Rate (5xx responses as % of total)
+PromQL: rate(http_requests_total{status=~""5..""}[1m])
+        / rate(http_requests_total[1m]) * 100
+SLO target: < 1% error rate
+# Latency p50 / p95 / p99
+PromQL: histogram_quantile(0.95,
+        rate(http_request_duration_seconds_bucket[5m]))
+SLO target: p95 < 500ms
+# Pod Availability (pods running vs desired)
+PromQL: kube_deployment_status_replicas_available
+        / kube_deployment_spec_replicas
+# Active DB Connections per service
+PromQL: asyncpg_pool_size (requires custom metric)
+# Vote submission rate
+PromQL: rate(http_requests_total{path=""/vote/submit""}[1m])
+# Auth failure rate (failed logins)
+PromQL: rate(http_requests_total
+        {path=""/login"", status=""401""}[1m])
+Alert threshold: > 10/min per the network security doc (P1)",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000l3:,,,,,,,In Progress,23/Mar/26 11:24 PM
+Configure AlertManager rules for UVote,CV-25,10348,Task,In Progress,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Hafsa Moin,63b0b6722c70aae1e6fa7a97,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:24 AM,24/Mar/26 7:36 AM,21/Mar/26 5:25 AM,,,0,"Create AlertManager alerting rules based on the thresholds defined in
+the platform infrastructure and network security docs.
+
+Create k8s/monitoring/alerting-rules.yaml with the following alerts:
+
+  P0 — Critical (hash chain integrity):
+    - Hash chain verification failures: any failure triggers immediately
+      (no votes should ever fail hash verification)
+
+  P1 — High (active threat indicators):
+    - Error rate > 1% sustained for 5 minutes
+    - Failed admin login attempts > 10/min
+    - NetworkPolicy deny count > 100/min sustained
+    - Ingress request rate > 1000 req/s sustained
+
+  P2 — Warning (resource pressure):
+    - Pod restart count > 3 in 5 minutes
+    - DB connection count > 80% of max_connections
+    - Any pod in CrashLoopBackOff state
+    - Certificate expiry < 7 days (future)
+
+Configure AlertManager to route P0/P1 alerts to a Slack webhook
+or email. For local Kind cluster, log to alertmanager stdout is
+acceptable for demo purposes.
+
+Add to prometheus-values.yaml:
+  alertmanager:
+    enabled: true
+    config:
+      route:
+        receiver: uvote-alerts
+      receivers:
+        - name: uvote-alerts",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000lb:,,,,,,,In Progress,24/Mar/26 7:36 AM
+Deploy Elasticsearch single-node to local Kind cluster,CV-26,10349,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:25 AM,24/Mar/26 9:31 AM,24/Mar/26 9:29 AM,,,0,"Deploy a single-node Elasticsearch instance to the monitoring namespace
+on the local Kind cluster.
+
+The platform infrastructure doc confirms Elasticsearch is completely absent —
+grep -r elasticsearch . returns 0 matches in code or manifests.
+
+Deploy using the Elastic Helm chart:
+  helm repo add elastic [https://helm.elastic.co|https://helm.elastic.co]
+  helm install elasticsearch elastic/elasticsearch \
+    --namespace monitoring \
+    -f k8s/logging/elasticsearch-values.yaml
+
+Create k8s/logging/elasticsearch-values.yaml for single-node Kind setup:
+  replicas: 1
+  minimumMasterNodes: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  volumeClaimTemplate:
+    resources:
+      requests:
+        storage: 5Gi
+
+Note: default Elasticsearch requests 2Gi RAM per node. The Kind cluster
+runs on approximately 16GB RAM shared with all 6 UVote services.
+Limit Elasticsearch to 2Gi to avoid starving the application pods.
+
+Verify by port-forwarding:
+  kubectl port-forward -n monitoring svc/elasticsearch-master 9200:9200
+  curl [http://localhost:9200/_cluster/health|http://localhost:9200/_cluster/health]
+
+Expected: {""status"":""green""} or {""status"":""yellow""} for single-node.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000lj:,,,,,,,In Progress,24/Mar/26 7:51 AM
+Deploy Fluent Bit as DaemonSet for container log collection,CV-27,10350,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:25 AM,24/Mar/26 10:29 AM,24/Mar/26 1:07 PM,,,0,"Deploy Fluent Bit as a DaemonSet to collect container logs from all
+UVote pods and forward them to Elasticsearch.
+
+Fluent Bit is chosen over Fluentd for lower resource overhead, which
+matters on the Kind cluster where RAM is shared with 6 application services.
+
+Deploy using the Fluent Bit Helm chart:
+  helm repo add fluent [https://fluent.github.io/helm-charts|https://fluent.github.io/helm-charts|smart-link] 
+  helm install fluent-bit fluent/fluent-bit \
+    --namespace monitoring \
+    -f k8s/logging/fluent-bit-values.yaml
+
+Create k8s/logging/fluent-bit-values.yaml:
+  config:
+    inputs: |
+      [INPUT]
+          Name tail
+          Path /var/log/containers/uvote-_.log_
+          _Parser json_
+          _Tag uvote._
+          Mem_Buf_Limit 5MB
+
+{noformat}outputs: |
+  [OUTPUT]
+      Name es
+      Match uvote.*
+      Host elasticsearch-master.monitoring
+      Port 9200
+      Index uvote-logs
+      Type _doc
+
+filters: |
+  [FILTER]
+      Name kubernetes
+      Match uvote.*
+      Merge_Log On
+      Keep_Log Off
+      K8S-Logging.Parser On{noformat}
+
+This configuration:
+
+* Tails only uvote-* container logs (not system/monitoring pods)
+* Parses JSON log output (requires structured logging tickets done first)
+* Tags logs with uvote.* for routing to Elasticsearch
+* Enriches logs with Kubernetes metadata (pod name, namespace, service)
+* Indexes into uvote-logs in Elasticsearch
+
+Note: The structured JSON logging tickets must be completed first.
+Without JSON formatting in app.py files, Fluent Bit will ingest
+unstructured text that Kibana cannot parse or filter meaningfully.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000lr:,,,,,,,In Progress,24/Mar/26 7:51 AM
+Deploy Kibana and create uvote-* index pattern,CV-28,10351,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:26 AM,24/Mar/26 8:56 PM,24/Mar/26 8:56 PM,,,0,"Deploy Kibana to the monitoring namespace and configure it to index
+UVote logs from Elasticsearch.
+
+Deploy using the Elastic Helm chart:
+  helm install kibana elastic/kibana \
+    --namespace monitoring \
+    -f k8s/logging/kibana-values.yaml
+
+Create k8s/logging/kibana-values.yaml:
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  elasticsearchHosts: ""[http://elasticsearch-master:9200|http://elasticsearch-master:9200]""
+
+Verify by port-forwarding:
+  kubectl port-forward -n monitoring svc/kibana-kibana 5601:5601
+
+Create the uvote-* index pattern in Kibana:
+  Stack Management → Index Patterns → Create index pattern
+  Pattern: uvote-logs-*
+  Timestamp field: @timestamp
+
+Useful fields available in the index once structured JSON logging
+is in place:
+
+* service (auth, election, voting, results, voter, frontend)
+* level (INFO, WARNING, ERROR)
+* message
+* kubernetes.pod_name
+* kubernetes.namespace_name",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000lz:,,,,,,,In Progress,24/Mar/26 7:51 AM
+Create Kibana dashboard for UVote log analysis,CV-29,10352,Task,In Progress,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:27 AM,24/Mar/26 7:51 AM,25/Mar/26 12:47 AM,,,0,"Create a Kibana dashboard to surface the most operationally useful log data
+from the uvote-logs-* index.
+
+Create the following visualisations and combine into a single dashboard:
+
+# Error log volume over time (line chart)
+Filter: level:ERROR
+Group by: service
+Shows which service is generating the most errors over time
+# Auth failure rate (bar chart)
+Filter: service:auth AND message:_invalid_ OR message:_failed_
+Shows failed login attempts — alert threshold is 10/min per
+the network security doc (P1 indicator)
+# Vote submission rate (line chart)
+Filter: service:voting AND message:_vote_
+Shows voting activity during an active election
+# SMTP / email failure log entries (table)
+Filter: service:voter AND level:ERROR
+voter-service is the only service that currently logs email
+failures (logger.error on SMTP failure in generate_tokens()).
+This table surfaces those failures in Kibana.
+# Top error messages (pie chart)
+Filter: level:ERROR
+Group by: message.keyword
+Identifies the most frequent error types across all services
+# Log stream by service (table, live tail)
+All services, sorted by @timestamp descending
+Useful for real-time monitoring during demos
+# Audit chain verification results (table) ← new panel
+Filter: service:audit
+Fields: @timestamp, chain_valid, total_entries, first_broken_id
+Shows the full history of every chain verification run from the
+audit-service monitor_chain() background task. Each entry is a
+structured JSON log emitted every 60 seconds by audit-service.
+A chain_valid:false entry in this table means tampering was
+detected and should immediately trigger investigation.
+Complements the Grafana live stat panel (uvote_audit_chain_valid)
+by providing a historical searchable record rather than just
+the current state.
+
+Note: panels 1-6 depend on the structured JSON formatter ticket being
+completed first. Without JSON formatting in app.py files, Fluent Bit
+will ingest unstructured text that Kibana cannot parse or filter.
+Panel 7 specifically depends on the audit-service JSON logging additions
+in the structured formatter ticket.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000m7:,,,,,,,In Progress,24/Mar/26 7:51 AM
+Verify hash chain triggers are applied in the live database schema,CV-30,10353,Task,To Do,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,,,0,"The Stage 1 feedback explicitly flagged that hash chaining was documented
+but not implemented in the running system.
+
+ADR-007 defines two PostgreSQL trigger functions that should exist in
+uvote-platform/k8s/database/schema.sql:
+
+# generate_audit_hash() — fires on INSERT into audit_log, computes:
+  SHA256(event_type || election_id || actor_id || created_at || uuid)
+  stored in event_hash column
+# prevent_audit_modification() — fires BEFORE UPDATE/DELETE on
+audit_log, raises exception:
+  'Audit log entries are immutable and cannot be modified or deleted'
+# generate_vote_hash_trigger — fires on INSERT into votes, populates
+vote_hash and previous_hash columns (ballot hash chain)
+
+Verify these triggers exist and are firing in the live cluster:
+
+  kubectl exec -n uvote-dev deployment/postgresql -- psql \
+    -U uvote_admin -d uvote -c \
+    ""SELECT trigger_name, event_manipulation, event_object_table
+     FROM information_schema.triggers
+     WHERE trigger_schema = 'public';""
+
+Expected triggers:
+
+* generate_audit_hash on INSERT on audit_log
+* immutable_audit on UPDATE/DELETE on audit_log
+* generate_vote_hash on INSERT on votes
+* prevent_vote_update on UPDATE on votes
+* prevent_vote_delete on DELETE on votes
+
+If any are missing, the schema.sql has not been fully applied.
+Re-apply via setup_k8s_platform.py or manually via kubectl exec psql.
+
+This ticket is a prerequisite for all other hash chain tickets.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000mf:,,,,,,,To Do,21/Mar/26 5:28 AM
+Implement audit event logging in all backend services,CV-31,10354,Task,To Do,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,,,0,"The hash chain trigger fires on every INSERT into audit_log, but the
+services are not confirmed to be sending audit events consistently.
+
+ADR-007 defines these events that must be logged:
+
+* ADMIN_LOGIN_SUCCESS / ADMIN_LOGIN_FAILURE (auth-service)
+* ELECTION_CREATED / ELECTION_OPENED / ELECTION_CLOSED (election-service)
+* VOTER_ADDED / TOKEN_GENERATED (voter-service)
+* BALLOT_ISSUED (auth-service — blind ballot token)
+* VOTE_CAST — must record receipt_token but NEVER candidate_id
+(anonymity requirement per ADR-015)
+* RESULTS_ACCESSED (results-service)
+
+For each service, audit events must be sent to audit-service:8005
+via HTTP POST. The network policy 04-allow-audit.yaml already permits
+this traffic from all 6 backend services.
+
+Audit event payload:
+  {
+    ""event_type"": ""VOTE_CAST"",
+    ""election_id"": 42,
+    ""actor_id"": null,       ← null for voter events (anonymity)
+    ""detail"": {
+      ""receipt_token"": ""abc123""   ← never include candidate_id
+    }
+  }
+
+Verify each service is sending audit events by checking the audit_log
+table after a full test run:
+  kubectl exec -n uvote-dev deployment/postgresql -- psql \
+    -U uvote_admin -d uvote \
+    -c ""SELECT event_type, created_at, event_hash FROM audit_log
+        ORDER BY created_at DESC LIMIT 20;""
+
+All rows should have a non-NULL event_hash confirming the trigger fired.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000mn:,,,,,,,To Do,21/Mar/26 5:28 AM
+Implement hash chain verification endpoint in audit-service,CV-32,10355,Task,To Do,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,21/Mar/26 5:28 AM,,,0,"The hash chain exists in the database but there is no endpoint to
+verify its integrity. Your lecturer needs to see the chain being
+actively verified, not just stored.
+
+Add a GET /audit/verify endpoint to audit-service/app.py:
+
+  @app.get(""/audit/verify"")
+  async def verify_chain():
+      """"""
+      Reads all audit_log entries in order and recomputes each hash.
+      Returns chain_valid: true if unbroken, false + first_broken_id
+      if tampering is detected.
+      """"""
+
+The verification logic in Python using hashlib:
+
+  import hashlib
+
+  async def verify_audit_chain(conn):
+      rows = await conn.fetch(
+          ""SELECT log_id, event_type, election_id, actor_id,
+                  created_at, event_hash, previous_hash
+           FROM audit_log ORDER BY log_id ASC""
+      )
+      previous_hash = """"
+      for row in rows:
+          expected = hashlib.sha256(
+              (row[""event_type""] +
+               str(row[""election_id""] or """") +
+               str(row[""actor_id""] or """") +
+               str(row[""created_at""]) +
+               row[""previous_hash""]).encode()
+          ).hexdigest()
+          if row[""event_hash""] != expected:
+              return {""chain_valid"": False,
+                      ""first_broken_id"": row[""log_id""]}
+          previous_hash = row[""event_hash""]
+      return {""chain_valid"": True, ""total_entries"": len(rows)}
+
+Note: the exact hash input must match the PostgreSQL trigger in
+schema.sql (generate_audit_hash function). Align the Python
+computation with the SQL digest() inputs precisely.
+
+This endpoint is internal-only — audit-service has no ingress route
+(04-allow-audit.yaml only permits traffic from backend services,
+not from the ingress controller). Expose it via kubectl port-forward
+for demo purposes.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000mv:,,,,,,,To Do,21/Mar/26 5:28 AM
+Add hash chain verification to Grafana dashboard,CV-33,10356,Task,To Do,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 5:29 AM,21/Mar/26 5:29 AM,21/Mar/26 5:29 AM,,,0,"Surface hash chain integrity as a live metric in Grafana so the
+lecturer can see it on a dashboard during the demo.
+
+Add a custom Prometheus metric to audit-service/app.py:
+
+  from prometheus_client import Gauge
+
+  hash_chain_valid = Gauge(
+      ""uvote_audit_chain_valid"",
+      ""1 if audit log hash chain is intact, 0 if broken""
+  )
+
+h1. Background task — verify chain every 60 seconds
+
+  @app.on_event(""startup"")
+  async def start_chain_monitor():
+      asyncio.create_task(monitor_chain())
+
+  async def monitor_chain():
+      while True:
+          result = await verify_audit_chain()
+          hash_chain_valid.set(1 if result[""chain_valid""] else 0)
+          await asyncio.sleep(60)
+
+Add a panel to the existing Grafana SLI dashboard:
+
+  Panel title: ""Audit Chain Integrity""
+  PromQL: uvote_audit_chain_valid
+  Visualisation: Stat panel
+  Thresholds:
+    1 → Green ""INTACT""
+    0 → Red ""CHAIN BROKEN — TAMPERING DETECTED""
+
+This gives the lecturer a live green/red indicator showing the
+hash chain is being continuously verified. If any audit log entry
+is tampered with, the panel turns red immediately.
+
+Depends on:
+
+* Verify hash chain triggers are applied in live database
+* Expose /metrics endpoint on all FastAPI services
+* Deploy Grafana and configure Prometheus datasource",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000n3:,,,,,,,To Do,21/Mar/26 5:29 AM
+Fix deploy_test_platform.py CLUSTER_NAME pointing to wrong Kind cluster,CV-36,10359,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 8:15 AM,21/Mar/26 8:15 AM,21/Mar/26 8:15 AM,,,0,"deploy_test_platform.py line 37 has a hardcoded wrong cluster name:
+
+  CLUSTER_NAME = ""evote""
+
+The Kind cluster is created by setup_k8s_platform.py as ""uvote"":
+  kind create cluster --name uvote
+
+deploy_platform.py also defaults to --cluster-name uvote.
+
+Impact: Phase 1 of deploy_test_platform.py runs:
+  kubectl cluster-info --context kind-evote
+
+The context kind-evote does not exist. The actual context is kind-uvote.
+Phase 1 always aborts with ""Cluster not accessible."" The entire script
+is unusable as-is on any correctly provisioned cluster. BREAKING.
+
+Fix: Change line 37 to:
+  CLUSTER_NAME = ""uvote""",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000nj:,,,,,,,In Progress,21/Mar/26 8:15 AM
+Add post-apply verification steps to setup_k8s_platform.py schema function,CV-37,10360,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 8:15 AM,21/Mar/26 8:15 AM,21/Mar/26 8:15 AM,,,0,"setup_k8s_platform.py apply_database_schema() lines 371-378 only runs
+\dt after applying the schema to verify tables exist. It does not verify:
+
+* Roles were created (will be needed after create_roles.sql is added)
+* Seed data was inserted
+
+This means failures in create_roles.sql or seed_data.sql are silent —
+the script reports success even if roles or seed rows are missing.
+
+Fix: After applying all three SQL files, add these verification steps
+using the same kubectl exec psql pattern:
+
+h1. Verify roles exist
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote -c ""\du""
+
+h1. Expected: auth_service, voting_service, election_service,
+
+h1. results_service, audit_service, admin_service all listed
+
+h1. Verify seed data inserted
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote \
+    -c ""SELECT COUNT(*) FROM organisers;""
+
+h1. Expected: at least 1 row ([admin@uvote.com|mailto:admin@uvote.com] default account)
+
+  kubectl exec postgresql -- psql -U uvote_admin -d uvote \
+    -c ""SELECT COUNT(*) FROM elections;""
+
+h1. Expected: at least 1 row (sample election)
+
+If any verification step returns 0 or an error, the function should
+exit with a non-zero code and print a clear failure message rather
+than silently continuing.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000nr:,,,,,,,In Progress,21/Mar/26 8:15 AM
+Add per-service database credential Secrets to deploy_platform.py,CV-38,10361,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 8:15 AM,21/Mar/26 8:16 AM,21/Mar/26 8:16 AM,,,0,"deploy_platform.py phase4_manage_secrets() (line 389) creates only
+four Kubernetes Secrets:
+
+* db-credentials   (uvote_admin superuser — shared by all services)
+* jwt-secret
+* flask-secret
+* smtp-credentials
+
+create_roles.sql defines six per-service PostgreSQL users:
+  auth_service, voting_service, election_service,
+  results_service, audit_service, admin_service
+
+No Kubernetes Secrets exist for any of these roles. All six services
+currently receive db-credentials and authenticate as uvote_admin
+(superuser), bypassing the least-privilege model defined in ADR-014.
+
+Fix: Add per-service secret creation to phase4_manage_secrets():
+
+  kubectl create secret generic auth-db-secret \
+    --from-literal=DB_USER=auth_service \
+    --from-literal=DB_PASS=<auth_service_password>
+
+  kubectl create secret generic voting-db-secret \
+    --from-literal=DB_USER=voting_service \
+    --from-literal=DB_PASS=<voting_service_password>
+
+h1. repeat for election_service, results_service,
+
+h1. audit_service, admin_service
+
+Then update each service deployment YAML to mount its own secret
+rather than the shared db-credentials secret.
+
+Passwords must match those set in create_roles.sql.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000nz:,,,,,,,In Progress,21/Mar/26 8:15 AM
+Add smtp-credentials to deploy_platform.py rollback cleanup,CV-39,10362,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 8:16 AM,21/Mar/26 8:16 AM,21/Mar/26 8:16 AM,,,0,"deploy_platform.py rollback() function (line 1122) deletes secrets
+during a rollback but only removes:
+
+* jwt-secret
+* flask-secret
+
+smtp-credentials is created in phase4_manage_secrets() but is never
+deleted during rollback. This leaves a stale secret in the cluster
+after a failed deployment, which will cause a ""secret already exists""
+error on the next deploy attempt.
+
+Fix: Add smtp-credentials to the list of secrets deleted in rollback():
+
+  kubectl delete secret smtp-credentials --ignore-not-found=true
+
+Place it alongside the existing jwt-secret and flask-secret deletions.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000o7:,,,,,,,In Progress,21/Mar/26 8:16 AM
+Fix GB/US English spelling mismatches across codebase,CV-40,10363,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,21/Mar/26 9:54 AM,21/Mar/26 9:55 AM,21/Mar/26 9:54 AM,,,0,"A spelling audit has identified GB/US English mismatches across the codebase.
+The project standard is British English (GB). This ticket covers all required
+changes grouped by severity.
+
+CRITICAL and HIGH changes are runtime bugs — they will cause immediate errors
+in the running cluster. MEDIUM and LOW changes are consistency fixes only.
+
+----
+
+CRITICAL — election-service/app.py
+
+All SQL string literals reference ""organizer_id"" but the database column is
+""organiser_id"". This causes asyncpg.exceptions.UndefinedColumnError at runtime.
+
+In every SQL string literal, replace:
+  ""organizer_id"" → ""organiser_id""
+
+Affected SQL strings at approximately:
+  L98, L127, L156, L213, L236, L285, L332, L362, L403, L425
+
+Also rename all non-SQL occurrences for consistency:
+
+* Function parameter names: organizer_id → organiser_id
+Affected functions: list_elections (L90), create_election (L121),
+get_election (L149), open_election (L205), close_election (L228)
+* Session key references: session[""organizer_id""] → session[""organiser_id""]
+Affected lines: L266, L270, L280, L335, L357, L400, L422
+* Local variable names and comments throughout
+
+NOTE: FastAPI reads query parameter names directly from function signatures.
+Renaming the parameter from organizer_id to organiser_id changes the expected
+URL query parameter from ?organizer_id= to ?organiser_id=. This is intentional
+— tests/test_api.py already uses ?organiser_id= (GB spelling).
+
+----
+
+HIGH — frontend-service/app.py
+
+The auth-service login response returns the JSON key ""organiser_id"" (GB).
+frontend-service reads it as data[""organizer_id""] (US), causing a KeyError.
+
+  L169: data[""organizer_id""]         → data[""organiser_id""]
+  L169: session[""organizer_id""]      → session[""organiser_id""]
+  L173: data[""organizer_id""]         → data[""organiser_id""]
+  L176: f""...?organizer_id={oid}..."" → f""...?organiser_id={oid}...""
+
+Also change any other occurrences of ""organizer_id"" in this file to
+""organiser_id"" including comments and local variable names.
+
+----
+
+MEDIUM — plat_scripts/deploy_platform.py
+
+Standardise colour/color to GB spelling. Comments, docstrings and variable
+names only — no runtime impact.
+
+  LEVEL_COLORS → LEVEL_COLOURS  (dict name + all references)
+  color =      → colour =       (local variable + all references)
+  ""color""      → ""colour""       (any string keys or dict references)
+
+Leave ANSI escape code string values unchanged (e.g. ""\033[32m"").
+
+----
+
+MEDIUM — plat_scripts/deploy_test_platform.py
+
+Same colour/color standardisation as above:
+
+  LEVEL_COLORS → LEVEL_COLOURS  (dict name + all references)
+  color =      → colour =       (local variable + all references)
+  ""color""      → ""colour""       (any string keys or dict references)
+
+Leave ANSI escape code string values unchanged.
+
+----
+
+MEDIUM — tests/test_db.py
+
+  class Colors:  → class Colours:
+  Update all references to Colors. throughout to Colours.
+  Update comments: ""color"" → ""colour"" and ""colors"" → ""colours"" throughout
+
+----
+
+LOW — frontend-service/templates/login.html
+      frontend-service/templates/index.html
+      frontend-service/templates/register.html
+      voting-service/templates/vote_error.html
+
+Update user-facing display text only:
+  ""Organizer""  → ""Organiser""
+  ""Organizers"" → ""Organisers""
+
+Do NOT change any HTML attributes, CSS classes, IDs, or href values.
+Only visible text content between tags.
+
+----
+
+LOW — README.md
+
+h2. License → ## Licence
+
+  [License]  → [Licence]  (update both TOC text and anchor href)
+
+----
+
+RULES FOR IMPLEMENTATION:
+
+* Read each target file in full before editing
+* Do not change any logic, structure, SQL query structure, or functionality
+* Only spelling of identifiers, keys, parameter names, and display text
+* Do not modify any file not listed above
+* Total files modified must be exactly 10
+
+AFFECTED SERVICES TO REBUILD AND REDEPLOY AFTER CHANGES:
+  docker build -t election-service:latest ./election-service
+  docker build -t frontend-service:latest ./frontend-service
+  kind load docker-image election-service:latest --name uvote
+  kind load docker-image frontend-service:latest --name uvote
+  kubectl rollout restart deployment/election-service -n uvote-dev
+  kubectl rollout restart deployment/admin-service -n uvote-dev",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000of:,,,,,,,In Progress,21/Mar/26 9:54 AM
+Rename voter-service source directory and Docker image to admin-service,CV-41,10396,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,22/Mar/26 8:42 AM,22/Mar/26 8:48 AM,22/Mar/26 8:46 AM,,,0,"The source directory voter-service/ and Docker image voter-service:latest
+are misnamed. A code audit confirmed this service manages election organiser
+admin functions — voter roll management, voting token generation, email
+dispatch, and MFA verification. It does not serve voters directly.
+
+The service has always been deployed in Kubernetes as admin-service. All
+Kubernetes resources (Deployment, Service, network policies, Secrets, labels)
+already use admin-service correctly. The source directory name and Docker
+image tag are the only remaining artefacts that disagree with the deployment
+identity.
+
+The name voter-service also creates confusion with voting-service/ — the
+voter-facing ballot application — which is a completely separate service
+with a different purpose, different database tables, and different endpoints.
+
+----
+
+DELIVERABLES:
+
+# Rename voter-service/ → admin-service/
+# Update admin-deployment.yaml image field:
+  voter-service:latest → admin-service:latest
+# Update deploy_platform.py:
+#* Docker build command: voter-service:latest → admin-service:latest
+#* kind load command: voter-service:latest → admin-service:latest
+# Update deploy_test_platform.py:
+#* Same build and kind load command changes as above
+# Update docker-compose.yml:
+#* Build context: voter-service/ → admin-service/
+#* Image name: voter-service → admin-service
+# Update tests/test_api.py:
+#* Any references to voter-service in comments or port-forward targets
+# Update tests/test_db.py:
+#* Any references to voter-service in comments or service name strings
+# Update README.md and any .docs/ files referencing voter-service
+(excluding historical ADR documentation — ADRs are immutable records)
+# Verify zero remaining voter-service references:
+  grep -r ""voter-service"" \
+    --include=""_.py"" \_
+    _--include=""_.yaml"" \
+    --include=""_.yml"" \_
+    _--include=""_.md"" \
+    --include=""*.txt""
+Expected: no results outside of historical ADR documentation
+
+----
+
+CONSTRAINTS:
+
+* voting-service/ must not be touched — it is a separate service and
+its name is correct
+* No Kubernetes Deployment names, Service names, labels, selectors,
+network policies, or namespaces change — all already use admin-service
+* No database role names change (admin_service in create_roles.sql)
+* No Kubernetes Secret names change
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* grep returns no voter-service references outside of ADR documentation
+* docker build -t admin-service:latest ./admin-service completes successfully
+* kubectl rollout restart deployment/admin-service -n uvote-dev succeeds
+and pods reach Running state
+* Health endpoint returns {""status"": ""healthy"", ""service"": ""admin""}
+* voting-service/ directory and all its contents are unchanged",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000on:,,,,,,,In Progress,22/Mar/26 8:42 AM
+BUG-1: Fix admin-service Dockerfile COPY paths left over from voter-service rename,CV-43,10462,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:27 AM,23/Mar/26 9:28 AM,23/Mar/26 9:28 AM,,,0,"admin-service/Dockerfile contained COPY voter-service/... paths left over
+from the voter-service → admin-service rename. Every fresh docker build of
+admin-service failed immediately.
+
+Fix: All COPY voter-service/ → COPY admin-service/ in the Dockerfile.
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000ov:,,,,,,,In Progress,23/Mar/26 9:27 AM
+BUG-2: Fix election-service querying dropped votes table,CV-44,10463,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:28 AM,23/Mar/26 9:28 AM,23/Mar/26 9:28 AM,,,0,"election-service/app.py had two SELECT COUNT(*) FROM votes queries used
+to report vote counts on the election detail and management pages. The
+votes table was dropped in the schema migration, causing HTTP 500 on
+any page that displayed vote counts.
+
+Fix: Both queries updated FROM votes → FROM encrypted_ballots.
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000p3:,,,,,,,In Progress,23/Mar/26 9:28 AM
+BUG-3: Fix elections created without encryption_key,CV-45,10464,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:28 AM,23/Mar/26 9:28 AM,23/Mar/26 9:28 AM,,,0,"election-service/app.py INSERT statement for new elections omitted the
+encryption_key column. The voting-service requires a non-null encryption
+key to encrypt ballots via pgp_sym_encrypt. Any vote cast against an
+election created after this bug was introduced failed with:
+  ""Election encryption not configured""
+
+Fix: secrets.token_hex(32) generated and inserted as encryption_key
+on every new election creation.
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000pb:,,,,,,,In Progress,23/Mar/26 9:28 AM
+BUG-4: Fix results-service querying dropped votes table across four endpoints,CV-46,10465,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:29 AM,23/Mar/26 9:30 AM,23/Mar/26 9:29 AM,,,0,"results-service/app.py had four queries referencing the old votes table
+across three endpoints. All four caused HTTP 500 on any results endpoint.
+
+Affected queries and fixes:
+
+* Results tally:    LEFT JOIN votes      → LEFT JOIN tallied_votes
+* Hash chain audit: FROM votes           → FROM encrypted_ballots
+                  vote_hash            → ballot_hash
+* Stats:            FROM votes           → FROM encrypted_ballots
+* Timeline:         FROM votes           → FROM encrypted_ballots
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000pj:,,,,,,,In Progress,23/Mar/26 9:29 AM
+BUG-5: Fix auth-service MFA wrong DOB returning 403 instead of 401,CV-47,10466,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:30 AM,23/Mar/26 9:30 AM,23/Mar/26 9:30 AM,,,0,"auth-service/app.py raised HTTP 403 (Forbidden) when a voter submitted
+an incorrect date of birth during MFA verification. The correct status
+is 401 (Unauthorised) — the voter has failed to authenticate, not been
+forbidden from a resource.
+
+test_api.py Stage 3 Check 5 specifically asserts 401 for a wrong DOB
+submission, causing a test failure on every run.
+
+Fix: status_code=403 → status_code=401 in the wrong-DOB branch.
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000pr:,,,,,,,In Progress,23/Mar/26 9:30 AM
+BUG-6: Fix mailhog.py token extraction failing on quoted-printable encoded emails,CV-48,10467,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:30 AM,23/Mar/26 9:30 AM,23/Mar/26 9:30 AM,,,0,"tests/helpers/mailhog.py extracted the voting token by splitting the
+raw email body on ""/vote/"". MailHog delivers emails with quoted-printable
+encoding where long lines are wrapped with =\r\n soft line breaks. A
+token URL spanning a line boundary would be split mid-token, causing
+get_latest_voting_token() to return a truncated or empty string, failing
+any test that depends on a valid voting token.
+
+Fix: Added quopri.decodestring() to decode the raw body before token
+extraction.
+
+Status: ✅ Resolved in CV-9b",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000pz:,,,,,,,In Progress,23/Mar/26 9:30 AM
+Fix missing server-side validation on election HTML form endpoint,CV-49,10500,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 8:58 PM,23/Mar/26 10:26 PM,23/Mar/26 10:07 PM,,,0,"POST /elections/create (HTML form endpoint in election-service/app.py) has
+no server-side validation on the title field. The JSON API endpoint
+POST /elections enforces min_length=1 via Pydantic's ElectionCreate schema,
+but the form endpoint bypasses this entirely.
+
+Submitting the form without a title hits a NOT NULL constraint violation on
+elections.title and crashes as an unhandled 500 — there is no try/except and
+no flash error message to the user.
+
+Discovered and documented in:
+  election-service/tests/test_election.py::test_create_election_form_missing_title
+
+----
+
+STEPS TO REPRODUCE:
+
+# Start the platform: python3 plat_scripts/deploy_platform.py
+# Log in to the election management UI
+# Submit the election creation form with the title field left blank
+# Observe: HTTP 500 instead of a user-friendly validation error
+
+----
+
+EXPECTED BEHAVIOUR:
+
+* Form re-renders with flash error: ""Election title is required""
+* Returns HTTP 200
+* No DB insert attempted
+
+ACTUAL BEHAVIOUR:
+
+* Form submission reaches DB INSERT with title = """" or title = None
+* NOT NULL constraint violation on elections.title
+* Propagates as unhandled HTTP 500
+
+----
+
+FIX:
+
+Add server-side validation to the HTML form endpoint in
+election-service/app.py before the DB insert:
+
+  if not title or not title.strip():
+      flash(request, ""Election title is required"", ""error"")
+      return templates.TemplateResponse(""create_election.html"", {
+          ""request"": request
+      })
+
+Also validate that at least 2 options are provided, consistent with
+the ElectionCreate schema's min_length=2 constraint:
+
+  if not options or len([o for o in options if o.strip()]) < 2:
+      flash(request, ""At least 2 election options are required"", ""error"")
+      return templates.TemplateResponse(""create_election.html"", {
+          ""request"": request
+      })
+
+----
+
+CONSTRAINTS:
+
+* The JSON endpoint POST /elections behaviour must remain unchanged
+* Do not modify the ElectionCreate Pydantic schema
+* Validation must occur before any DB insert attempt
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* Submitting the form without a title returns HTTP 200 with flash error
+""Election title is required""
+* Submitting with fewer than 2 options returns HTTP 200 with flash error
+""At least 2 election options are required""
+* test_create_election_form_missing_title passes and asserts the flash
+error rather than documenting a known failure
+* POST /elections JSON endpoint behaviour is unchanged",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000q7:,,,,,,,In Progress,23/Mar/26 8:58 PM
+Fix test suite dependency gaps identified in requirements audit,CV-50,10501,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:41 PM,23/Mar/26 9:45 PM,23/Mar/26 9:41 PM,,,0,"A dependency audit of all requirements files against the installed .venv state
+identified 4 gaps and 3 version mismatches that prevent the test suite from
+running correctly on a fresh checkout.
+
+----
+
+FINDINGS:
+
+HIGH — pytest-asyncio pinned to broken version
+
+  requirements-dev.txt pins pytest-asyncio==0.23.0. This version has a known
+  AttributeError on collection when test directories contain *init*.py files.
+
+  All five service test suites have *init*.py:
+    auth-service/tests/
+    voting-service/tests/
+    election-service/tests/
+    frontend-service/tests/
+    admin-service/tests/
+
+  A fresh pip install -r requirements-dev.txt downgrades from 0.23.8 (currently
+  installed and working) to 0.23.0 and breaks all 98 tests.
+
+MEDIUM — Combined pytest invocation fails with ImportPathMismatchError
+
+  Running all service test suites in a single pytest invocation fails because
+  all five service tests/ directories have a conftest.py and pytest treats them
+  all as the same tests.conftest module without --import-mode=importlib.
+
+LOW — pytest not directly pinned
+
+  pytest is only pulled in transitively via pytest-asyncio. Direct pinning
+  ensures version stability across all environments.
+
+LOW — Jinja2 and python-multipart pins behind installed versions
+
+  Four service requirements.txt files pin jinja2==3.1.3 (installed: 3.1.6).
+  Three service requirements.txt files pin python-multipart==0.0.9
+  (installed: 0.0.22). The python-multipart mismatch produces visible
+  PendingDeprecationWarning in every test run.
+
+----
+
+DELIVERABLES:
+
+  requirements-dev.txt:
+    - Add:    pytest==8.4.2
+    - Update: pytest-asyncio==0.23.0 → pytest-asyncio==0.23.8
+
+  pytest.ini (new file at project root):
+    [pytest]
+    addopts = --import-mode=importlib
+    asyncio_mode = auto
+
+  voting-service/requirements.txt:
+    - jinja2==3.1.3        → jinja2==3.1.6
+    - python-multipart==0.0.9 → python-multipart==0.0.22
+
+  election-service/requirements.txt:
+    - jinja2==3.1.3        → jinja2==3.1.6
+    - python-multipart==0.0.9 → python-multipart==0.0.22
+
+  frontend-service/requirements.txt:
+    - jinja2==3.1.3        → jinja2==3.1.6
+
+  admin-service/requirements.txt:
+    - jinja2==3.1.3        → jinja2==3.1.6
+    - python-multipart==0.0.9 → python-multipart==0.0.22
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* Fresh pip install -r requirements-dev.txt followed by all service
+requirements.txt files installs a working environment with no conflicts
+* Combined invocation runs without ImportPathMismatchError:
+  python3 -m pytest auth-service/tests/ voting-service/tests/ \
+    election-service/tests/ frontend-service/tests/ \
+    admin-service/tests/ tests/test_db.py -v
+* Result: 98 passed, 0 failed, 10 skipped
+(test_db.py skips without a live cluster)
+* No PendingDeprecationWarning from python-multipart in test output",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000qf:,,,,,,,In Progress,23/Mar/26 9:41 PM
+Remove __init__.py from all service test directories to fix combined pytest invocation,CV-51,10502,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,23/Mar/26 9:49 PM,23/Mar/26 11:22 PM,23/Mar/26 10:26 PM,,,0,"All five service test directories currently have an *init*.py file. This
+turns each tests/ directory into a Python package named tests, causing pytest
+to register all five conftest.py files under the same module name tests.conftest.
+The second registration raises:
+
+  ValueError: Plugin already registered under a different name:
+    voting-service/tests/conftest.py
+    = <module 'tests.conftest' from 'auth-service/tests/conftest.py'>
+
+This means the full test suite cannot be run in a single invocation. Each
+suite must currently be run separately.
+
+Removing *init*.py from the service test directories makes pytest treat
+each directory as rootdir-relative rather than as a Python package. Each
+conftest.py gets a unique plugin identity based on its filesystem path and
+the collision disappears.
+
+----
+
+FILES TO DELETE:
+
+  auth-service/tests/*init*.py
+  voting-service/tests/*init*.py
+  election-service/tests/*init*.py
+  frontend-service/tests/*init*.py
+  admin-service/tests/*init*.py
+
+----
+
+CONSTRAINTS:
+
+* The root-level tests/ directory (tests/test_db.py, tests/test_api.py,
+tests/conftest.py) does NOT have an *init*.py and must not be touched
+* Do not modify any test files, only delete the *init*.py files listed above
+
+----
+
+VERIFICATION:
+
+  After deleting the five files, run the full combined invocation:
+
+{noformat}.venv/bin/python -m pytest \\
+  auth-service/tests/ \\
+  voting-service/tests/ \\
+  election-service/tests/ \\
+  frontend-service/tests/ \\
+  admin-service/tests/ \\
+  tests/test_db.py \\
+  -v --no-header --tb=short{noformat}
+
+  Expected: 98 passed, 0 failed, 10 skipped
+  (test_db.py skips without a running cluster)
+
+  Also confirm each suite still passes individually:
+
+{noformat}.venv/bin/python -m pytest auth-service/tests/ -v
+.venv/bin/python -m pytest voting-service/tests/ -v
+.venv/bin/python -m pytest election-service/tests/ -v
+.venv/bin/python -m pytest frontend-service/tests/ -v
+.venv/bin/python -m pytest admin-service/tests/ -v{noformat}
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* All five *init*.py files deleted from service test directories
+* Combined invocation runs without ValueError or ImportPathMismatchError
+* 98 tests pass, 10 skipped in the combined run
+* All five individual suite runs still pass
+* Root-level tests/ directory is unchanged",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000qn:,,,,,,,In Progress,23/Mar/26 9:49 PM
+Add Python virtual environment bootstrap script for local development,CV-52,10535,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,24/Mar/26 9:01 AM,24/Mar/26 9:02 AM,24/Mar/26 9:02 AM,,,0,"New developers cloning the U-Vote repository had no automated way to set up
+a working Python environment. Dependencies are spread across 8 separate
+requirements files (one per service plus dev tools and platform scripts),
+and several packages were missing from the venv entirely — most notably
+colorama, which blocked deploy_platform.py from running at all.
+
+setup_venv.py is a single-file bootstrap script that creates a complete
+local venv capable of running every script in the project with one command.
+
+----
+
+FILES CREATED:
+
+  setup_venv.py — bootstrap script at project root
+  SETUP.md      — developer quickstart documentation
+
+----
+
+WHAT THE SCRIPT DOES:
+
+# Verifies it is being run from the project root
+# Checks Python version is 3.10 or higher
+# Detects OS and sets venv paths accordingly (Linux/macOS vs Windows)
+# Creates .venv using stdlib venv module
+# Upgrades pip
+# Installs all 8 requirements files in order:
+  requirements-dev.txt
+  plat_scripts/requirements.txt
+  auth-service/requirements.txt
+  voting-service/requirements.txt
+  election-service/requirements.txt
+  results-service/requirements.txt
+  frontend-service/requirements.txt
+  admin-service/requirements.txt
+# Runs 15 import verification checks
+# Runs full pytest collection check (expects 99 tests, 0 errors)
+# Prints activation instructions and common commands
+
+----
+
+USAGE:
+
+  python setup_venv.py                # full setup
+  python setup_venv.py --clean        # delete .venv and start fresh
+  python setup_venv.py --verify-only  # check imports without reinstalling
+  python setup_venv.py --help         # usage
+
+----
+
+VERIFIED OUTPUT:
+
+  ✓ colorama                          0.4.6
+  ✓ click                             8.3.1
+  ✓ pytest                            8.4.2
+  ✓ pytest-asyncio                    0.23.8
+  ✓ httpx                             0.27.0
+  ✓ fastapi                           0.115.0
+  ✓ asyncpg                           0.29.0
+  ✓ passlib                           OK
+  ✓ python-jose                       OK
+  ✓ bcrypt                            OK
+  ✓ aiosmtplib                        3.0.1
+  ✓ jinja2                            3.1.6
+  ✓ itsdangerous                      2.1.2
+  ✓ prometheus-fastapi-instrumentator OK
+  ✓ pytest collection                 99 tests, 0 errors
+
+----
+
+CONSTRAINTS:
+
+* Pure Python stdlib only — no dependencies required to run the script itself
+* Works on Linux, macOS, and Windows without modification
+* Does not hardcode any package versions — always installs from requirements files
+* Does not modify any existing requirements file or script
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* python setup_venv.py --clean from project root completes with exit code 0
+* All 15 import checks pass
+* pytest collects 99 tests with 0 errors
+* Running python setup_venv.py from the wrong directory prints a clear
+error message and exits with code 1
+* deploy_platform.py is importable after setup (colorama installed)
+
+----
+
+KNOWN ISSUES:
+
+* Step 5 service install lines have slightly inconsistent spacing compared
+to other steps — cosmetic only, no functional impact. Tracked separately.",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000qv:,,,,,,,In Progress,24/Mar/26 9:01 AM
+Fix Prometheus registry collision crashing combined pytest run after CV-20/21,CV-53,10568,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,24/Mar/26 8:56 PM,24/Mar/26 9:18 PM,24/Mar/26 9:08 PM,,,0,"CV-20/21 (Prometheus metrics) introduced a regression in the combined test
+suite run. prometheus_fastapi_instrumentator registers http_requests_total
+and related metrics into the global prometheus_client.REGISTRY at TestClient
+startup. When multiple service test suites run in the same pytest process,
+the second service to initialise its TestClient crashes with:
+
+  ValueError: Duplicated timeseries in CollectorRegistry:
+  {'http_requests', 'http_requests_created', 'http_requests_total'}
+
+This only manifests in the combined run — individual suites pass because
+only one service's app is loaded per process.
+
+----
+
+AFFECTED FILES:
+
+  auth-service/tests/conftest.py
+  voting-service/tests/conftest.py
+  election-service/tests/conftest.py
+  frontend-service/tests/conftest.py
+  admin-service/tests/conftest.py
+  results-service/tests/conftest.py  ← verify uses same importlib pattern
+
+----
+
+THE FIX:
+
+In each conftest, the importlib module loading block currently looks like:
+
+  if _SERVICE_MODULE_NAME not in sys.modules:
+      _spec = importlib.util.spec_from_file_location(
+                  _SERVICE_MODULE_NAME, _APP_PATH)
+      _module = importlib.util.module_from_spec(_spec)
+      sys.modules[_SERVICE_MODULE_NAME] = _module
+      with patch.object(os.path, ""isdir"", return_value=True):
+          _spec.loader.exec_module(_module)
+
+Wrap the exec_module call with an additional patch that replaces
+prometheus_client.REGISTRY with a fresh CollectorRegistry() for
+each service:
+
+  import prometheus_client
+  from prometheus_client import CollectorRegistry
+
+  if _SERVICE_MODULE_NAME not in sys.modules:
+      _spec = importlib.util.spec_from_file_location(
+                  _SERVICE_MODULE_NAME, _APP_PATH)
+      _module = importlib.util.module_from_spec(_spec)
+      sys.modules[_SERVICE_MODULE_NAME] = _module
+      _fresh_registry = CollectorRegistry()
+      with patch.object(os.path, ""isdir"", return_value=True), \
+           patch.object(prometheus_client, ""REGISTRY"", _fresh_registry):
+          _spec.loader.exec_module(_module)
+
+This gives each service its own isolated Prometheus registry so duplicate
+metric name registration never occurs regardless of load order.
+
+----
+
+CONSTRAINTS:
+
+* Add prometheus_client and CollectorRegistry imports at the top of each
+conftest if not already present
+* Make NO other changes to any conftest file
+* Do not touch any app.py files
+* Do not modify any test files — conftest files only
+
+----
+
+VERIFICATION:
+
+  After all fixes are applied, run the combined invocation:
+
+{noformat}python -m pytest \\
+  auth-service/tests/ \\
+  voting-service/tests/ \\
+  election-service/tests/ \\
+  frontend-service/tests/ \\
+  admin-service/tests/ \\
+  results-service/tests/ \\
+  --tb=short -q 2>&1 | tail -5{noformat}
+
+  Expected: 121 passed (or close to it), 0 errors, 0 failed
+
+  If any suite still errors after the fix, capture the full --tb=long
+  output for that suite before attempting any further changes.
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* Combined pytest invocation completes without ValueError
+* 121 tests pass, 0 errors, 0 failed
+* All 6 individual suite runs continue to pass
+* No app.py or test files modified — conftest files only",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000r3:,,,,,,,In Progress,24/Mar/26 8:56 PM
+Add boot orchestrator scripts and fix log file placement,CV-54,10569,Task,Review,CV,Cinnamon Voting,software,Luke Doyle,63bb170a2341bff4fff5d364,,Medium,,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,Luke Doyle,63bb170a2341bff4fff5d364,24/Mar/26 9:52 PM,24/Mar/26 9:52 PM,18/May/26 3:10 PM,,,0,"Deployment scripts currently write log files to the project root, cluttering
+the repository. Developers also have no single command to bring up the full
+platform from scratch — they must run setup_k8s_platform.py, deploy_platform.py,
+and ELK deployment commands separately in the correct order.
+
+----
+
+TASK 1 — Fix log file placement:
+
+All deployment scripts currently write log files to the project root.
+Move all log output to a logs/ directory at the project root.
+
+* Create logs/.gitkeep so the directory is tracked in git
+* Add logs/*.log to .gitignore
+* Update deploy_platform.py:
+  log_file = project_root / f""deploy-{timestamp}.log""
+  → logs_dir = project_root / ""logs""
+     logs_dir.mkdir(exist_ok=True)
+     log_file = logs_dir / f""deploy-{timestamp}.log""
+* Update deploy_test_platform.py with the same pattern:
+  log_file = logs_dir / f""deploy-mailhog-{timestamp}.log""
+* Each script must create logs/ itself if it does not exist —
+do not assume it is present
+
+----
+
+TASK 2 — Create boot_platform.py (dev/production orchestrator):
+
+Create boot_platform.py at the project root. Single command to go from
+nothing to a fully running platform. Calls existing scripts as subprocesses
+— does not duplicate their logic.
+
+Steps run in order, stopping on any failure:
+
+  Step 1 — Cluster setup
+    subprocess: plat_scripts/setup_k8s_platform.py
+    Creates Kind cluster, installs Calico CNI, creates namespaces,
+    deploys PostgreSQL, applies schema, applies network policies,
+    installs Nginx ingress.
+
+  Step 2 — Application deployment
+    subprocess: plat_scripts/deploy_platform.py
+    Builds and loads Docker images, creates Kubernetes Secrets,
+    deploys all 6 microservices, applies network policies, configures ingress.
+
+  Step 3 — ELK stack deployment (inline — not a separate script)
+    helm install elasticsearch elastic/elasticsearch \
+      --namespace monitoring \
+      -f uvote-platform/k8s/logging/elasticsearch-values.yaml \
+      --timeout 10m --wait
+    Wait for elasticsearch-master-0 to be Running 1/1
+    helm install kibana elastic/kibana \
+      --namespace monitoring \
+      -f uvote-platform/k8s/logging/kibana-values.yaml \
+      --timeout 5m --wait
+    helm install fluent-bit fluent/fluent-bit \
+      --namespace monitoring \
+      -f uvote-platform/k8s/logging/fluent-bit-values.yaml \
+      --timeout 3m --wait
+
+  Step 4 — Final health check
+    kubectl get pods -n uvote-dev
+    kubectl get pods -n monitoring
+    Print summary confirming all pods are Running.
+
+Requirements:
+
+* Same coloured logging style as existing scripts ([INFO], [SUCCESS],
+[WARNING], [ERROR])
+* Writes log to logs/boot-platform-<timestamp>.log
+* Prints elapsed time at end
+* Exit code 0 on full success, 1 on any failure
+* --skip-cluster flag skips Step 1 (cluster already exists)
+* --skip-elk flag skips Step 3 (ELK already deployed)
+
+----
+
+TASK 3 — Create boot_test_platform.py (test/CI orchestrator):
+
+Create boot_test_platform.py at the project root. Identical to
+boot_platform.py plus one additional step.
+
+  Step 5 — MailHog deployment
+    subprocess: plat_scripts/deploy_test_platform.py
+    Deploys MailHog to uvote-dev and uvote-test, creates smtp-credentials
+    Secret, applies MailHog network policies, verifies HTTP API.
+
+MailHog is the ONLY difference between boot_platform.py and
+boot_test_platform.py.
+
+Same requirements as boot_platform.py:
+
+* Coloured logging, log file to logs/boot-test-platform-<timestamp>.log
+* --skip-cluster and --skip-elk flags
+* Exit code 0/1
+* Final health check confirms uvote-dev, monitoring, and MailHog pods
+
+----
+
+TASK 4 — Verify .gitignore:
+
+* If .gitignore exists: add logs/*.log if not already present
+* If .gitignore does not exist: note it is missing, do not create it
+
+----
+
+CONSTRAINTS:
+
+* Do not modify any existing script's core logic — log file path only
+* Do not modify any app.py, test file, or conftest
+* Pure stdlib only — no new dependencies
+* Both new scripts must be runnable from project root:
+  python boot_platform.py
+  python boot_test_platform.py
+
+----
+
+ACCEPTANCE CRITERIA:
+
+* grep -n ""log.*\.log"" plat_scripts/deploy_platform.py confirms
+log path writes to logs/ directory
+* grep -n ""log.*\.log"" plat_scripts/deploy_test_platform.py confirms
+log path writes to logs/ directory
+* ls -la boot_platform.py boot_test_platform.py logs/.gitkeep
+all three files exist
+* python -m py_compile boot_platform.py exits 0
+* python -m py_compile boot_test_platform.py exits 0
+* logs/*.log present in .gitignore",,Luke Doyle,63bb170a2341bff4fff5d364,,,,,,,,,{},,0|i000rb:,,,,,,,In Progress,24/Mar/26 9:52 PM

@@ -40,7 +40,13 @@ Thumbs.db
 # Kubernetes
 kubeconfig
 *.kubeconfig
-uvote-platform/k8s/secrets/
+uvote-platform/k8s/secrets/dev-secrets.yaml
+uvote-platform/k8s/secrets/platform-secrets.yaml
+uvote-platform/k8s/secrets/local-*
+
+# Istio
+istio-*/
+istioctl
 
 # Claude
 .claude

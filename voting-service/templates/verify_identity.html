@@ -30,6 +30,7 @@
 
     <form method="POST" action="/vote/verify-identity">
         <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <div class="mb-4">
             <label for="otp" class="form-label" style="font-size:0.875rem;font-weight:500;color:#374151;">Verification Code</label>

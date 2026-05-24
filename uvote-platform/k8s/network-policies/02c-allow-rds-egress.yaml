@@ -1,0 +1,32 @@
+# Egress to RDS PostgreSQL in the VPC (replaces in-cluster postgresql pod on EKS).
+# VPC CIDR must match terraform variable vpc_cidr (default 10.0.0.0/16).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rds-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: rds-access
+    policy-order: "02c"
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - auth-service
+          - voting-service
+          - election-service
+          - results-service
+          - admin-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432

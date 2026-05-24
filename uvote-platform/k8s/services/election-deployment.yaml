@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Election Service
 # Scanned Port: 5005 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5005)
-# Architecture Port: 8002 (from ARCHITECTURE.MD)
+# Architecture Port: 5005 (from ARCHITECTURE.MD)
 # Network Policy Port: 8002 (from 03-allow-from-ingress.yaml)
 # Using Port: 5005 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-election allows port 8002,
@@ -33,15 +33,18 @@ spec:
       maxUnavailable: 0
   template:
     metadata:
+      annotations:
+        sidecar.istio.io/excludeOutboundPorts: "5432"
       labels:
         app: election-service
         tier: backend
         version: v1
     spec:
+      serviceAccountName: election-service
       containers:
       - name: election-service
-        image: ghcr.io/d00256764/u-vote-election-service:a4a9ce9
-        imagePullPolicy: IfNotPresent
+        image: PLACEHOLDER_ECR_REGISTRY/uvote/election-service:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 5005
           name: http
@@ -49,20 +52,29 @@ spec:
         env:
         # Database credentials
         - name: DB_HOST
-          value: "postgresql"
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: host
         - name: DB_PORT
-          value: "5432"
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: port
         - name: DB_NAME
-          value: "uvote"
+          valueFrom:
+            secretKeyRef:
+              name: db-connection
+              key: database
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: election-db-credentials
               key: username
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: db-credentials
+              name: election-db-credentials
               key: password
         # Inter-service communication
         - name: AUTH_SERVICE_URL

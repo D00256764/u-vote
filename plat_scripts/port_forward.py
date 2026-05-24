@@ -1,315 +1,466 @@
 #!/usr/bin/env python3
 """
-UVote Port Forwarder
+U-Vote Observability Port-Forward Manager
 
-Establishes and maintains a kubectl port-forward tunnel from the
-ingress-nginx-controller service (port 80) to localhost:<port>.
+Opens kubectl port-forwards for all observability and dashboard services in a
+single terminal session and cleans them up on Ctrl+C.
 
-The tunnel is automatically restarted if it dies unexpectedly.
-Press Ctrl+C to stop.
+Services forwarded:
+  Kiali      → http://localhost:20001
+  Jaeger     → http://localhost:16686
+  Prometheus → http://localhost:9090
+  Grafana    → http://localhost:3000
+  Kibana     → http://localhost:5601
+
+Also manages:
+  Kubernetes Dashboard → http://localhost:8001/... (via kubectl proxy)
+
+Services not present in the cluster are skipped with a [WARNING] rather than
+causing the script to fail, so a partial observability stack still works.
 
 Usage:
     python plat_scripts/port_forward.py
-    python plat_scripts/port_forward.py --port 9090
+    python plat_scripts/port_forward.py --open-browser
+
+Requirements:
+    - kubectl configured for the uvote cluster context
+    - Python 3.8+
+    - pip packages: click, colorama
 """
 
-import argparse
-import os
-import signal
+import base64
 import socket
 import subprocess
 import sys
 import time
+import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
+
+# shared/ is a sibling directory inside plat_scripts/ — insert the parent so
+# the import resolves correctly regardless of the working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+try:
+    import click
+except ImportError:
+    print("ERROR: 'click' package required. Install with: pip install click")
+    sys.exit(1)
+
+from shared.logger import DeploymentLogger  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
-# Configuration
+# Kubernetes Dashboard constants
 # ---------------------------------------------------------------------------
 
-INGRESS_NAMESPACE = "ingress-nginx"
-INGRESS_SERVICE   = "ingress-nginx-controller"
-SERVICE_PORT      = 80
-DEFAULT_LOCAL_PORT = 8080
+K8S_DASHBOARD_NAMESPACE = "kubernetes-dashboard"
+K8S_PROXY_PORT          = 8001
+K8S_DASHBOARD_URL       = (
+    f"http://localhost:{K8S_PROXY_PORT}/api/v1/namespaces/"
+    f"{K8S_DASHBOARD_NAMESPACE}/services/https:kubernetes-dashboard:/proxy/"
+)
 
-READY_TIMEOUT  = 15   # seconds to wait for the tunnel to accept connections
-RESTART_DELAY  = 3    # seconds to wait before restarting a dead tunnel
+# Inline YAML: admin-user ServiceAccount + ClusterRoleBinding (from k8s_dashboard.py)
+ADMIN_USER_YAML = """\
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+"""
+
+# Kibana credential secret (ELK stack)
+KIBANA_CRED_SECRET    = "elasticsearch-master-credentials"
+KIBANA_CRED_NAMESPACE = "monitoring"
+
+# Dashboard deep-link UUID — matches DASH in create_dashboard.py
+KIBANA_DASHBOARD_ID  = "77777777-7777-7777-7777-777777777777"
+KIBANA_DASHBOARD_URL = (
+    f"http://localhost:5601/app/dashboards#/view/{KIBANA_DASHBOARD_ID}"
+)
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Service definitions
 # ---------------------------------------------------------------------------
 
-def check_ingress_service() -> bool:
-    """Return True if ingress-nginx-controller service exists in the cluster."""
+@dataclass
+class ForwardSpec:
+    """Describes one kubectl port-forward target."""
+
+    name: str          # human-readable label shown in the summary
+    svc: str           # Kubernetes Service resource name
+    namespace: str
+    local_port: int
+    remote_port: int
+
+    @property
+    def url(self) -> str:
+        return f"http://localhost:{self.local_port}"
+
+    @property
+    def kubectl_cmd(self) -> List[str]:
+        return [
+            "kubectl", "port-forward",
+            f"svc/{self.svc}",
+            f"{self.local_port}:{self.remote_port}",
+            "-n", self.namespace,
+        ]
+
+
+SERVICES: List[ForwardSpec] = [
+    ForwardSpec("Kiali",      "kiali",         "istio-system", 20001, 20001),
+    ForwardSpec("Jaeger",     "tracing",       "istio-system", 16686, 80),
+    ForwardSpec("Prometheus", "prometheus",    "istio-system", 9090,  9090),
+    ForwardSpec("Grafana",    "grafana",       "istio-system", 3000,  3000),
+    ForwardSpec("Kibana",     "kibana-kibana", "monitoring",   5601,  5601),
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers — cluster resource checks
+# ---------------------------------------------------------------------------
+
+def service_exists(svc: str, namespace: str) -> bool:
+    """Return True if the named Service exists in the given namespace."""
     result = subprocess.run(
-        ["kubectl", "get", "service", INGRESS_SERVICE, "-n", INGRESS_NAMESPACE],
+        ["kubectl", "get", "svc", svc, "-n", namespace],
         capture_output=True,
-        text=True,
+        check=False,
     )
     return result.returncode == 0
 
 
-def port_in_use(port: int) -> bool:
-    """Return True if something is already listening on localhost:port."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            s.bind(("127.0.0.1", port))
-            return False
-        except OSError:
-            return True
+def namespace_exists(namespace: str) -> bool:
+    """Return True if the named namespace exists in the cluster."""
+    result = subprocess.run(
+        ["kubectl", "get", "namespace", namespace],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
-def find_pid_on_port(port: int) -> Optional[int]:
-    """Return the PID of the process listening on *port*, or None.
+# ---------------------------------------------------------------------------
+# Helpers — Kubernetes Dashboard
+# ---------------------------------------------------------------------------
 
-    Reads /proc/net/tcp and /proc/net/tcp6 to locate the socket inode, then
-    walks /proc/<pid>/fd to match that inode to a running process.
-    Pure-Python — no external tool dependency.
-    """
-    hex_port = f"{port:04X}"
-    inode: Optional[int] = None
+def ensure_k8s_admin_user(log: DeploymentLogger) -> bool:
+    """Apply the admin-user ServiceAccount and ClusterRoleBinding. Return True on success."""
+    log.info("  Applying admin-user ServiceAccount and ClusterRoleBinding...")
+    result = subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=ADMIN_USER_YAML.encode(),
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        log.warning(
+            f"  Could not apply admin-user resources: "
+            f"{result.stderr.decode(errors='replace').strip()[:150]}"
+        )
+        return False
+    log.success("  admin-user resources applied")
+    return True
 
-    for tcp_file in ("/proc/net/tcp", "/proc/net/tcp6"):
-        try:
-            with open(tcp_file) as fh:
-                for line in fh:
-                    parts = line.split()
-                    if len(parts) < 10:
-                        continue
-                    local_port_hex = parts[1].split(":")[1]
-                    state = parts[3]
-                    if state == "0A" and local_port_hex == hex_port:  # 0A = LISTEN
-                        inode = int(parts[9])
-                        break
-        except FileNotFoundError:
-            continue
-        if inode is not None:
-            break
 
-    if inode is None:
+def generate_k8s_token(log: DeploymentLogger) -> Optional[str]:
+    """Generate and return a bearer token for admin-user, or None on failure."""
+    result = subprocess.run(
+        ["kubectl", "-n", K8S_DASHBOARD_NAMESPACE, "create", "token", "admin-user"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        log.warning(
+            f"  Failed to generate token: {result.stderr.strip()[:150]}"
+        )
         return None
-
-    socket_link = f"socket:[{inode}]"
-    for pid_dir in Path("/proc").iterdir():
-        if not pid_dir.name.isdigit():
-            continue
-        fd_dir = pid_dir / "fd"
-        try:
-            for fd_path in fd_dir.iterdir():
-                try:
-                    if os.readlink(str(fd_path)) == socket_link:
-                        return int(pid_dir.name)
-                except OSError:
-                    pass
-        except (PermissionError, FileNotFoundError):
-            pass
-
-    return None
+    return result.stdout.strip()
 
 
-def free_port(port: int) -> bool:
-    """Send SIGTERM (then SIGKILL if needed) to the process on *port*.
-
-    Returns True if the port was freed, False if it could not be killed.
-    """
-    pid = find_pid_on_port(port)
-    if pid is None:
-        return False
-
-    print(f"  Terminating PID {pid} (currently holding port {port})...")
-    try:
-        os.kill(pid, signal.SIGTERM)
-        # Wait up to 1 s for a graceful exit
-        for _ in range(10):
-            time.sleep(0.1)
-            try:
-                os.kill(pid, 0)  # raises ProcessLookupError when process is gone
-            except ProcessLookupError:
-                return True
-        # Still alive — force it
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(0.1)
-        return True
-    except (ProcessLookupError, PermissionError) as exc:
-        print(f"  Could not kill PID {pid}: {exc}", file=sys.stderr)
-        return False
-
-
-def wait_for_port(port: int, timeout: int = READY_TIMEOUT) -> bool:
-    """Poll until localhost:port accepts a TCP connection. Return True if ready."""
+def wait_for_port(port: int, timeout: float = 15.0) -> bool:
+    """Poll until localhost:port accepts a TCP connection or timeout expires."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
+            with socket.create_connection(("127.0.0.1", port), timeout=1.0):
                 return True
         except OSError:
             time.sleep(0.25)
     return False
 
 
-def start_tunnel(local_port: int) -> subprocess.Popen:
-    """Launch kubectl port-forward and return the Popen handle."""
-    return subprocess.Popen(
-        [
-            "kubectl", "port-forward",
-            "--namespace", INGRESS_NAMESPACE,
-            f"service/{INGRESS_SERVICE}",
-            f"{local_port}:{SERVICE_PORT}",
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-    )
-
-
-def read_stderr(proc: subprocess.Popen) -> str:
-    """Read whatever is buffered on stderr without blocking if the pipe is empty."""
-    try:
-        return proc.stderr.read().decode("utf-8", errors="replace").strip()
-    except Exception:
-        return ""
-
-
 # ---------------------------------------------------------------------------
-# Main
+# Helpers — Kibana credentials (pre-forward hook)
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            f"Forward {INGRESS_SERVICE}:{SERVICE_PORT} to localhost "
-            f"so the UVote platform is reachable from the host."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  python plat_scripts/port_forward.py\n"
-            "  python plat_scripts/port_forward.py --port 9090\n"
-        ),
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=DEFAULT_LOCAL_PORT,
-        metavar="PORT",
-        help=f"Local port to forward to (default: {DEFAULT_LOCAL_PORT})",
-    )
-    args = parser.parse_args()
-    local_port: int = args.port
+def get_kibana_credentials(log: DeploymentLogger) -> Optional[Tuple[str, str]]:
+    """Decode and return (username, password) from the Elasticsearch credentials secret.
 
-    # ------------------------------------------------------------------
-    # 1. Verify kubectl is available
-    # ------------------------------------------------------------------
-    if subprocess.run(["kubectl", "version", "--client"], capture_output=True).returncode != 0:
-        print("Error: kubectl not found or not working. Is it installed and on PATH?",
-              file=sys.stderr)
-        sys.exit(1)
-
-    # ------------------------------------------------------------------
-    # 2. Verify the ingress controller service exists
-    # ------------------------------------------------------------------
-    print(f"Checking for {INGRESS_SERVICE} in namespace {INGRESS_NAMESPACE}...")
-    if not check_ingress_service():
-        print(
-            f"\nError: Service '{INGRESS_SERVICE}' was not found in namespace "
-            f"'{INGRESS_NAMESPACE}'.\n"
-            f"       The ingress-nginx controller does not appear to be installed.\n"
-            f"       Deploy it first, then re-run this script.",
-            file=sys.stderr,
+    Returns None if the secret does not exist or cannot be decoded, logging a
+    [WARNING] in that case so callers can continue without credentials.
+    """
+    check = subprocess.run(
+        ["kubectl", "get", "secret", KIBANA_CRED_SECRET, "-n", KIBANA_CRED_NAMESPACE],
+        capture_output=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        log.warning(
+            f"  Secret '{KIBANA_CRED_SECRET}' not found in namespace "
+            f"'{KIBANA_CRED_NAMESPACE}' — Kibana credentials unavailable "
+            "(ELK stack may not be deployed)"
         )
-        sys.exit(1)
-    print("  Service found.")
+        return None
+
+    # Decode password field (required)
+    pw_res = subprocess.run(
+        ["kubectl", "get", "secret", KIBANA_CRED_SECRET,
+         "-n", KIBANA_CRED_NAMESPACE,
+         "-o", "jsonpath={.data.password}"],
+        capture_output=True, text=True, check=False,
+    )
+    # Decode username field (optional; falls back to "elastic" if absent)
+    un_res = subprocess.run(
+        ["kubectl", "get", "secret", KIBANA_CRED_SECRET,
+         "-n", KIBANA_CRED_NAMESPACE,
+         "-o", "jsonpath={.data.username}"],
+        capture_output=True, text=True, check=False,
+    )
+
+    try:
+        password = base64.b64decode(pw_res.stdout.strip()).decode("utf-8")
+    except Exception:
+        log.warning("  Could not decode Kibana password — credentials unavailable")
+        return None
+
+    username = "elastic"
+    if un_res.returncode == 0 and un_res.stdout.strip():
+        try:
+            username = base64.b64decode(un_res.stdout.strip()).decode("utf-8")
+        except Exception:
+            pass  # keep "elastic" fallback
+
+    return username, password
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+@click.command()
+@click.option(
+    "--open-browser",
+    is_flag=True,
+    default=False,
+    help=(
+        "Open each started service URL and the Kubernetes Dashboard "
+        "in the default browser after the 2s startup wait."
+    ),
+)
+def main(open_browser: bool) -> None:
+    """Open port-forwards for all U-Vote observability services.
+
+    \b
+    Services forwarded:
+      Kiali      → http://localhost:20001
+      Jaeger     → http://localhost:16686
+      Prometheus → http://localhost:9090
+      Grafana    → http://localhost:3000
+      Kibana     → http://localhost:5601
+
+    Also starts kubectl proxy for the Kubernetes Dashboard on port 8001 if
+    the kubernetes-dashboard namespace exists.
+
+    Services not found in the cluster are skipped with a warning.
+    Press Ctrl+C to stop all forwards and exit cleanly.
+    """
+    log = DeploymentLogger()
+
+    log.header("U-Vote Observability Port-Forwards")
 
     # ------------------------------------------------------------------
-    # 3. Handle port conflict
+    # Pre-forward hook: Kibana credentials
     # ------------------------------------------------------------------
-    if port_in_use(local_port):
-        pid = find_pid_on_port(local_port)
-        pid_label = f" (PID {pid})" if pid else ""
-        print(f"\nPort {local_port} is already in use{pid_label}.")
+    log.info("Checking Kibana credentials...")
+    kibana_creds: Optional[Tuple[str, str]] = get_kibana_credentials(log)
 
-        if pid is not None:
-            if not free_port(local_port):
-                print(
-                    f"  Failed to free port {local_port}.\n"
-                    f"  Try: python plat_scripts/port_forward.py --port {local_port + 1}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            # Brief pause to let the OS release the socket
-            time.sleep(0.5)
-        else:
-            print(
-                f"  Could not identify the process holding port {local_port}.\n"
-                f"  Try: python plat_scripts/port_forward.py --port {local_port + 1}",
-                file=sys.stderr,
+    # ------------------------------------------------------------------
+    # Start a background Popen for each service that exists in the cluster
+    # ------------------------------------------------------------------
+    log.info("")
+    started: List[Tuple[ForwardSpec, subprocess.Popen]] = []
+    skipped: List[ForwardSpec] = []
+
+    for spec in SERVICES:
+        log.info(f"Checking {spec.name}  (svc/{spec.svc} -n {spec.namespace})...")
+
+        if not service_exists(spec.svc, spec.namespace):
+            log.warning(
+                f"  svc/{spec.svc} not found in namespace '{spec.namespace}' — skipping"
             )
-            sys.exit(1)
+            skipped.append(spec)
+            continue
+
+        log.info(f"  $ {' '.join(spec.kubectl_cmd)}")
+        proc = subprocess.Popen(
+            spec.kubectl_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        started.append((spec, proc))
+        log.success(f"  {spec.name} port-forward started (PID {proc.pid})")
 
     # ------------------------------------------------------------------
-    # 4. Port-forward loop with auto-restart
+    # Kubernetes Dashboard via kubectl proxy
     # ------------------------------------------------------------------
-    proc: Optional[subprocess.Popen] = None
+    log.info("")
+    log.info("Checking Kubernetes Dashboard  (kubectl proxy → port 8001)...")
 
-    def _shutdown(signum=None, frame=None) -> None:
-        print("\nShutting down...")
-        if proc is not None and proc.poll() is None:
+    proxy_proc: Optional[subprocess.Popen] = None
+    k8s_token: Optional[str] = None
+    k8s_ns_present = namespace_exists(K8S_DASHBOARD_NAMESPACE)
+
+    if not k8s_ns_present:
+        log.warning(
+            f"  Namespace '{K8S_DASHBOARD_NAMESPACE}' not found — "
+            "skipping Kubernetes Dashboard"
+        )
+    else:
+        if ensure_k8s_admin_user(log):
+            k8s_token = generate_k8s_token(log)
+            if k8s_token:
+                log.success("  Bearer token generated")
+
+        log.info("  $ kubectl proxy  (port 8001)")
+        proxy_proc = subprocess.Popen(
+            ["kubectl", "proxy"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log.success(f"  kubectl proxy started (PID {proxy_proc.pid})")
+
+    # ------------------------------------------------------------------
+    # Nothing at all was started — warn and exit cleanly
+    # ------------------------------------------------------------------
+    if not started and proxy_proc is None:
+        log.warning("No services were forwarded — is the cluster running?")
+        log.close()
+        sys.exit(0)
+
+    # Give all forwarders a moment to bind their local ports before reporting.
+    log.info("")
+    log.info("Waiting 2s for port-forwards to bind...")
+    time.sleep(2)
+
+    # ------------------------------------------------------------------
+    # Summary table
+    # ------------------------------------------------------------------
+    name_w = max(len(s.name) for s in SERVICES)
+
+    log.info("")
+    log.header("Port-Forward Summary")
+
+    # Kibana credentials — printed before the table for easy copy-paste
+    if kibana_creds:
+        username, password = kibana_creds
+        log.info(f"  Kibana credentials  username: {username}  |  password: {password}")
+        log.info(f"  Kibana dashboard    {KIBANA_DASHBOARD_URL}")
+        log.info("")
+
+    for spec, proc in started:
+        state = "running" if proc.poll() is None else "exited — check kubectl connectivity"
+        log.info(f"  {spec.name:<{name_w}}  {spec.url:<28}  [{state}]")
+
+    for spec in skipped:
+        log.info(f"  {spec.name:<{name_w}}  {spec.url:<28}  [SKIPPED — service not found]")
+
+    # Kubernetes Dashboard row
+    log.info("")
+    if proxy_proc is not None:
+        proxy_state = "running" if proxy_proc.poll() is None else "exited"
+        log.info(f"  Kubernetes Dashboard  [{proxy_state}]")
+        log.info(f"    URL  : {K8S_DASHBOARD_URL}")
+        if k8s_token:
+            log.info(f"    Token: {k8s_token}")
+        else:
+            log.warning("    Token could not be generated — log in manually")
+    else:
+        log.info(
+            f"  Kubernetes Dashboard  "
+            f"[SKIPPED — '{K8S_DASHBOARD_NAMESPACE}' namespace not found]"
+        )
+
+    # ------------------------------------------------------------------
+    # Optionally open each live URL in the default browser
+    # ------------------------------------------------------------------
+    if open_browser:
+        log.info("")
+        log.info("Opening services in browser...")
+        for spec, proc in started:
+            if proc.poll() is None:
+                log.info(f"  Opening {spec.url}")
+                webbrowser.open(spec.url)
+        if proxy_proc is not None and proxy_proc.poll() is None:
+            log.info(f"  Opening {K8S_DASHBOARD_URL}")
+            webbrowser.open(K8S_DASHBOARD_URL)
+
+    log.info("")
+    log.info("All port-forwards running. Press Ctrl+C to stop.")
+
+    # ------------------------------------------------------------------
+    # Block until the user presses Ctrl+C
+    # ------------------------------------------------------------------
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+
+    # ------------------------------------------------------------------
+    # Clean up all background processes
+    # ------------------------------------------------------------------
+    log.info("")
+    log.info("Shutting down port-forwards...")
+
+    for spec, proc in started:
+        if proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        print("Port-forward closed.")
-        sys.exit(0)
+        log.info(f"  Terminated {spec.name} (PID {proc.pid})")
 
-    signal.signal(signal.SIGINT, _shutdown)
-    signal.signal(signal.SIGTERM, _shutdown)
+    if proxy_proc is not None:
+        if proxy_proc.poll() is None:
+            proxy_proc.terminate()
+            try:
+                proxy_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proxy_proc.kill()
+        log.info(f"  Terminated kubectl proxy (PID {proxy_proc.pid})")
 
-    print(
-        f"\nForwarding  localhost:{local_port}  →  "
-        f"{INGRESS_SERVICE}:{SERVICE_PORT}\n"
-        f"Press Ctrl+C to stop.\n"
-    )
-
-    first_connect = True
-
-    while True:
-        proc = start_tunnel(local_port)
-
-        if not wait_for_port(local_port, timeout=READY_TIMEOUT):
-            # Tunnel never became ready — gather diagnostics
-            if proc.poll() is not None:
-                reason = read_stderr(proc)
-            else:
-                proc.terminate()
-                proc.wait()
-                reason = read_stderr(proc)
-
-            suffix = f": {reason}" if reason else ""
-            print(f"Tunnel did not become ready within {READY_TIMEOUT}s{suffix}.")
-            print(f"Retrying in {RESTART_DELAY}s...")
-            time.sleep(RESTART_DELAY)
-            continue
-
-        if first_connect:
-            print(f"UVote is available at http://localhost:{local_port}")
-            first_connect = False
-        else:
-            print(f"[reconnected]  Tunnel re-established at http://localhost:{local_port}")
-
-        # Block until the port-forward process exits
-        proc.wait()
-
-        # Diagnose the unexpected exit
-        reason = read_stderr(proc)
-        msg = f"Port-forward exited (code {proc.returncode})"
-        if reason:
-            msg += f": {reason}"
-        print(msg)
-        print(f"Restarting in {RESTART_DELAY}s...  (Ctrl+C to quit)")
-        time.sleep(RESTART_DELAY)
+    log.info("All port-forwards stopped.")
+    log.close()
+    sys.exit(0)
 
 
 if __name__ == "__main__":
