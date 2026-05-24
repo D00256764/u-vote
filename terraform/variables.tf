@@ -43,7 +43,7 @@ variable "single_nat_gateway" {
 variable "eks_node_instance_types" {
   description = "EC2 instance types for EKS managed node groups"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.small"]
 }
 
 variable "eks_node_desired_size" {
@@ -93,7 +93,7 @@ variable "db_allocated_storage" {
 
 variable "db_backup_retention_days" {
   type    = number
-  default = 7
+  default = 0
 }
 
 variable "db_deletion_protection" {
