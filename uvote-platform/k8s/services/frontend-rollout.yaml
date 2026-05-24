@@ -25,7 +25,7 @@ spec:
       serviceAccountName: frontend-service
       containers:
         - name: frontend-service
-          image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service:e9552c3
+          image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service:47b912f
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
