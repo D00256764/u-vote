@@ -67,6 +67,16 @@ spec:
     canary:
       stableService: frontend-service
       canaryService: frontend-service-canary
+      trafficRouting:
+        istio:
+          virtualService:
+            name: uvote-frontend
+            routes:
+              - primary
+          destinationRule:
+            name: frontend-service
+            stableSubsetName: stable
+            canarySubsetName: canary
       steps:
         - setWeight: 5
         - pause: { duration: 2m }
