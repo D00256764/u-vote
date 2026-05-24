@@ -59,12 +59,15 @@ except ImportError:
 CLUSTER_NAME = "uvote"
 NAMESPACE = "uvote-dev"
 
-ADDON_NAMES = ["prometheus.yaml", "jaeger.yaml", "kiali.yaml"]
+ADDON_NAMES = ["prometheus.yaml", "jaeger.yaml", "kiali.yaml", "grafana.yaml"]
 
 NETPOL_FILES = [
     "11-allow-prometheus-scrape-istio.yaml",
     "12-allow-kiali.yaml",
 ]
+
+MONITORING_NS = "monitoring"
+KIND_NODES    = ["uvote-control-plane", "uvote-worker"]
 
 TRAFFIC_ROUTES = [
     "http://localhost",
@@ -172,6 +175,111 @@ def step1_apply_addons(istio_dir: Path) -> bool:
             log.error(f"Failed to apply {addon}: {err.strip()}")
             return False
         log.success(f"{addon} applied")
+
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Step 2 — Install ELK stack (Elasticsearch, Kibana, Fluent Bit)
+# ---------------------------------------------------------------------------
+def step2_install_elk(project_root: Path) -> bool:
+    log.header("Step 2: Install ELK Stack (Elasticsearch + Kibana + Fluent Bit)")
+
+    logging_dir = project_root / "uvote-platform" / "k8s" / "logging"
+
+    # Verify Helm
+    rc, ver, _ = run(["helm", "version", "--short"])
+    if rc != 0:
+        log.error("helm not found — cannot install ELK stack")
+        return False
+    log.info(f"Helm: {ver.strip()}")
+
+    # Add Elastic Helm repo (idempotent)
+    log.info("Adding elastic Helm repo...")
+    run(["helm", "repo", "add", "elastic", "https://helm.elastic.co"])
+    rc, _, err = run(["helm", "repo", "update"], timeout=60)
+    if rc != 0:
+        log.error(f"helm repo update failed: {err.strip()}")
+        return False
+    log.success("Helm repos updated")
+
+    # Ensure monitoring namespace exists
+    log.info(f"Ensuring namespace '{MONITORING_NS}'...")
+    run(["kubectl", "create", "namespace", MONITORING_NS])  # idempotent — ignore AlreadyExists
+
+    # vm.max_map_count is required by Elasticsearch; set on each Kind node via docker exec
+    log.info("Setting vm.max_map_count=262144 on Kind nodes...")
+    for node in KIND_NODES:
+        rc, _, err = run(["docker", "exec", node, "sysctl", "-w", "vm.max_map_count=262144"])
+        if rc != 0:
+            log.warning(f"  Could not set vm.max_map_count on {node}: {err.strip()}")
+
+    # Install Elasticsearch
+    es_values = logging_dir / "elasticsearch-values.yaml"
+    if not es_values.exists():
+        log.error(f"Elasticsearch values not found: {es_values}")
+        return False
+    log.info("Installing Elasticsearch (this may take several minutes)...")
+    rc, _, err = run(
+        [
+            "helm", "upgrade", "--install",
+            "elasticsearch", "elastic/elasticsearch",
+            "-n", MONITORING_NS,
+            "-f", str(es_values),
+            "--timeout", "10m",
+            "--wait",
+        ],
+        timeout=660,
+    )
+    if rc != 0:
+        log.error(f"Elasticsearch install failed: {err.strip()}")
+        return False
+    log.success("Elasticsearch installed and ready")
+
+    # Install Kibana
+    kibana_values = logging_dir / "kibana-values.yaml"
+    if not kibana_values.exists():
+        log.error(f"Kibana values not found: {kibana_values}")
+        return False
+    log.info("Installing Kibana (this may take several minutes)...")
+    rc, _, err = run(
+        [
+            "helm", "upgrade", "--install",
+            "kibana", "elastic/kibana",
+            "-n", MONITORING_NS,
+            "-f", str(kibana_values),
+            "--timeout", "10m",
+            "--wait",
+        ],
+        timeout=660,
+    )
+    if rc != 0:
+        log.error(f"Kibana install failed: {err.strip()}")
+        return False
+    log.success("Kibana installed and ready")
+
+    # Install Fluent Bit (non-fatal — log collector, not required for dashboards)
+    fb_values = logging_dir / "fluent-bit-values.yaml"
+    if fb_values.exists():
+        log.info("Adding fluent Helm repo...")
+        run(["helm", "repo", "add", "fluent", "https://fluent.github.io/helm-charts"])
+        run(["helm", "repo", "update"], timeout=60)
+        log.info("Installing Fluent Bit...")
+        rc, _, err = run(
+            [
+                "helm", "upgrade", "--install",
+                "fluent-bit", "fluent/fluent-bit",
+                "-n", MONITORING_NS,
+                "-f", str(fb_values),
+                "--timeout", "5m",
+                "--wait",
+            ],
+            timeout=360,
+        )
+        if rc != 0:
+            log.warning(f"Fluent Bit install failed (non-fatal): {err.strip()}")
+        else:
+            log.success("Fluent Bit installed and ready")
 
     return True
 
@@ -350,7 +458,7 @@ def step8_verify() -> bool:
         all_ok = False
     else:
         log.info("istio-system pods:\n" + out.strip())
-        for component in ("jaeger", "kiali", "prometheus"):
+        for component in ("jaeger", "kiali", "prometheus", "grafana"):
             running = any(
                 component in line and "Running" in line
                 for line in out.splitlines()
@@ -369,7 +477,22 @@ def step8_verify() -> bool:
     if not _port_forward_check("tracing", 16686, 80, "istio-system", "/"):
         all_ok = False
 
-    # 8d — Frontend reachable through Istio gateway (non-fatal: timing/routing
+    # 8d-grafana — Grafana (Istio addon)
+    if not _port_forward_check("grafana", 3000, 3000, "istio-system", "/"):
+        all_ok = False
+
+    # 8e — Kibana (monitoring namespace, non-fatal — ELK may still be starting)
+    log.info("Checking Kibana (svc/kibana-kibana in monitoring)...")
+    rc2, _, _ = run(["kubectl", "get", "svc", "kibana-kibana", "-n", MONITORING_NS])
+    if rc2 == 0:
+        if not _port_forward_check("kibana-kibana", 5601, 5601, MONITORING_NS, "/"):
+            log.warning("Kibana not yet reachable (non-fatal)")
+        else:
+            log.success("Kibana reachable")
+    else:
+        log.warning("svc/kibana-kibana not found in monitoring — ELK stack not deployed (non-fatal)")
+
+    # 8f — Frontend reachable through Istio gateway (non-fatal: timing/routing
     # issues at install time should not fail the observability stack install)
     log.info("Testing curl http://localhost...")
     time.sleep(1)
@@ -407,6 +530,12 @@ def step8_verify() -> bool:
     help="Seconds to wait for all istio-system pods to become Ready.",
 )
 @click.option(
+    "--skip-elk",
+    is_flag=True,
+    default=False,
+    help="Skip Step 2: ELK stack installation (Elasticsearch, Kibana, Fluent Bit).",
+)
+@click.option(
     "--skip-traffic",
     is_flag=True,
     default=False,
@@ -415,6 +544,7 @@ def step8_verify() -> bool:
 def main(
     istio_dir: str,
     addon_wait_timeout: int,
+    skip_elk: bool,
     skip_traffic: bool,
 ) -> None:
     """Install Istio observability addons and configure tracing for uvote-dev.
@@ -441,6 +571,14 @@ def main(
 
     steps = [
         ("Step 1: Apply addons",          lambda: step1_apply_addons(resolved_istio_dir)),
+    ]
+
+    if not skip_elk:
+        steps.append(("Step 2: Install ELK stack", lambda: step2_install_elk(project_root)))
+    else:
+        log.info("Skipping Step 2 (--skip-elk)")
+
+    steps += [
         ("Step 4: Wait for istio-system", lambda: step4_wait_istio_system(addon_wait_timeout)),
         ("Step 5: Apply Telemetry",       step5_apply_telemetry),
         ("Step 6: Apply network policies",lambda: step6_apply_network_policies(project_root)),
@@ -460,14 +598,18 @@ def main(
 
     log.header("Observability installation complete")
     log.success("All steps passed.")
-    log.info("Access dashboards via port-forward:")
-    log.info("  kubectl port-forward svc/kiali    20001:20001 -n istio-system")
-    log.info("  kubectl port-forward svc/tracing  16686:80    -n istio-system")
-    log.info("  kubectl port-forward svc/prometheus 9090:9090 -n istio-system")
+    log.info("Access dashboards via port-forward (or run: python plat_scripts/port_forward.py):")
+    log.info("  kubectl port-forward svc/kiali       20001:20001 -n istio-system")
+    log.info("  kubectl port-forward svc/tracing     16686:80    -n istio-system")
+    log.info("  kubectl port-forward svc/prometheus  9090:9090   -n istio-system")
+    log.info("  kubectl port-forward svc/grafana     3000:3000   -n istio-system")
+    log.info("  kubectl port-forward svc/kibana-kibana 5601:5601 -n monitoring")
     log.info("Then open:")
     log.info("  http://localhost:20001/kiali   — Kiali service graph")
     log.info("  http://localhost:16686         — Jaeger trace search")
     log.info("  http://localhost:9090          — Prometheus query UI")
+    log.info("  http://localhost:3000          — Grafana dashboards  (admin / admin)")
+    log.info("  http://localhost:5601          — Kibana log search")
 
 
 if __name__ == "__main__":
