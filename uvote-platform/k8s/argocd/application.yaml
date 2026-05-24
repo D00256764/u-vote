@@ -13,12 +13,17 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://github.com/D00256764/u-vote
-    targetRevision: main
-    path: uvote-platform/k8s
-    directory:
-      recurse: true
+  sources:
+    - repoURL: https://github.com/D00256764/u-vote
+      targetRevision: main
+      path: uvote-platform/k8s
+      directory:
+        recurse: true
+    - repoURL: https://github.com/D00256764/u-vote
+      targetRevision: main
+      path: uvote-platform/istio
+      directory:
+        recurse: false
 
   destination:
     server: https://kubernetes.default.svc
@@ -31,3 +36,12 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - RespectIgnoreDifferences=true
+
+  ignoreDifferences:
+    # Rollout controller owns VirtualService weights during canary.
+    - group: networking.istio.io
+      kind: VirtualService
+      name: uvote-frontend
+      jsonPointers:
+        - /spec/http/0/route/0/weight
+        - /spec/http/0/route/1/weight
