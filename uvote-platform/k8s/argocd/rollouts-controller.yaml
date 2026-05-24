@@ -1,0 +1,28 @@
+# Installs the Argo Rollouts controller (cluster-scoped).
+# Apply after the main Argo CD install:
+#   kubectl apply -n argocd -f uvote-platform/k8s/argocd/rollouts-controller.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/argoproj/argo-rollouts.git
+    targetRevision: v1.7.2
+    path: manifests/cluster-install
+    directory:
+      recurse: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-rollouts
+
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

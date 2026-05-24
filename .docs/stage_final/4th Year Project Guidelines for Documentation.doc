@@ -1,0 +1,433 @@
+Date: Mon, 11 May 2026 15:18:34 +0000 (UTC)
+Message-ID: <1656456829.5.1778512714262@4a315365d62d>
+Subject: Exported From Confluence
+MIME-Version: 1.0
+Content-Type: multipart/related; 
+	boundary="----=_Part_4_1770356868.1778512714262"
+
+------=_Part_4_1770356868.1778512714262
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+Content-Location: file:///C:/exported.html
+
+<html xmlns:o=3D'urn:schemas-microsoft-com:office:office'
+      xmlns:w=3D'urn:schemas-microsoft-com:office:word'
+      xmlns:v=3D'urn:schemas-microsoft-com:vml'
+      xmlns=3D'urn:w3-org-ns:HTML'>
+<head>
+    <meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf-8=
+">
+    <title>4th Year Project - Guidelines for Final Project Documentation</t=
+itle>
+    <!--[if gte mso 9]>
+    <xml>
+        <o:OfficeDocumentSettings>
+            <o:TargetScreenSize>1024x640</o:TargetScreenSize>
+            <o:PixelsPerInch>72</o:PixelsPerInch>
+            <o:AllowPNG/>
+        </o:OfficeDocumentSettings>
+        <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>90</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+    </xml>
+    <![endif]-->
+    <style>
+                <!--
+        @page Section1 {
+            size: 8.5in 11.0in;
+            margin: 1.0in;
+            mso-header-margin: .5in;
+            mso-footer-margin: .5in;
+            mso-paper-source: 0;
+        }
+
+        table {
+            border: solid 1px;
+            border-collapse: collapse;
+        }
+
+        table td, table th {
+            border: solid 1px;
+            padding: 5px;
+        }
+
+        td {
+            page-break-inside: avoid;
+        }
+
+        tr {
+            page-break-after: avoid;
+        }
+
+        div.Section1 {
+            page: Section1;
+        }
+
+        /* Confluence print stylesheet. Common to all themes for print medi=
+a */
+/* Full of !important until we improve batching for print CSS */
+
+@media print {
+    #main {
+        padding-bottom: 1em !important; /* The default padding of 6em is to=
+o much for printouts */
+    }
+
+    body {
+        font: var(--ds-font-body-small, Arial, Helvetica, FreeSans, sans-se=
+rif);
+    }
+
+    body, #full-height-container, #main, #page, #content, .has-personal-sid=
+ebar #content {
+        background: var(--ds-surface, #fff) !important;
+        color: var(--ds-text, #000) !important;
+        border: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    a, a:link, a:visited, a:focus, a:hover, a:active {
+        color: var(--ds-text, #000);
+    }
+
+    #content h1,
+    #content h2,
+    #content h3,
+    #content h4,
+    #content h5,
+    #content h6 {
+        page-break-after: avoid;
+    }
+
+    pre {
+        font: var(--ds-font-code, Monaco, "Courier New", monospace);
+    }
+
+    #header,
+    .aui-header-inner,
+    #navigation,
+    #sidebar,
+    .sidebar,
+    #personal-info-sidebar,
+    .ia-fixed-sidebar,
+    .page-actions,
+    .navmenu,
+    .ajs-menu-bar,
+    .noprint,
+    .inline-control-link,
+    .inline-control-link a,
+    a.show-labels-editor,
+    .global-comment-actions,
+    .comment-actions,
+    .quick-comment-container,
+    #addcomment {
+        display: none !important;
+    }
+
+    /* CONF-28544 cannot print multiple pages in IE */
+    #splitter-content {
+        position: relative !important;
+    }
+
+    .comment .date::before {
+        content: none !important; /* remove middot for print view */
+    }
+
+    h1.pagetitle img {
+        height: auto;
+        width: auto;
+    }
+
+    .print-only {
+        display: block;
+    }
+
+    #footer {
+        position: relative !important; /* CONF-17506 Place the footer at en=
+d of the content */
+        margin: 0;
+        padding: 0;
+        background: none;
+        clear: both;
+    }
+
+    #poweredby {
+        border-top: none;
+        background: none;
+    }
+
+    #poweredby li.print-only {
+        display: list-item;
+        font-style: italic;
+    }
+
+    #poweredby li.noprint {
+        display: none;
+    }
+
+    /* no width controls in print */
+    .wiki-content .table-wrap,
+    .wiki-content p,
+    .panel .codeContent,
+    .panel .codeContent pre,
+    .image-wrap {
+        overflow: visible !important;
+    }
+
+    /* TODO - should this work? */
+    #children-section,
+    #comments-section .comment,
+    #comments-section .comment .comment-body,
+    #comments-section .comment .comment-content,
+    #comments-section .comment p {
+        page-break-inside: avoid;
+    }
+
+    #page-children a {
+        text-decoration: none;
+    }
+
+    /**
+     hide twixies
+
+     the specificity here is a hack because print styles
+     are getting loaded before the base styles. */
+    #comments-section.pageSection .section-header,
+    #comments-section.pageSection .section-title,
+    #children-section.pageSection .section-header,
+    #children-section.pageSection .section-title,
+    .children-show-hide {
+        padding-left: 0;
+        margin-left: 0;
+    }
+
+    .children-show-hide.icon {
+        display: none;
+    }
+
+    /* personal sidebar */
+    .has-personal-sidebar #content {
+        margin-right: 0px;
+    }
+
+    .has-personal-sidebar #content .pageSection {
+        margin-right: 0px;
+    }
+
+    .no-print, .no-print * {
+        display: none !important;
+    }
+}
+-->
+    </style>
+</head>
+<body>
+    <h1>4th Year Project - Guidelines for Final Project Documentation</h1>
+    <div class=3D"Section1">
+        <p local-id=3D"8ea399c2b17a">Below are guidelines for producing the=
+ final 4th year project documentation to help assist in preparation of the =
+material. The document should be in two sections:</p>
+<ul local-id=3D"b89252a2e7e0">
+<li local-id=3D"67915d0b52c4">
+<p local-id=3D"b526a6e1de24"><strong>Project Overview Document</strong>: Th=
+is should provide a high level description of all aspects of the project. O=
+ne document should be produced per project.</p></li>
+<li local-id=3D"8ad5b83bdff4">
+<p local-id=3D"a2e5a1cb4f97"><strong>Personal Contribution Document</strong=
+>: This should provide details of student=E2=80=99s individual contribution=
+. Each student should complete this section individually.</p></li>
+</ul>
+<p local-id=3D"d2fdebb457c7">The project is ultimately assessed as an indiv=
+idual project, and the documentation should reflect the effort and learning=
+ outcomes achieved by the individual student. This will be assessed in a co=
+nsistent way against Learning Outcomes, whether the project was undertaken =
+as a team or individually.</p>
+<p local-id=3D"95d14cd930de">The final document is worth 45% of the overall=
+ project mark. The presentation is worth 10%.</p>
+<h2 local-id=3D"47840f384f11" id=3D"id-4thYearProject-GuidelinesforFinalPro=
+jectDocumentation-ProjectOverviewDocument(20%)"><u>Project Overview Documen=
+t (20%)</u></h2>
+<p local-id=3D"2b5c52c617c4">This document should be completed for each pro=
+ject. It should provide the reader an understanding of the architecture, de=
+sign, processes, tooling and functionality of the platform and application.=
+ This can be an update to any similar documentation produced for the stage =
+1 submission.</p>
+<p local-id=3D"7c5bf4635a69">The document should outline of the following a=
+spects of the project, including diagrams and screenshots to help illustrat=
+e the topics.</p>
+<ul local-id=3D"b7058835-1f50-4e02-b2c5-363a14ecb15d">
+<li local-id=3D"b482bcf4-c5bb-4688-9316-487e5c81c00a">
+<p local-id=3D"d1833590ff8c">Pipeline</p>
+<ul local-id=3D"4e885153-0c34-404e-9c7c-956f5a29b079">
+<li local-id=3D"780e25a6-33d7-4451-b47d-295e2e050a21">
+<p local-id=3D"df882e13627f">Structured</p></li>
+<li local-id=3D"6980ab3e-e379-4bd2-ad60-b9963791d76e">
+<p local-id=3D"c7fd9c8d7449">CI automation</p></li>
+<li local-id=3D"fa11df89-21c5-42ca-bf76-3e0f4edc55dd">
+<p local-id=3D"55c431ffa56e">Automated Testing approach</p>
+<ul local-id=3D"9904869e-c6ae-4f15-a00b-6a94a2af63a7">
+<li local-id=3D"7b8cb9c9-4252-404d-af7d-b23a5b657aff">
+<p local-id=3D"de68cbcdc1f3">Unit testing</p></li>
+<li local-id=3D"fbf29965-f356-41b4-853a-41e28bea79cb">
+<p local-id=3D"78dc6f221445">system</p></li>
+<li local-id=3D"28e2c47e-8c62-42ba-95a2-f9f7496bacf4">
+<p local-id=3D"0daeada03440">Non functional (including security)</p></li>
+</ul></li>
+</ul></li>
+<li local-id=3D"35431553-bf95-4626-a158-464a3d4166d6">
+<p local-id=3D"59aa8c58b8c4">Environment</p>
+<ul local-id=3D"196c3547-bff0-406c-a639-f60604fe9fa6">
+<li local-id=3D"37486168-359c-4feb-b509-38ce95b65513">
+<p local-id=3D"3c8f49d087dd">Multiple Environments (test/prod)</p></li>
+<li local-id=3D"6d7d09b8-bc2c-452a-8ffb-7f8a47966270">
+<p local-id=3D"1d6657489287">Provisioning of environments</p></li>
+<li local-id=3D"05c98f5e-3f1b-48ed-94d7-f97f7d147327">
+<p local-id=3D"0a6f8465c0b0">Resilience</p></li>
+<li local-id=3D"474669a5-4bad-4750-b523-6bcb7d95a174">
+<p local-id=3D"7306e74bed16">Appropriate security features</p></li>
+</ul></li>
+<li local-id=3D"9ce24854-f578-4508-b73c-560af2b7cc98">
+<p local-id=3D"ec19c79988c5">Deployment</p>
+<ul local-id=3D"02c29521-6b6d-4cbc-ac52-22547e884a90">
+<li local-id=3D"b515e247-a6da-4677-8831-8d2b5d70dd55">
+<p local-id=3D"f4420c8aa650">Automated deployment process</p></li>
+<li local-id=3D"221ec90a-4276-4074-8294-27a1104d6c94">
+<p local-id=3D"50805e82e3a0">Deployment strategy</p>
+<ul local-id=3D"6d038d1a-e4df-40d7-aae5-b9d7bc1f0fd1">
+<li local-id=3D"897d942d-4e25-4df5-9c17-51c26c8a1362">
+<p local-id=3D"d45f7ee33dad">Mechanism e.g. feature switch, green/blue etc.=
+</p></li>
+<li local-id=3D"3623c21a-a883-4afd-99a9-0fc488ee9776">
+<p local-id=3D"76b70d85497d">Controlled Release management process</p></li>
+<li local-id=3D"9b0dc852-8984-4e91-a35c-2cb6e1c2f58f">
+<p local-id=3D"e611141d070d">Deployment tooling and automation</p></li>
+<li local-id=3D"30aaaeb0-990e-4550-a15a-e8561e1c9fc2">
+<p local-id=3D"6ee933a040c8">Release strategy e.g. canary etc.</p></li>
+</ul></li>
+</ul></li>
+<li local-id=3D"3a74e14b-cbe3-4e4f-8a46-ba31d727d8d7">
+<p local-id=3D"f57009bc8683">Observability</p>
+<ul local-id=3D"eef6226e-8778-493c-8ace-9d5758cf41ae">
+<li local-id=3D"6dfa42c7-8976-434f-b52b-1424454de0c5">
+<p local-id=3D"af1e3cbe0ae1">Monitoring</p></li>
+<li local-id=3D"09d11839-34c1-4580-816f-3f1303962fba">
+<p local-id=3D"b5ba7caf0aee">Logging</p></li>
+<li local-id=3D"608d9d1242d4">
+<p local-id=3D"ea2c204ab37a">Appropriate SLIs and SLOs</p></li>
+</ul></li>
+<li local-id=3D"d008dd4f-aaec-4fa3-abc8-86f06d556434">
+<p local-id=3D"ae7c39d8bd88">Application</p>
+<ul local-id=3D"ed664230-5c27-4bc8-a951-9764e5b6c31d">
+<li local-id=3D"0cfb10ee-a876-4515-a4f7-01d5e43c08a4">
+<p local-id=3D"48385421ea59">Functionality</p></li>
+<li local-id=3D"371a7d23-5353-4b57-ae2a-de67fc4516d8">
+<p local-id=3D"b31bb9f396e0">Architecture</p></li>
+<li local-id=3D"ce3ca80da53a">
+<p local-id=3D"d02a65eb14e5">Design</p></li>
+<li local-id=3D"d17e055b-f29c-434c-af88-cf3c32273f27">
+<p local-id=3D"b24bc1e2faf5">Security features</p></li>
+</ul></li>
+</ul>
+<p local-id=3D"2f7eae35b6c9">When describing the application bear in mind t=
+hat architecture and how it meets non functional requirements are as import=
+ant to describe as the application functionality, for the purpose of assess=
+ment.</p>
+<p local-id=3D"5cec1d7595f2">This should be <strong>limited to 20 pages </s=
+trong>maximum.</p>
+<h2 local-id=3D"c6f9e7219184" id=3D"id-4thYearProject-GuidelinesforFinalPro=
+jectDocumentation-IndividualContributionDocument(25%)"><u>Individual Contri=
+bution Document (25%)</u></h2>
+<p local-id=3D"6485e87a132e">In this section students should provide detail=
+s of the individual contribution they have made to the project. The documen=
+ted needs to be completed individually by each student and contain these se=
+ctions:</p>
+<ul local-id=3D"6dea68237f1a">
+<li local-id=3D"b2dc0348-3506-4e02-9241-fbbb29f660c4">
+<p local-id=3D"b228243c6286">Section Implementation</p>
+<ul local-id=3D"217e647d-6bb2-4d1f-b34d-7b9d99aecdd7">
+<li local-id=3D"013bff5a-1860-42d5-8b1d-910ddaa6773a">
+<p local-id=3D"835816ce40bf">Detailed description of the implementation of =
+the sections of the project the student has worked on. Reference the sectio=
+ns in the overview document being implemented. Include information about de=
+tailed design, implementation, testing, results etc.</p></li>
+</ul></li>
+<li local-id=3D"f532bfa915f8">
+<p local-id=3D"cc6fc46f20ee">Process Documentation</p>
+<ul local-id=3D"11239170fa92">
+<li local-id=3D"94640d349e2a">
+<p local-id=3D"dd197726bdc4">Evidence of following an Agile process (e.g. S=
+crum or Kanban) and capturing the process is an appropriate tool (e.g. Jira=
+). Summarise the approach and provide details/export of the individual task=
+s worked on in an appendix.</p></li>
+<li local-id=3D"d54145094185">
+<p local-id=3D"f44208f9a5c7">Details of documentation worked on by the stud=
+ent during the project, e.g. architecture design decisions, tool evaluation=
+s etc. These documents should have been captured in an appropriate document=
+ation tool (e.g. Confluence). Export these documents into an appendix and r=
+eference in main document as appropriate.</p></li>
+</ul></li>
+<li local-id=3D"06ff69254eb1">
+<p local-id=3D"3ab1e88a7386">Reflection</p>
+<ul local-id=3D"aef7b27dabb0">
+<li local-id=3D"62b78271c312">
+<p local-id=3D"c2f52aecf3c7">What went well.</p></li>
+<li local-id=3D"c2ac34f9f4d5">
+<p local-id=3D"39530a1eedb6">Issues, challenges and resolutions</p></li>
+<li local-id=3D"16c896b64588">
+<p local-id=3D"f0404aa34353">Benefits and valuable insights gained</p></li>
+</ul></li>
+</ul>
+<p local-id=3D"ca1acb90e2bf">This section should be <strong>limited to 30 p=
+ages</strong>, not including appendices.</p>
+<h2 local-id=3D"69687061c0c5" id=3D"id-4thYearProject-GuidelinesforFinalPro=
+jectDocumentation-FinalPresentation(10%)"><u>Final Presentation </u>(10%)</=
+h2>
+<ul local-id=3D"147d43e668ce">
+<li local-id=3D"cf5e7460972a">
+<p local-id=3D"05ce3383af5e">Poster</p></li>
+<li local-id=3D"06951553d339">
+<p local-id=3D"41f5ceac1343">Demonstration of app</p></li>
+<li local-id=3D"7c91805292b1">
+<p local-id=3D"5a804041e3b2">High level description of platform</p></li>
+<li local-id=3D"004bf0d1d70c">
+<p local-id=3D"7838200fc9ca">Walkthrough of deployment process</p></li>
+</ul>
+<p local-id=3D"0b9ec281b9ce"></p>
+<h2 local-id=3D"6650e5e109d1" id=3D"id-4thYearProject-GuidelinesforFinalPro=
+jectDocumentation-ReferencetoLearningOutcomes">Reference to Learning Outcom=
+es</h2>
+<p local-id=3D"dfd8eb3589e4">Please keep in mind when producing documentati=
+on that projects are assessed against the Learning Outcomes for the module.=
+ They are listed below for reference:</p>
+<ol start=3D"1" local-id=3D"604c2685bd23">
+<li local-id=3D"e692c24390c1">
+<p local-id=3D"b5922dc78dad">Conduct background reading, research and user =
+analysis to develop a set of requirements and give wider context for a comp=
+lex technical project.</p></li>
+<li local-id=3D"66c974709e59">
+<p local-id=3D"af2ea2f56b37">Build, test and deploy a substantial artefact =
+while demonstrating best practice in modern DevOps.</p></li>
+<li local-id=3D"314656b80355">
+<p local-id=3D"5c3e294e8ccc">Demonstrate a thorough understanding of Develo=
+pment, Configuration Management, Continuous Integration/Delivery (CI/CD) an=
+d Operations including software tools used for automation.</p></li>
+<li local-id=3D"3c9bce48645a">
+<p local-id=3D"41ce75e1fc5d">Communicate technical information clearly and =
+succinctly using a range of media.</p></li>
+<li local-id=3D"30786bcbaddf">
+<p local-id=3D"76c4b5d2fb98">Critically assess project outputs, reflecting =
+on the extent to which the objectives of the project have been reached, and=
+ discuss project outcomes in an oral/practical presentation.</p></li>
+</ol>
+<p local-id=3D"34d2e9018018"></p>
+    </div>
+</body>
+</html>
+------=_Part_4_1770356868.1778512714262--

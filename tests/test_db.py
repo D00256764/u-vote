@@ -955,6 +955,7 @@ def test_connection_from_pod(pod: str, results: TestResults) -> bool:
         '--image=postgres:15-alpine',
         '-n', K8S_NAMESPACE,
         '--restart=Never',
+        '--annotations=sidecar.istio.io/inject=false',
         '--labels=app=auth-service,purpose=network-policy-testing',
         '--', 'sleep', '3600'
     ], timeout=35)
@@ -1024,6 +1025,11 @@ def test_load_performance(pod: str, results: TestResults, num_votes: int = 1000)
     Returns:
         True if the bulk insert succeeds and the distribution query works.
     """
+    # NOTE: This test references the `votes` and `candidates` tables which no longer exist
+    # in the current schema. The schema now uses `encrypted_ballots` for ballot storage.
+    # This test requires alignment with the encrypted_ballots schema before it can pass.
+    # It is intentionally left in place pending a schema update.
+
     print_test(12, f"Load Testing ({num_votes} votes)")
 
     print_info(f"Inserting {num_votes} test votes...")

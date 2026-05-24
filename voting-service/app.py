@@ -26,10 +26,11 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request, Form
+from fastapi import Depends, FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
 # -- Shared imports -----------------------------------------------------------
 current_dir = os.path.dirname(__file__)
@@ -50,6 +51,7 @@ logger = logging.getLogger('voting-service')
 from database import Database
 from security import generate_receipt_token
 from schemas import HealthResponse
+from csrf import generate_csrf_token, validate_csrf_token
 
 # -- Service URLs -------------------------------------------------------------
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -73,6 +75,7 @@ app = FastAPI(
     description="Voter-facing application - identity verification and anonymous vote casting",
     lifespan=lifespan,
 )
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET", "change-me"))
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -93,6 +96,15 @@ def _error_page(request, error):
     return templates.TemplateResponse("vote_error.html", {
         "request": request, "error": error, "messages": [],
     })
+
+
+async def check_csrf(request: Request):
+    if os.getenv("TESTING"):
+        return
+    form = await request.form()
+    submitted_token = form.get("csrf_token")
+    if not validate_csrf_token(request.session, submitted_token):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
 
 
 # -- Health -------------------------------------------------------------------
@@ -181,10 +193,11 @@ async def vote_landing(request: Request, token: str):
 
     return templates.TemplateResponse("verify_identity.html", {
         "request": request, "token": token, "messages": [],
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/vote/verify-identity", response_class=HTMLResponse)
+@app.post("/vote/verify-identity", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def verify_identity(request: Request, token: str = Form(...),
                           otp: str = Form(...)):
     """Step 2 - Verify OTP via auth-service, acquire ballot token, show ballot."""
@@ -207,6 +220,7 @@ async def verify_identity(request: Request, token: str = Form(...),
             "request": request,
             "token": token,
             "messages": [{"category": "danger", "message": error}],
+            "csrf_token": generate_csrf_token(request.session),
         })
 
     # MFA passed - get election_id
@@ -226,7 +240,7 @@ async def verify_identity(request: Request, token: str = Form(...),
     return await _acquire_ballot_and_show(request, token, election_id)
 
 
-@app.post("/vote/submit", response_class=HTMLResponse)
+@app.post("/vote/submit", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def submit_vote(request: Request, ballot_token: str = Form(...),
                       option_id: int = Form(...), election_id: int = Form(...)):
     """Step 3 - Cast an encrypted vote using the blind ballot token."""
@@ -419,4 +433,5 @@ async def _acquire_ballot_and_show(request, token, election_id):
             for o in options
         ],
         "messages": [],
+        "csrf_token": generate_csrf_token(request.session),
     })

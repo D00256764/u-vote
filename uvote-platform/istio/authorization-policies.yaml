@@ -1,0 +1,117 @@
+# auth-service — called by all five other services for JWT validation
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-auth-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/uvote-dev/sa/frontend-service
+        - cluster.local/ns/uvote-dev/sa/voting-service
+        - cluster.local/ns/uvote-dev/sa/election-service
+        - cluster.local/ns/uvote-dev/sa/admin-service
+        - cluster.local/ns/uvote-dev/sa/results-service
+
+---
+
+# election-service — reached by frontend (UI) and the ingress gateway (API)
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-election-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: election-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/uvote-dev/sa/frontend-service
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+
+---
+
+# voting-service — voter-facing, reached from ingress gateway only
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-voting-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: voting-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+
+---
+
+# results-service — reached from ingress gateway only
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-results-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: results-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+
+---
+
+# admin-service — reached by election-service (token generation) and ingress gateway
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-admin-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: admin-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/uvote-dev/sa/election-service
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+
+---
+
+# frontend-service — public entry point, reached from ingress gateway only
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-frontend-service
+  namespace: uvote-dev
+spec:
+  selector:
+    matchLabels:
+      app: frontend-service
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account

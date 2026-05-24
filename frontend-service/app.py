@@ -18,7 +18,7 @@ import logging
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, Request, Form
+from fastapi import Depends, FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -39,6 +39,8 @@ for p in [
 from logging_config import configure_logging
 configure_logging()
 logger = logging.getLogger('frontend-service')
+
+from csrf import generate_csrf_token, validate_csrf_token
 
 # ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -91,6 +93,15 @@ def safe_json(resp: httpx.Response, fallback: dict | None = None) -> dict:
         return fallback or {}
 
 
+async def check_csrf(request: Request):
+    if os.getenv("TESTING"):
+        return
+    form = await request.form()
+    submitted_token = form.get("csrf_token")
+    if not validate_csrf_token(request.session, submitted_token):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -115,41 +126,35 @@ async def register_page(request: Request):
     return templates.TemplateResponse("register.html", {
         "request": request,
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/register", response_class=HTMLResponse)
+@app.post("/register", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def register(request: Request, email: str = Form(...), password: str = Form(...),
                    confirm_password: str = Form(...)):
     logger.info('Request received: %s %s', request.method, request.url.path)
 
-    if password != confirm_password:
-        flash(request, "Passwords do not match", "danger")
+    def _register_page(msg, cat="danger"):
+        flash(request, msg, cat)
         return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
+            "request": request,
+            "messages": get_flashed_messages(request),
+            "csrf_token": generate_csrf_token(request.session),
         })
+
+    if password != confirm_password:
+        return _register_page("Passwords do not match")
 
     import re
     if len(password) < 8:
-        flash(request, "Password must be at least 8 characters", "danger")
-        return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _register_page("Password must be at least 8 characters")
     if not re.search(r'[A-Z]', password):
-        flash(request, "Password must contain at least one uppercase letter", "danger")
-        return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _register_page("Password must contain at least one uppercase letter")
     if not re.search(r'[a-z]', password):
-        flash(request, "Password must contain at least one lowercase letter", "danger")
-        return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _register_page("Password must contain at least one lowercase letter")
     if not re.search(r'[0-9]', password):
-        flash(request, "Password must contain at least one number", "danger")
-        return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _register_page("Password must contain at least one number")
 
     try:
         resp = await http_client.post(f"{AUTH_SERVICE}/register", json={
@@ -158,19 +163,13 @@ async def register(request: Request, email: str = Form(...), password: str = For
     except httpx.RequestError as e:
         logger.error('External service call failed: %s %s — %s',
                      'POST', AUTH_SERVICE + '/register', e)
-        flash(request, "Service unavailable", "danger")
-        return templates.TemplateResponse("register.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _register_page("Service unavailable")
 
     if resp.status_code == 201:
         flash(request, "Registration successful! Please log in.", "success")
         return RedirectResponse(url="/login", status_code=303)
 
-    flash(request, safe_json(resp).get("detail", "Registration failed"), "danger")
-    return templates.TemplateResponse("register.html", {
-        "request": request, "messages": get_flashed_messages(request),
-    })
+    return _register_page(safe_json(resp).get("detail", "Registration failed"))
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -179,12 +178,21 @@ async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {
         "request": request,
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/login", response_class=HTMLResponse)
+@app.post("/login", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
     logger.info('Request received: %s %s', request.method, request.url.path)
+
+    def _login_page(msg, cat="danger"):
+        flash(request, msg, cat)
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "messages": get_flashed_messages(request),
+            "csrf_token": generate_csrf_token(request.session),
+        })
 
     try:
         resp = await http_client.post(f"{AUTH_SERVICE}/login", json={
@@ -193,10 +201,7 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
     except httpx.RequestError as e:
         logger.error('External service call failed: %s %s — %s',
                      'POST', AUTH_SERVICE + '/login', e)
-        flash(request, "Service unavailable", "danger")
-        return templates.TemplateResponse("login.html", {
-            "request": request, "messages": get_flashed_messages(request),
-        })
+        return _login_page("Service unavailable")
 
     if resp.status_code == 200:
         data = safe_json(resp)
@@ -213,10 +218,7 @@ async def login(request: Request, email: str = Form(...), password: str = Form(.
         )
 
     logger.warning('Auth failure: %s', safe_json(resp).get("detail", "Login failed"))
-    flash(request, safe_json(resp).get("detail", "Login failed"), "danger")
-    return templates.TemplateResponse("login.html", {
-        "request": request, "messages": get_flashed_messages(request),
-    })
+    return _login_page(safe_json(resp).get("detail", "Login failed"))
 
 
 @app.get("/logout")

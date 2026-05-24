@@ -1,0 +1,327 @@
+# =============================================================================
+# U-Vote Istio Control-Plane and Ingress Gateway Access Policy
+# =============================================================================
+#
+# Why these policies are needed
+# -----------------------------
+# When Istio sidecar injection is enabled on uvote-dev, every service pod gains
+# an Envoy proxy (istio-proxy) container.  That proxy must maintain a live gRPC
+# connection to istiod (in the istio-system namespace) for:
+#
+#   - xDS configuration streaming (Envoy routes, clusters, listeners)
+#   - mTLS certificate issuance and rotation via the SDS API
+#   - Telemetry and control-plane health reporting
+#
+# Without egress to istiod, the sidecar cannot obtain a workload certificate
+# and the pod fails to start with "failed to warm certificate" errors.
+#
+# In addition, the Istio Ingress Gateway (also in istio-system) replaces the
+# Nginx ingress controller as the external entry point.  All inbound traffic
+# arrives from the istio-system namespace, so each service needs an Ingress
+# rule permitting connections from that namespace.
+#
+# This file contains TWO policy groups following the bidirectional pattern
+# established in 02-allow-to-database.yaml:
+#
+#   05a — EGRESS: all pods → istiod (ports 15012, 15010, 15014/TCP)
+#   05b — INGRESS: istio-system → each of the 6 services (their container port)
+#
+# Reference: install_istio.py  § step6_allow_istiod_egress
+# Reference: install_istio.py  § step11_allow_istio_ingress
+# Reference: 00-default-deny.yaml — the zero-trust baseline these policies
+#            build on top of
+# Reference: 03-allow-from-ingress.yaml — the equivalent policy for Nginx
+#
+# =============================================================================
+
+
+# =============================================================================
+# POLICY 1 of 2: EGRESS TO ISTIOD (05a)
+# =============================================================================
+# Applies to ALL pods in uvote-dev (podSelector: {}).
+#
+# Every sidecar-injected pod needs to reach istiod in the istio-system
+# namespace.  The three ports are:
+#
+#   15012 — xDS gRPC with mTLS (primary Envoy ↔ istiod channel)
+#   15010 — xDS gRPC plaintext (used during bootstrap before certs are issued)
+#   15014 — Istio control-plane monitoring / health
+#
+# The namespaceSelector matches the istio-system namespace by its immutable
+# metadata.name label, consistent with the pattern used for kube-system in
+# 01-allow-dns.yaml and 02-allow-to-database.yaml.
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-istiod-egress
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-control-plane
+    policy-order: "05a"
+spec:
+  # ---------------------------------------------------------------------------
+  # Pod Selector: {} (empty)
+  # Every pod in uvote-dev runs an Envoy sidecar after injection is enabled,
+  # so the egress allowance must cover all pods without exception.
+  # ---------------------------------------------------------------------------
+  podSelector: {}
+
+  policyTypes:
+  - Egress
+
+  egress:
+  # ---------------------------------------------------------------------------
+  # Allow TCP egress to istiod in the istio-system namespace.
+  #
+  # - Port 15012: primary mTLS xDS channel; sidecars use this after receiving
+  #               their initial certificate from the pilot-agent.
+  # - Port 15010: plaintext xDS bootstrap; used briefly at startup before the
+  #               workload certificate is available.
+  # - Port 15014: control-plane health and metrics endpoint.
+  #
+  # The namespaceSelector targets istio-system specifically; no podSelector is
+  # included so any pod within that namespace (istiod replicas, upgrades) is
+  # reachable without policy changes.
+  # ---------------------------------------------------------------------------
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 15012
+    - protocol: TCP
+      port: 15010
+    - protocol: TCP
+      port: 15014
+
+---
+
+# =============================================================================
+# POLICY 2 of 2: INGRESS FROM ISTIO INGRESS GATEWAY (05b)
+# =============================================================================
+# The Istio Ingress Gateway pod runs in the istio-system namespace and
+# forwards external HTTP traffic to services in uvote-dev.  Under the
+# default-deny policy (00), that cross-namespace traffic is silently dropped
+# unless an explicit Ingress rule allows it.
+#
+# One NetworkPolicy per service is used here, following the same design choice
+# documented in 03-allow-from-ingress.yaml § "Design choice":
+#
+#   - Granular control: each service can be independently enabled/disabled
+#   - Clear port mapping: each policy specifies exactly one service port
+#   - Easier auditing: kubectl get networkpolicy shows each service clearly
+#
+# The namespaceSelector matches istio-system, mirroring the approach in the
+# 05a egress policy above and in 01-allow-dns.yaml for kube-system.
+#
+# Services and their container ports (from the service deployment manifests):
+#   frontend-service  port 5000
+#   auth-service      port 5001
+#   admin-service     port 5002
+#   voting-service    port 5003
+#   results-service   port 5004
+#   election-service  port 5005
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Frontend Service — port 5000
+# Main entry point for organisers: login, registration, dashboard redirect.
+# Istio route: / (VirtualService uvote-frontend in uvote-dev)
+# Reference: frontend-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-frontend-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: frontend-service
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5000
+
+---
+
+# -----------------------------------------------------------------------------
+# Auth Service — port 5001
+# Admin registration, login, JWT token issuance and validation.
+# Reference: auth-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-auth-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: auth-service
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5001
+
+---
+
+# -----------------------------------------------------------------------------
+# Admin Service — port 5002
+# Voter/candidate management, token generation, CSV import.
+# Reference: admin-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-admin-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: admin-service
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5002
+
+---
+
+# -----------------------------------------------------------------------------
+# Voting Service — port 5003
+# Token validation, ballot display, anonymous vote casting.
+# Reference: voting-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-voting-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: voting-service
+spec:
+  podSelector:
+    matchLabels:
+      app: voting-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5003
+
+---
+
+# -----------------------------------------------------------------------------
+# Results Service — port 5004
+# Vote tallying, hash-chain audit verification, timeline aggregation.
+# Reference: results-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-results-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: results-service
+spec:
+  podSelector:
+    matchLabels:
+      app: results-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5004
+
+---
+
+# -----------------------------------------------------------------------------
+# Election Service — port 5005
+# Election CRUD, lifecycle management (draft → active → closed).
+# Reference: election-deployment.yaml
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-istio-ingress-to-election-service
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: istio-ingress-access
+    policy-order: "05b"
+    target-service: election-service
+spec:
+  podSelector:
+    matchLabels:
+      app: election-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+    ports:
+    - protocol: TCP
+      port: 5005

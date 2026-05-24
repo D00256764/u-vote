@@ -2,16 +2,62 @@
 """Create UVote Platform Logs dashboard in Kibana 8.5.1"""
 import json
 import os
+import socket
+import subprocess
 import sys
+import time
 import urllib.request
 import urllib.error
 import base64
 
 BASE = "http://localhost:5601"
-USER = "elastic"
-PASS = os.environ.get("ES_PASSWORD")
-if not PASS:
-    sys.exit("ERROR: ES_PASSWORD environment variable is required")
+
+_ES_SECRET    = "elasticsearch-master-credentials"
+_ES_SECRET_NS = "monitoring"
+
+def _resolve_credentials() -> tuple:
+    """Return (username, password) from env vars or the cluster secret (3 retries)."""
+    env_pass = os.environ.get("ES_PASSWORD")
+    if env_pass:
+        username = os.environ.get("ES_USERNAME", "elastic")
+        print(f"[INFO] Credentials: {username}  (ES_PASSWORD from environment)")
+        return username, env_pass
+
+    for attempt in range(3):
+        try:
+            pw = subprocess.run(
+                ["kubectl", "get", "secret", _ES_SECRET,
+                 "-n", _ES_SECRET_NS, "-o", "jsonpath={.data.password}"],
+                capture_output=True, text=True, check=False,
+            )
+            un = subprocess.run(
+                ["kubectl", "get", "secret", _ES_SECRET,
+                 "-n", _ES_SECRET_NS, "-o", "jsonpath={.data.username}"],
+                capture_output=True, text=True, check=False,
+            )
+            if pw.returncode == 0 and pw.stdout.strip():
+                password = base64.b64decode(pw.stdout.strip()).decode("utf-8")
+                username = "elastic"
+                if un.returncode == 0 and un.stdout.strip():
+                    try:
+                        username = base64.b64decode(un.stdout.strip()).decode("utf-8")
+                    except Exception:
+                        pass
+                print(f"[INFO] Credentials: {username}  (password from cluster secret '{_ES_SECRET}')")
+                return username, password
+        except FileNotFoundError:
+            sys.exit("ERROR: kubectl not found — cannot fetch credentials from cluster secret")
+
+        if attempt < 2:
+            print(f"[INFO] Secret fetch returned empty (attempt {attempt + 1}/3) — retrying in 1s...")
+            time.sleep(1)
+
+    sys.exit(
+        f"ERROR: Could not resolve credentials after 3 attempts — set ES_PASSWORD env var or ensure "
+        f"secret '{_ES_SECRET}' exists in namespace '{_ES_SECRET_NS}'"
+    )
+
+
 DV_ID = "f0a18b54-cb47-4ad5-b544-1da0ae22da4f"
 
 # Stable UUIDs
@@ -23,9 +69,8 @@ P5   = "55555555-5555-5555-5555-555555555555"
 P6   = "66666666-6666-6666-6666-666666666666"
 DASH = "77777777-7777-7777-7777-777777777777"
 
-CREDS = base64.b64encode(f"{USER}:{PASS}".encode()).decode()
 
-def post(path, payload):
+def post(path, payload, creds):
     body = json.dumps(payload).encode()
     req = urllib.request.Request(
         f"{BASE}{path}",
@@ -33,7 +78,7 @@ def post(path, payload):
         headers={
             "kbn-xsrf": "true",
             "Content-Type": "application/json",
-            "Authorization": f"Basic {CREDS}",
+            "Authorization": f"Basic {creds}",
         },
         method="POST",
     )
@@ -41,7 +86,10 @@ def post(path, payload):
         with urllib.request.urlopen(req) as resp:
             return resp.status, json.load(resp)
     except urllib.error.HTTPError as e:
-        return e.code, json.load(e)
+        try:
+            return e.code, json.load(e)
+        except Exception:
+            return e.code, {"error": e.reason, "body": e.read().decode(errors="replace")}
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -256,8 +304,21 @@ dash = {
 # ── POST ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # ── resolve credentials (never at import time) ────────────────────────────
+    _user, _pass = _resolve_credentials()
+    _creds = base64.b64encode(f"{_user}:{_pass}".encode()).decode()
+
+    # ── verify Kibana is reachable ────────────────────────────────────────────
+    try:
+        socket.create_connection(("localhost", 5601), timeout=1).close()
+    except OSError:
+        sys.exit(
+            "ERROR: Kibana is not reachable on localhost:5601.\n"
+            "       Run:  python3 plat_scripts/port_forward.py"
+        )
+
     objects = [p1, p2, p3, p4, p5, p6, dash]
-    status, result = post("/api/saved_objects/_bulk_create?overwrite=true", objects)
+    status, result = post("/api/saved_objects/_bulk_create?overwrite=true", objects, _creds)
 
     print(f"HTTP {status}")
     if status not in (200, 201):

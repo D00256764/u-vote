@@ -11,6 +11,7 @@ FastAPI service instances backed by a live PostgreSQL database.
 Run with:
     pytest tests/test_integration_compose.py -v
 """
+import re
 import time
 import uuid
 
@@ -18,6 +19,15 @@ import httpx
 import pytest
 
 BASE = "http://localhost"  # NGINX gateway
+
+
+def _csrf(client: httpx.Client, path: str) -> str:
+    """GET a page and extract the CSRF token from the hidden form field."""
+    r = client.get(path)
+    m = re.search(r'name=["\']csrf_token["\']\s+value=["\']([^"\']+)["\']', r.text)
+    if not m:
+        m = re.search(r'value=["\']([^"\']+)["\']\s+name=["\']csrf_token["\']', r.text)
+    return m.group(1) if m else ""
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +152,7 @@ def test_register_and_login_flow():
             "email": email,
             "password": password,
             "confirm_password": password,
+            "csrf_token": _csrf(c, "/register"),
         })
         # Successful registration: frontend returns 303 → GET /login (200)
         assert r.status_code == 200, (
@@ -154,7 +165,11 @@ def test_register_and_login_flow():
         )
 
         # ── Login ────────────────────────────────────────────────────────────
-        r = c.post("/login", data={"email": email, "password": password})
+        r = c.post("/login", data={
+            "email": email,
+            "password": password,
+            "csrf_token": _csrf(c, "/login"),
+        })
         # After login the chain is:
         #   frontend → redirect to /dashboard?token=...&organiser_id=...
         #   election-service stores session → redirect to /dashboard
@@ -191,6 +206,7 @@ def test_login_wrong_password_stays_at_login(client):
     r = client.post("/login", data={
         "email": "nobody@example.com",
         "password": "WrongPass99!",
+        "csrf_token": _csrf(client, "/login"),
     })
     assert r.status_code == 200
     assert "/login" in str(r.url)
@@ -206,6 +222,7 @@ def test_register_duplicate_email_shows_error():
         # First registration succeeds → redirects to /login
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": _csrf(c, "/register"),
         })
         assert "/login" in str(r.url), (
             f"First registration should redirect to /login, got {r.url}. "
@@ -215,6 +232,7 @@ def test_register_duplicate_email_shows_error():
         # Second registration with same email → error, stays on /register
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": _csrf(c, "/register"),
         })
         assert r.status_code == 200
         assert "/register" in str(r.url), (
@@ -239,13 +257,17 @@ def test_full_organiser_flow():
         # ── Register ──────────────────────────────────────────────────────
         r = c.post("/register", data={
             "email": email, "password": password, "confirm_password": password,
+            "csrf_token": _csrf(c, "/register"),
         })
         assert "/login" in str(r.url), (
             f"Register should redirect to /login, got {r.url}. Body: {r.text[:300]}"
         )
 
         # ── Login ─────────────────────────────────────────────────────────
-        r = c.post("/login", data={"email": email, "password": password})
+        r = c.post("/login", data={
+            "email": email, "password": password,
+            "csrf_token": _csrf(c, "/login"),
+        })
         assert "/dashboard" in str(r.url), (
             f"Login should land on /dashboard but got {r.url}. Body: {r.text[:300]}"
         )
@@ -257,6 +279,7 @@ def test_full_organiser_flow():
             "options[]": ["Option A", "Option B", "Option C"],
             "scheduled_open_at": "2030-06-01T09:00",
             "scheduled_close_at": "2030-06-02T17:00",
+            "csrf_token": _csrf(c, "/elections/create"),
         })
         assert r.status_code == 200, (
             f"Create election expected 200, got {r.status_code}. Body: {r.text[:300]}"

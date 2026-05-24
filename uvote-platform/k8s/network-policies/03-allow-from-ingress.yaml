@@ -258,3 +258,38 @@ spec:
     ports:
     - protocol: TCP
       port: 5002
+
+---
+
+# -----------------------------------------------------------------------------
+# Admin Service — ingress from election-service (port 5002)
+# election-service APScheduler calls admin-service to generate voting tokens
+# when an election opens. This is the ingress counterpart to the
+# allow-election-to-admin egress rule in 08-allow-inter-service.yaml.
+# Without this policy, the default-deny (00) silently drops those calls.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-election-to-admin
+  namespace: uvote-dev
+  labels:
+    app: uvote
+    security: network-policy
+    purpose: inter-service-access
+    policy-order: "03"
+    target-service: admin-service
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: election-service
+    ports:
+    - protocol: TCP
+      port: 5002

@@ -127,7 +127,11 @@ def create_kind_cluster(kind_config: Path) -> bool:
     
     if check_cluster_exists():
         print_warning("Cluster 'uvote' already exists")
-        response = input("Delete and recreate? (y/n): ").lower()
+        if sys.stdin.isatty():
+            response = input("Delete and recreate? (y/n): ").lower()
+        else:
+            print_info("Non-interactive mode: reusing existing cluster")
+            response = 'n'
         if response == 'y':
             print_info("Deleting existing cluster...")
             run_command(['kind', 'delete', 'cluster', '--name', 'uvote'])
@@ -152,15 +156,8 @@ def create_kind_cluster(kind_config: Path) -> bool:
     
     print_success("Cluster created successfully")
 
-    # Label the control-plane node so the Kind ingress controller can schedule on it.
-    # The Kind ingress manifest uses nodeSelector: ingress-ready=true, but Kind only
-    # adds that label automatically when the cluster name is the default "kind".
-    # With a custom name (e.g. "uvote") the label must be applied manually.
-    print_info("Labelling control-plane node for ingress scheduling...")
-    run_command(
-        ['kubectl', 'label', 'node', 'uvote-control-plane', 'ingress-ready=true', '--overwrite'],
-        check=False,
-    )
+    # ingress-ready=true was required by the Nginx ingress nodeSelector; no longer
+    # needed now that Nginx has been replaced by Istio.
 
     # Verify nodes
     success, stdout, _ = run_command(['kubectl', 'get', 'nodes'], capture_output=True, check=False)
@@ -176,26 +173,35 @@ def install_calico() -> bool:
     
     # Install Calico operator
     print_info("Installing Calico operator...")
-    success, _, stderr = run_command([
-        'kubectl', 'create', '-f',
+    success, _, _ = run_command([
+        'kubectl', 'apply', '-f',
         'https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/tigera-operator.yaml'
-    ], check=False)
-    
-    if not success and 'already exists' not in stderr:
+    ], check=False, capture_output=True)
+
+    if not success:
         print_error("Failed to install Calico operator")
         return False
     
+    # Wait for tigera-operator to register its CRDs before applying custom resources
+    print_info("Waiting for tigera-operator deployment to be ready...")
+    rollout_ok, _, _ = run_command([
+        'kubectl', 'rollout', 'status', 'deployment/tigera-operator',
+        '-n', 'tigera-operator', '--timeout=120s'
+    ], check=False)
+    if not rollout_ok:
+        print_warning("tigera-operator rollout wait failed; attempting custom-resources apply anyway")
+
     # Install Calico custom resources (local copy with correct pod CIDR)
     print_info("Installing Calico custom resources...")
     calico_cr = Path(__file__).parent.parent / "uvote-platform" / "k8s" / "calico" / "custom-resources.yaml"
     if not calico_cr.exists():
         print_error(f"Calico custom-resources.yaml not found: {calico_cr}")
         return False
-    success, _, stderr = run_command([
+    success, _, _ = run_command([
         'kubectl', 'apply', '-f', str(calico_cr)
-    ], check=False)
+    ], check=False, capture_output=True)
 
-    if not success and 'already exists' not in stderr:
+    if not success:
         print_error("Failed to install Calico custom resources")
         return False
     
@@ -203,15 +209,20 @@ def install_calico() -> bool:
     print_info("Waiting for Calico to be ready (this may take 2-3 minutes)...")
     time.sleep(30)  # Initial wait
     
-    success, _, _ = run_command([
-        'kubectl', 'wait', '--for=condition=Ready',
-        'pods', '--all', '-n', 'calico-system',
-        '--timeout=300s'
-    ], check=False)
-    
-    if not success:
-        print_warning("Calico pods may still be starting")
-        return True  # Continue anyway
+    calico_selectors = [
+        ('k8s-app=calico-kube-controllers', 'calico-kube-controllers'),
+        ('k8s-app=calico-node',             'calico-node'),
+        ('k8s-app=calico-typha',            'calico-typha'),
+    ]
+    for selector, name in calico_selectors:
+        success, _, _ = run_command([
+            'kubectl', 'wait', '--for=condition=Ready',
+            'pods', '-l', selector, '-n', 'calico-system',
+            '--timeout=300s'
+        ], check=False)
+        if not success:
+            print_warning(f"{name} pods may still be starting")
+            return True  # Continue anyway
     
     print_success("Calico installed and ready")
     
@@ -262,20 +273,32 @@ def deploy_database(k8s_dir: Path) -> bool:
     
     db_dir = k8s_dir / "database"
     
-    # Apply secret
-    print_info("Creating database secret...")
+    # Apply secret — only if it does not already exist.
+    # deploy_platform.py generates a random password and patches db-credentials
+    # on every deploy. Re-applying db-secret.yaml after that would overwrite
+    # the generated password with the hardcoded dev value, breaking all service
+    # connections.
+    print_info("Checking for existing db-credentials secret...")
     secret_file = db_dir / "db-secret.yaml"
     if not secret_file.exists():
         print_error(f"Secret file not found: {secret_file}")
         return False
-    
-    success, _, _ = run_command([
-        'kubectl', 'apply', '-f', str(secret_file)
+
+    exists_rc, _, _ = run_command([
+        'kubectl', 'get', 'secret', 'db-credentials', '-n', 'uvote-dev'
     ], check=False)
-    
-    if not success:
-        print_error("Failed to create database secret")
-        return False
+
+    if exists_rc:
+        print_info("db-credentials secret already exists — skipping apply to preserve generated password")
+    else:
+        print_info("Creating database secret...")
+        success, _, _ = run_command([
+            'kubectl', 'apply', '-f', str(secret_file)
+        ], check=False)
+
+        if not success:
+            print_error("Failed to create database secret")
+            return False
     
     # Apply PVC
     print_info("Creating persistent volume claim...")
@@ -450,6 +473,11 @@ def apply_database_schema(k8s_dir: Path) -> bool:
         return False
 
     print_success("Seed data applied successfully")
+    print_warning(
+        "SECURITY: The default organiser account (admin@uvote.com) has a placeholder "
+        "password hash. You MUST set a real bcrypt password hash in seed_data.sql "
+        "before any real deployment. See the comment in seed_data.sql for instructions."
+    )
 
     # Verify tables
     print_info("Verifying tables...")
@@ -503,12 +531,13 @@ def apply_network_policies(k8s_dir: Path) -> bool:
         print_warning("No network policies found, skipping...")
         return True
     
-    # Apply all network policy files
+    # Apply all network policy files. test-pods.yaml lives in k8s/test/ and
+    # is never present here, so no exclusion filter is needed.
     policy_files = sorted(network_policies_dir.glob("*.yaml"))
     if not policy_files:
         print_warning("No network policy YAML files found")
         return True
-    
+
     for policy_file in policy_files:
         print_info(f"Applying {policy_file.name}...")
         success, _, stderr = run_command([
@@ -534,47 +563,9 @@ def apply_network_policies(k8s_dir: Path) -> bool:
     return True
 
 def install_ingress_controller() -> bool:
-    """Install Nginx Ingress Controller using the Kind-specific manifest.
-
-    The standard Helm chart creates a LoadBalancer service which never gets
-    an external IP in Kind. The Kind-specific manifest binds the controller
-    pod directly to hostPort 80/443 on the control-plane node, which
-    connects to the extraPortMappings declared in kind-config.yaml.
-    This makes the app reachable at http://localhost without any port-forward.
-    """
-    print_step(7, "Installing Nginx Ingress Controller (Kind)...")
-
-    KIND_INGRESS_MANIFEST = (
-        "https://raw.githubusercontent.com/kubernetes/ingress-nginx"
-        "/controller-v1.10.1/deploy/static/provider/kind/deploy.yaml"
-    )
-
-    print_info("Applying Kind ingress-nginx manifest...")
-    success, _, stderr = run_command(
-        ['kubectl', 'apply', '-f', KIND_INGRESS_MANIFEST],
-        check=False,
-    )
-
-    if not success:
-        print_error("Failed to apply ingress-nginx manifest")
-        print(stderr)
-        return False
-
-    # Wait for the controller pod to be ready
-    print_info("Waiting for ingress controller to be ready (up to 3 min)...")
-    success, _, _ = run_command([
-        'kubectl', 'wait',
-        '--namespace', 'ingress-nginx',
-        '--for=condition=ready', 'pod',
-        '--selector=app.kubernetes.io/component=controller',
-        '--timeout=180s',
-    ], check=False)
-
-    if not success:
-        print_warning("Ingress controller pod not ready yet — it may still be pulling the image")
-        return True  # Continue; it usually becomes ready shortly after
-
-    print_success("Ingress controller installed and ready")
+    """Nginx ingress controller step — superseded by Istio."""
+    print_step(7, "Installing ingress controller...")
+    print_info("Nginx ingress replaced by Istio — run install_istio.py after setup to install the Istio ingress gateway")
     return True
 
 def verify_setup() -> bool:
@@ -594,10 +585,16 @@ def verify_setup() -> bool:
         print_error("Nodes not ready")
         checks_passed = False
     
-    # Check Calico
+    # Check Calico — only the three networking-critical pod types; csi-node-driver
+    # is excluded because it frequently ImagePullBackOffs in Kind and is not
+    # required for pod networking.
     print_info("Checking Calico pods...")
+    calico_selector = (
+        'k8s-app in (calico-kube-controllers,calico-node,calico-typha)'
+    )
     success, stdout, _ = run_command([
-        'kubectl', 'get', 'pods', '-n', 'calico-system'
+        'kubectl', 'get', 'pods', '-n', 'calico-system',
+        '-l', calico_selector
     ], capture_output=True, check=False)
     if success and 'Running' in stdout:
         running_count = stdout.count('Running')
@@ -700,7 +697,10 @@ Examples:
     else:
         print_info("Skipping Calico installation")
     
-    # Apply namespaces
+    # Apply namespaces — this is the single authoritative point in the boot
+    # sequence where uvote-dev (and all other U-Vote namespaces) are created.
+    # Both install_istio.py (Step 2) and deploy_platform.py (Step 3) check
+    # that uvote-dev exists and abort if it is missing.  They do NOT create it.
     if not apply_namespaces(k8s_dir):
         print_error("Namespace creation failed")
         sys.exit(1)
@@ -715,9 +715,21 @@ Examples:
         print_error("Schema application failed")
         sys.exit(1)
     
-    # Apply network policies
-    if not apply_network_policies(k8s_dir):
-        print_warning("Network policy application had issues (non-critical)")
+    # Network policies are NOT applied here.
+    #
+    # Several policies in k8s/network-policies/ reference Istio objects
+    # (04-allow-istio-ingress.yaml, 05-allow-istiod-egress.yaml).  Applying
+    # them before install_istio.py runs (Step 2) is harmless for the policies
+    # themselves, but it creates an unclear ownership model: the same files
+    # would be applied by setup (Step 1), install_istio (Step 2), and
+    # deploy_platform (Step 3).  Whichever script runs last wins, making the
+    # final policy state unpredictable if any step fails mid-run.
+    #
+    # deploy_platform.py owns the authoritative network-policy apply via its
+    # apply_network_policies() call (between phase5_deploy_services and
+    # phase6_deploy_mailhog).  By that point Istio is installed and all
+    # Istio-dependent policies are meaningful.
+    print_info("Network policies will be applied by deploy_platform.py after Istio is ready")
     
     # Install ingress
     if not args.skip_ingress:

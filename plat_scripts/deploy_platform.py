@@ -16,6 +16,7 @@ Requirements:
     - Required packages: click, colorama
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -185,6 +186,7 @@ class PlatformDeployer:
         self.dry_run = dry_run
         self.project_root = Path(__file__).resolve().parent.parent
         self.k8s_services_dir = self.project_root / "uvote-platform" / "k8s" / "services"
+        self.git_sha: Optional[str] = None
         self.results: Dict[str, list] = {
             "images_built": [],
             "images_failed": [],
@@ -192,13 +194,14 @@ class PlatformDeployer:
             "images_load_failed": [],
             "services_deployed": [],
             "services_failed": [],
-            "ingress_applied": None,
+            "mailhog_deployed": None,
             "pods_running": [],
             "pods_failed": [],
             "health_passed": [],
             "health_failed": [],
             "net_passed": [],
             "net_failed": [],
+            "double_spend_test": None,
         }
 
     # -- helpers --------------------------------------------------------------
@@ -270,12 +273,17 @@ class PlatformDeployer:
             return False
         self.logger.success("✓ Docker daemon is running")
 
-        # Namespace
+        # Namespace — created by setup_k8s_platform.py (Step 1) via
+        # uvote-platform/k8s/namespaces/namespaces.yaml.  If it is missing,
+        # run setup_k8s_platform.py before this script.
         rc, _, _ = self.run_cmd(
             ["kubectl", "get", "namespace", self.namespace], check=False
         )
         if rc != 0:
-            self.logger.error(f"✗ Namespace '{self.namespace}' does not exist")
+            self.logger.error(
+                f"✗ Namespace '{self.namespace}' does not exist — "
+                "run setup_k8s_platform.py (Step 1) before deploy_platform.py"
+            )
             return False
         self.logger.success(f"✓ Namespace '{self.namespace}' exists")
 
@@ -324,13 +332,17 @@ class PlatformDeployer:
 
             dockerfile = svc_dir / "Dockerfile"
             self.logger.info(f"Building {svc}...")
+
+            build_cmd = [
+                "docker", "build",
+                "-t", f"{GHCR_PREFIX}/u-vote-{svc}:latest",
+            ]
+            if self.git_sha:
+                build_cmd += ["-t", f"{GHCR_PREFIX}/u-vote-{svc}:{self.git_sha}"]
+            build_cmd += ["-f", str(dockerfile), str(self.project_root)]
+
             rc, out, err = self.run_cmd(
-                [
-                    "docker", "build",
-                    "-t", f"{svc}:latest",
-                    "-f", str(dockerfile),
-                    str(self.project_root),
-                ],
+                build_cmd,
                 check=False,
                 timeout=600,
                 mutating=True,
@@ -344,15 +356,12 @@ class PlatformDeployer:
 
             # Image size
             _, size_out, _ = self.run_cmd(
-                ["docker", "images", svc, "--format", "{{.Size}}"], check=False
+                ["docker", "images", f"{GHCR_PREFIX}/u-vote-{svc}", "--format", "{{.Size}}"],
+                check=False,
             )
             size = size_out.strip().splitlines()[0] if size_out.strip() else "unknown"
 
-            # Tag with GHCR name so Kind loads match what the deployment YAMLs reference
-            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
-            self.run_cmd(["docker", "tag", f"{svc}:latest", ghcr_tag], check=False, mutating=True)
-
-            self.logger.success(f"✓ {svc}:latest built (Size: {size})")
+            self.logger.success(f"✓ {svc} built (Size: {size})")
             self.results["images_built"].append(svc)
 
         return all_ok
@@ -369,23 +378,31 @@ class PlatformDeployer:
                 self.logger.warning(f"⚠ Skipping {svc} (build failed)")
                 continue
 
-            ghcr_tag = f"{GHCR_PREFIX}/u-vote-{svc}:latest"
-            self.logger.info(f"Loading {svc}:latest into Kind cluster...")
-            rc, out, err = self.run_cmd(
-                ["kind", "load", "docker-image", ghcr_tag,
-                 "--name", self.cluster_name],
-                check=False,
-                timeout=300,
-                mutating=True,
-            )
-            if rc != 0:
-                self.logger.error(f"✗ Failed to load {svc}")
-                self.logger.debug(err)
+            tags_to_load = [f"{GHCR_PREFIX}/u-vote-{svc}:latest"]
+            if self.git_sha:
+                tags_to_load.append(f"{GHCR_PREFIX}/u-vote-{svc}:{self.git_sha}")
+
+            svc_ok = True
+            for tag in tags_to_load:
+                self.logger.info(f"Loading {tag} into Kind cluster...")
+                rc, out, err = self.run_cmd(
+                    ["kind", "load", "docker-image", tag,
+                     "--name", self.cluster_name],
+                    check=False,
+                    timeout=300,
+                    mutating=True,
+                )
+                if rc != 0:
+                    self.logger.error(f"✗ Failed to load {tag}")
+                    self.logger.debug(err)
+                    svc_ok = False
+
+            if svc_ok:
+                self.logger.success(f"✓ {svc} loaded into Kind")
+                self.results["images_loaded"].append(svc)
+            else:
                 self.results["images_load_failed"].append(svc)
                 all_ok = False
-            else:
-                self.logger.success(f"✓ {svc}:latest loaded into Kind (as {ghcr_tag})")
-                self.results["images_loaded"].append(svc)
 
         return all_ok
 
@@ -401,17 +418,12 @@ class PlatformDeployer:
 
         secret_specs = {
             # -------------------------------------------------------------------------
-            # Database credentials — shared superuser (current design)
+            # Database credentials — shared superuser
             #
-            # All six services currently connect as uvote_admin (PostgreSQL superuser)
-            # via the shared db-credentials secret. Per-service least-privilege roles
-            # (auth_service, voting_service, etc.) are defined in create_roles.sql and
-            # exist in the database, but no per-service Kubernetes Secrets are created
-            # for them here.
-            #
-            # This is an accepted gap for Stage 1. The roles are in place for Stage 2
-            # when per-service secrets will be added and deployment manifests updated
-            # to reference them.
+            # uvote_admin is the PostgreSQL superuser used by setup_k8s_platform.py
+            # to apply schema.sql and create_roles.sql on first cluster init. It is
+            # NOT used by any application service pod at runtime — each service
+            # connects via its own least-privilege role (ADR014, see below).
             # -------------------------------------------------------------------------
             "db-credentials": {
                 "type": "generic",
@@ -450,10 +462,53 @@ class PlatformDeployer:
                     "SMTP_HOST": "mailhog",
                     "SMTP_PORT": "1025",
                     "SMTP_USE_TLS": "false",
+                    "SMTP_USE_SSL": "false",
                     "SMTP_FROM": "uvote@test.local",
                     "SMTP_USER": "",
                     "SMTP_PASS": "",
                     "FRONTEND_URL": "http://frontend-service:5000",
+                },
+            },
+            # -----------------------------------------------------------------------
+            # Per-service database credentials (ADR014 — least-privilege DB access)
+            # Each service pod connects as its own PostgreSQL role with only the
+            # grants defined in create_roles.sql. Passwords are generated once on
+            # first deploy and preserved on subsequent runs; the PostgreSQL role
+            # password is synced from the live secret at the end of this phase.
+            # -----------------------------------------------------------------------
+            "auth-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "auth_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "voting-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "voting_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "election-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "election_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "results-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "results_service",
+                    "password": secrets.token_urlsafe(24),
+                },
+            },
+            "admin-db-credentials": {
+                "type": "generic",
+                "literals": {
+                    "username": "admin_service",
+                    "password": secrets.token_urlsafe(24),
                 },
             },
         }
@@ -561,6 +616,35 @@ class PlatformDeployer:
         if not self._sync_pg_password(current_password):
             return False
 
+        # Sync per-service role passwords from their live secrets (ADR014).
+        # Runs on every deploy so the PostgreSQL password always matches the
+        # Kubernetes Secret, covering both fresh-creation and preserved paths.
+        _service_role_map = [
+            ("auth-db-credentials",     "auth_service"),
+            ("voting-db-credentials",   "voting_service"),
+            ("election-db-credentials", "election_service"),
+            ("results-db-credentials",  "results_service"),
+            ("admin-db-credentials",    "admin_service"),
+        ]
+        for secret_name, pg_role in _service_role_map:
+            self.logger.info(f"Reading {secret_name} password from cluster...")
+            rc, pw_b64, err = self.run_cmd(
+                [
+                    "kubectl", "get", "secret", secret_name,
+                    "-n", self.namespace,
+                    "-o", "jsonpath={.data.password}",
+                ],
+                check=False,
+            )
+            if rc != 0 or not pw_b64.strip():
+                self.logger.error(
+                    f"✗ Could not read {secret_name} password: {err.strip()}"
+                )
+                return False
+            svc_password = base64.b64decode(pw_b64.strip()).decode()
+            if not self._sync_service_role_password(pg_role, svc_password):
+                return False
+
         return True
 
     def _sync_pg_password(self, new_password: str) -> bool:
@@ -598,6 +682,46 @@ class PlatformDeployer:
             return True
         else:
             self.logger.error(f"✗ Failed to sync PostgreSQL password: {err.strip()}")
+            return False
+
+    def _sync_service_role_password(self, pg_role: str, new_password: str) -> bool:
+        """Update a per-service PostgreSQL role password to match its Kubernetes Secret.
+
+        Safe to call even if PostgreSQL is not yet running — returns True and
+        skips in that case.  Executed as uvote_admin (superuser) so it works
+        regardless of whether the service pod has connected yet.
+        """
+        rc, pod_name, _ = self.run_cmd(
+            [
+                "kubectl", "get", "pod", "-n", self.namespace,
+                "-l", "app=postgresql",
+                "-o", "jsonpath={.items[0].metadata.name}",
+            ],
+            check=False,
+        )
+        if rc != 0 or not pod_name.strip():
+            self.logger.debug(
+                f"PostgreSQL not yet running — skipping password sync for {pg_role}"
+            )
+            return True
+
+        pod = pod_name.strip()
+        self.logger.info(f"Syncing PostgreSQL {pg_role} password...")
+        rc, _, err = self.run_cmd(
+            [
+                "kubectl", "exec", "-n", self.namespace, pod, "--",
+                "psql", "-U", "uvote_admin", "-d", "uvote",
+                "-c", f"ALTER USER {pg_role} PASSWORD '{new_password.replace(chr(39), chr(39)*2)}';",
+            ],
+            check=False,
+        )
+        if rc == 0:
+            self.logger.success(f"✓ PostgreSQL {pg_role} password synced")
+            return True
+        else:
+            self.logger.error(
+                f"✗ Failed to sync PostgreSQL password for {pg_role}: {err.strip()}"
+            )
             return False
 
     # -----------------------------------------------------------------------
@@ -728,6 +852,18 @@ class PlatformDeployer:
         self.logger.header("Phase 5: Deploying Services")
         all_ok = True
 
+        # Service accounts must exist before any deployment references them.
+        sa_manifest = self.k8s_services_dir / "service-accounts.yaml"
+        if sa_manifest.exists():
+            self.logger.info("Applying service accounts...")
+            rc, _, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(sa_manifest)], check=False, mutating=True
+            )
+            if rc != 0:
+                self.logger.error(f"✗ Failed to apply service accounts: {err.strip()}")
+                return False
+            self.logger.success("✓ Service accounts applied")
+
         # Split into backend-first, frontend-last
         backends = [s for s in services if s != "frontend-service"]
         frontends = [s for s in services if s == "frontend-service"]
@@ -768,15 +904,87 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
+    # Phase 6: Deploy MailHog (test SMTP server — non-blocking)
+    # -----------------------------------------------------------------------
+    def phase6_deploy_mailhog(self) -> bool:
+        self.logger.header("Phase 6: Deploy MailHog")
+
+        mailhog_manifest = (
+            self.project_root / "uvote-platform" / "k8s" / "mailhog" / "mailhog-deployment.yaml"
+        )
+        mailhog_netpol = (
+            self.project_root / "uvote-platform" / "k8s" / "network-policies" / "07-allow-mailhog.yaml"
+        )
+
+        if not mailhog_manifest.exists():
+            self.logger.warning(f"⚠ MailHog manifest not found: {mailhog_manifest} — skipping")
+            self.results["mailhog_deployed"] = False
+            return True
+
+        self.logger.info("Applying MailHog deployment manifest...")
+        rc, out, err = self.run_cmd(
+            ["kubectl", "apply", "-f", str(mailhog_manifest)],
+            check=False,
+            mutating=True,
+        )
+        if rc != 0:
+            self.logger.warning(f"⚠ Failed to apply MailHog manifest: {err.strip()}")
+            self.results["mailhog_deployed"] = False
+            return True
+
+        for line in out.strip().splitlines():
+            self.logger.info(f"  {line}")
+
+        if mailhog_netpol.exists():
+            self.logger.info("Applying MailHog network policy...")
+            rc, out, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(mailhog_netpol)],
+                check=False,
+                mutating=True,
+            )
+            if rc != 0:
+                self.logger.warning(f"⚠ Failed to apply MailHog network policy: {err.strip()}")
+            else:
+                for line in out.strip().splitlines():
+                    self.logger.info(f"  {line}")
+        else:
+            self.logger.warning(f"⚠ MailHog network policy not found: {mailhog_netpol} — skipping")
+
+        if self.dry_run:
+            self.logger.info("  [DRY-RUN] Would wait for MailHog pod")
+            self.results["mailhog_deployed"] = True
+            return True
+
+        self.logger.info("  Waiting for MailHog pod to be ready (timeout: 120s)...")
+        rc, _, err = self.run_cmd(
+            [
+                "kubectl", "wait", "deployment/mailhog",
+                "--for=condition=Available",
+                "--timeout=120s",
+                "-n", self.namespace,
+            ],
+            check=False,
+            timeout=130,
+        )
+        if rc == 0:
+            self.logger.success("✓ MailHog is ready")
+            self.results["mailhog_deployed"] = True
+        else:
+            self.logger.warning("⚠ MailHog did not become ready within 120s — continuing")
+            self.results["mailhog_deployed"] = False
+
+        return True
+
+    # -----------------------------------------------------------------------
     # Apply Network Policies
     # -----------------------------------------------------------------------
     def apply_network_policies(self) -> bool:
         """Apply all network policy YAML files in sorted order.
 
         Files are applied from uvote-platform/k8s/network-policies/ in
-        filename order (00-default-deny first … 06-allow-prometheus-scrape
-        last).  test-pods.yaml is skipped — it contains test Pod definitions,
-        not NetworkPolicy objects.
+        filename order (00-default-deny first … 12-allow-kiali
+        last). test-pods.yaml lives in uvote-platform/k8s/test/ and is never
+        present in this directory.
 
         Called between phase5_deploy_services and phase6_apply_ingress so
         network isolation is in place before services receive real traffic.
@@ -792,9 +1000,7 @@ class PlatformDeployer:
             )
             return True
 
-        policy_files = sorted(
-            f for f in netpol_dir.glob("*.yaml") if f.name != "test-pods.yaml"
-        )
+        policy_files = sorted(netpol_dir.glob("*.yaml"))
 
         if not policy_files:
             self.logger.warning("⚠ No network policy YAML files found — skipping")
@@ -819,39 +1025,10 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 6: Apply Ingress
+    # Phase 8: Health Verification (wait for pods)
     # -----------------------------------------------------------------------
-    def phase6_apply_ingress(self) -> bool:
-        self.logger.header("Phase 6: Apply Ingress")
-        ingress_manifest = (
-            self.project_root / "uvote-platform" / "k8s" / "ingress" / "uvote-ingress.yaml"
-        )
-
-        if not ingress_manifest.exists():
-            self.logger.warning(
-                f"⚠ Ingress manifest not found: {ingress_manifest} — skipping"
-            )
-            self.results["ingress_applied"] = None
-            return True
-
-        self.logger.info(f"Applying {ingress_manifest.name}...")
-        rc, out, err = self.run_cmd(
-            ["kubectl", "apply", "-f", str(ingress_manifest)], check=False, mutating=True
-        )
-        if rc != 0:
-            self.logger.error(f"✗ Failed to apply ingress: {err.strip()}")
-            self.results["ingress_applied"] = False
-            return False
-
-        self.logger.success("✓ Ingress applied successfully")
-        self.results["ingress_applied"] = True
-        return True
-
-    # -----------------------------------------------------------------------
-    # Phase 7: Health Verification (wait for pods)
-    # -----------------------------------------------------------------------
-    def phase7_verify_health(self, timeout: int = 300) -> bool:
-        self.logger.header("Phase 7: Health Verification")
+    def phase8_verify_health(self, timeout: int = 300) -> bool:
+        self.logger.header("Phase 8: Health Verification")
 
         if not self.results["services_deployed"]:
             self.logger.warning("⚠ No services were deployed — skipping health verification")
@@ -970,7 +1147,7 @@ class PlatformDeployer:
         return False
 
     # -----------------------------------------------------------------------
-    # Phase 8: Network Policy Testing
+    # Phase 9: Network Policy Testing
     # -----------------------------------------------------------------------
     def _resolve_pod_name(self, deploy_name: str) -> str:
         """Return 'pod/<name>' for the first real service pod, or fall back to
@@ -1029,8 +1206,8 @@ class PlatformDeployer:
         )
         return rc == 0
 
-    def phase8_test_network_policies(self) -> bool:
-        self.logger.header("Phase 8: Network Policy Testing")
+    def phase9_test_network_policies(self) -> bool:
+        self.logger.header("Phase 9: Network Policy Testing")
         all_ok = True
 
         if self.dry_run:
@@ -1096,7 +1273,7 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 9: Health Endpoint Testing
+    # Phase 10: Health Endpoint Testing
     # -----------------------------------------------------------------------
     def _health_via_port_forward(
         self, deploy_name: str, container_port: int, path: str
@@ -1172,8 +1349,8 @@ class PlatformDeployer:
             except subprocess.TimeoutExpired:
                 pf_proc.kill()
 
-    def phase9_test_health_endpoints(self) -> bool:
-        self.logger.header("Phase 9: Health Endpoint Testing")
+    def phase10_test_health_endpoints(self) -> bool:
+        self.logger.header("Phase 10: Health Endpoint Testing")
 
         if self.dry_run:
             self.logger.info("[DRY-RUN] Would test health endpoints")
@@ -1208,9 +1385,128 @@ class PlatformDeployer:
         return all_ok
 
     # -----------------------------------------------------------------------
-    # Phase 10: Summary
+    # Phase 11: Double-spend integration test
     # -----------------------------------------------------------------------
-    def phase10_generate_summary(self) -> None:
+    def phase11_double_spend_test(self) -> bool:
+        self.logger.header("Phase 11: Double-Spend Integration Test")
+
+        if self.dry_run:
+            self.logger.info("[DRY-RUN] Would run double-spend integration test")
+            return True
+
+        pf_proc: Optional[subprocess.Popen] = None
+        try:
+            # Fetch the PostgreSQL admin password from the cluster secret.
+            rc, pw_b64, err = self.run_cmd(
+                [
+                    "kubectl", "get", "secret", "db-credentials",
+                    "-n", self.namespace,
+                    "-o", "jsonpath={.data.password}",
+                ],
+                check=False,
+            )
+            if rc != 0 or not pw_b64.strip():
+                self.logger.warning(
+                    "  Could not retrieve db-credentials secret — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            try:
+                password = base64.b64decode(pw_b64.strip()).decode()
+            except Exception as exc:
+                self.logger.warning(
+                    f"  Could not base64-decode password: {exc} — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            # Start a background port-forward so the test can reach PostgreSQL.
+            self.logger.info("  Starting kubectl port-forward svc/postgresql 5432:5432 ...")
+            pf_proc = subprocess.Popen(
+                [
+                    "kubectl", "port-forward",
+                    "svc/postgresql", "5432:5432",
+                    "-n", self.namespace,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            # Poll until the port accepts connections (max 10 s).
+            deadline = time.time() + 10
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection(("localhost", 5432), timeout=1):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.2)
+
+            if not ready:
+                self.logger.warning(
+                    "  Port-forward to PostgreSQL did not become ready within 10 s — "
+                    "skipping double-spend test (non-blocking)"
+                )
+                self.results["double_spend_test"] = None
+                return True
+
+            self.logger.info("  PostgreSQL port-forward ready")
+
+            # Build env with POSTGRES_TEST_URL injected.
+            postgres_url = (
+                f"postgresql://uvote_admin:{password}@localhost:5432/uvote"
+            )
+            env = {**os.environ, "POSTGRES_TEST_URL": postgres_url}
+
+            self.logger.info(
+                "  Running: pytest voting-service/tests/test_integration_double_spend.py -v"
+            )
+            result = subprocess.run(
+                [
+                    sys.executable, "-m", "pytest",
+                    "voting-service/tests/test_integration_double_spend.py",
+                    "-v",
+                ],
+                env=env,
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+            )
+
+            # Log full pytest output so it appears in the deploy log.
+            for line in result.stdout.splitlines():
+                self.logger.info(f"  {line}")
+            for line in result.stderr.splitlines():
+                self.logger.info(f"  {line}")
+
+            if result.returncode == 0:
+                self.logger.success("  Double-spend integration test PASSED")
+                self.results["double_spend_test"] = True
+            else:
+                self.logger.error(
+                    f"  Double-spend integration test FAILED (exit {result.returncode})"
+                )
+                self.results["double_spend_test"] = False
+
+        finally:
+            if pf_proc is not None:
+                if pf_proc.poll() is None:
+                    pf_proc.terminate()
+                    try:
+                        pf_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pf_proc.kill()
+
+        return True  # non-blocking — never fails the deploy
+
+    # -----------------------------------------------------------------------
+    # Phase 12: Summary
+    # -----------------------------------------------------------------------
+    def phase12_generate_summary(self) -> None:
         r = self.results
         sep = "=" * 56
 
@@ -1224,7 +1520,6 @@ class PlatformDeployer:
         has_failures = (
             r["images_failed"]
             or r["services_failed"]
-            or r["ingress_applied"] is False
             or r["pods_failed"]
             or r["health_failed"]
         )
@@ -1246,10 +1541,14 @@ class PlatformDeployer:
         self.logger.info(
             f"Services Deployed:  {len(r['services_deployed'])}/{total_svc}"
         )
-        if r["ingress_applied"] is True:
-            self.logger.success("Ingress Applied:    Yes")
-        elif r["ingress_applied"] is False:
-            self.logger.error("Ingress Applied:    No (failed)")
+        if r["mailhog_deployed"] is True:
+            self.logger.success("MailHog:            Ready")
+        elif r["mailhog_deployed"] is False:
+            self.logger.warning("MailHog:            Not ready (warning only)")
+        if r["double_spend_test"] is True:
+            self.logger.success("Double-Spend Test:  Passed")
+        elif r["double_spend_test"] is False:
+            self.logger.error("Double-Spend Test:  Failed (warning only)")
         if total_pods:
             self.logger.info(
                 f"Pods Running:       {len(r['pods_running'])}/{total_pods}"
@@ -1309,8 +1608,20 @@ class PlatformDeployer:
             else:
                 self.logger.success(f"✓ {info['deploy_name']} deleted")
 
-        # Delete secrets (but preserve db-credentials since DB is still running)
-        for secret_name in ["jwt-secret", "flask-secret", "smtp-credentials"]:
+        # Delete secrets (but preserve db-credentials since DB is still running).
+        # Per-service DB credential secrets are included so a subsequent redeploy
+        # generates fresh passwords that are synced to the database roles (ADR014).
+        _secrets_to_delete = [
+            "jwt-secret",
+            "flask-secret",
+            "smtp-credentials",
+            "auth-db-credentials",
+            "voting-db-credentials",
+            "election-db-credentials",
+            "results-db-credentials",
+            "admin-db-credentials",
+        ]
+        for secret_name in _secrets_to_delete:
             self.logger.info(f"Deleting secret '{secret_name}'...")
             self.run_cmd(
                 ["kubectl", "delete", "secret", secret_name,
@@ -1347,6 +1658,14 @@ class PlatformDeployer:
         if self.dry_run:
             self.logger.warning("DRY-RUN MODE — no changes will be made")
 
+        # Resolve git SHA once so both build and load phases use the same tag
+        rc, sha, _ = self.run_cmd(["git", "rev-parse", "--short", "HEAD"], check=False)
+        if rc == 0 and sha.strip():
+            self.git_sha = sha.strip()
+            self.logger.info(f"Git SHA: {self.git_sha}")
+        else:
+            self.logger.warning("⚠ Could not determine git SHA — images will only be tagged :latest")
+
         # Phase 1: Pre-flight
         if not self.phase1_preflight_checks():
             self.logger.error("Pre-flight checks failed. Aborting.")
@@ -1360,12 +1679,13 @@ class PlatformDeployer:
             # Verify images exist locally
             for svc in target_services:
                 rc, _, _ = self.run_cmd(
-                    ["docker", "image", "inspect", f"{svc}:latest"], check=False
+                    ["docker", "image", "inspect", f"{GHCR_PREFIX}/u-vote-{svc}:latest"],
+                    check=False,
                 )
                 if rc == 0:
                     self.results["images_built"].append(svc)
                 else:
-                    self.logger.warning(f"⚠ Image {svc}:latest not found locally")
+                    self.logger.warning(f"⚠ Image {GHCR_PREFIX}/u-vote-{svc}:latest not found locally")
                     self.results["images_failed"].append(svc)
 
         # Phase 3: Load into Kind
@@ -1376,38 +1696,39 @@ class PlatformDeployer:
             self.logger.error("Secret management failed. Aborting.")
             return False
 
-        # Kibana service account token — runs after secrets on every deploy.
-        # Requires Elasticsearch to be running in the monitoring namespace.
-        # If Elasticsearch is not yet up, logs a warning and continues — the
-        # main uvote-dev deploy is not blocked by the monitoring stack.
-        self.create_kibana_service_token()
-
         # Phase 5: Deploy
         self.phase5_deploy_services(target_services)
 
-        # Apply Network Policies (00-default-deny … 06-allow-prometheus-scrape)
+        # Apply Network Policies (00-default-deny … 12-allow-kiali)
         self.apply_network_policies()
 
-        # Phase 6: Apply Ingress
-        self.phase6_apply_ingress()
+        # Phase 6: Deploy MailHog (non-blocking)
+        self.phase6_deploy_mailhog()
 
-        # Phase 7: Wait for healthy pods
+        # Phase 7 (Istio Gateway + VirtualServices) is owned by install_istio.py
+        # and applied there before this script runs. No re-application needed.
+
+        # Phase 8: Wait for healthy pods
         if not self.dry_run:
-            self.phase7_verify_health(timeout=timeout)
+            self.phase8_verify_health(timeout=timeout)
         else:
             self.logger.info("[DRY-RUN] Would wait for pods to be ready")
 
-        # Phase 8 & 9: Tests
+        # Phase 9 & 10: Tests
         if not skip_tests and not self.dry_run:
-            self.phase8_test_network_policies()
-            self.phase9_test_health_endpoints()
+            self.phase9_test_network_policies()
+            self.phase10_test_health_endpoints()
         elif skip_tests:
             self.logger.info("Skipping tests (--skip-tests)")
         else:
             self.logger.info("[DRY-RUN] Would run network and health tests")
 
-        # Phase 10: Summary
-        self.phase10_generate_summary()
+        # Phase 11: Double-spend integration test (non-blocking)
+        if not skip_tests and not self.dry_run:
+            self.phase11_double_spend_test()
+
+        # Phase 12: Summary
+        self.phase12_generate_summary()
 
         return len(self.results["services_failed"]) == 0
 

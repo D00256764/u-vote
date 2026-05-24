@@ -1,6 +1,6 @@
 # U-Vote Kubernetes Manifest: Frontend Service
 # Scanned Port: 5000 (from app.py: uvicorn app:app --host 0.0.0.0 --port 5000)
-# Architecture Port: 3000 (from ARCHITECTURE.MD)
+# Architecture Port: 5000 (from ARCHITECTURE.MD)
 # Network Policy Port: 3000 (from 03-allow-from-ingress.yaml)
 # Using Port: 5000 (code port — what the container actually binds to)
 # WARNING: Network policy 03-allow-from-ingress-to-frontend allows port 3000,
@@ -8,87 +8,12 @@
 # Framework: FastAPI + Uvicorn + Jinja2
 # Database Access: NO — frontend is blocked from database by network policy
 # External Access: Via Ingress Controller (main entry point for organisers)
-# Health Endpoint: NONE (no /health route found in code — using tcpSocket probe)
+# Health Endpoint: GET /health → 200 (frontend-service/app.py:97)
 # Templates: Yes (Jinja2 — /, /register, /login, /logout)
 # Generated: 2026-02-16
 
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: frontend-service
-  namespace: uvote-dev
-  labels:
-    app: frontend-service
-    tier: frontend
-    version: v1
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: frontend-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        app: frontend-service
-        tier: frontend
-        version: v1
-    spec:
-      containers:
-      - name: frontend-service
-        image: ghcr.io/d00256764/u-vote-frontend-service:a4a9ce9
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 5000
-          name: http
-          protocol: TCP
-        env:
-        # Inter-service communication (backend service URLs)
-        - name: AUTH_SERVICE_URL
-          value: "http://auth-service:5001"
-        # Must be browser-reachable (external URL) — the browser follows this redirect
-        - name: ELECTION_DASHBOARD_URL
-          value: "http://localhost/dashboard"
-        # Session configuration
-        - name: SESSION_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: flask-secret
-              key: secret
-        # IMPORTANT: NO DB_HOST, DB_USER, or DB_PASSWORD
-        # Frontend is blocked from database by network policy (defence in depth)
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 5000
-          initialDelaySeconds: 10
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "512Mi"
-            cpu: "1000m"
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          allowPrivilegeEscalation: false
-          readOnlyRootFilesystem: false  # FastAPI/Jinja2 needs to write temp files
+# Deployment replaced by frontend-rollout.yaml (Argo Rollouts canary).
+# Workload: kubectl get rollout frontend-service -n uvote-dev
 
 ---
 apiVersion: v1

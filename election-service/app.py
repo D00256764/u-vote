@@ -8,6 +8,7 @@ This service owns the election bounded context end-to-end:
 
 Runs on port 5005, exposed to browsers on port 8082.
 """
+import asyncio
 import os
 import secrets
 import sys
@@ -16,7 +17,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -40,6 +41,7 @@ logger = logging.getLogger('election-service')
 
 from database import Database
 from schemas import ElectionCreate, HealthResponse
+from csrf import generate_csrf_token, validate_csrf_token
 
 # ── Service URLs ─────────────────────────────────────────────────────────────
 AUTH_SERVICE = os.getenv("AUTH_SERVICE_URL", "http://auth-service:5001")
@@ -74,26 +76,43 @@ async def auto_manage_elections():
                     "election_opened", row["id"], "system",
                     '{"source": "scheduler"}',
                 )
-                # Auto-send voting tokens to all voters for this election
-                try:
-                    resp = await http_client.post(
-                        f"{ADMIN_SERVICE}/elections/{row['id']}/tokens/generate",
-                        json={"expiry_hours": 168},
-                    )
-                    data = resp.json()
-                    tokens_sent = data.get("tokens_generated", 0)
-                    emails_sent = data.get("emails_sent", 0)
-                    logger.info(
-                        "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
-                        row["id"], tokens_sent, emails_sent,
-                    )
-                    await conn.execute(
-                        "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4::jsonb)",
-                        "tokens_sent", row["id"], "system",
-                        f'{{"tokens_generated": {tokens_sent}, "emails_sent": {emails_sent}}}',
-                    )
-                except Exception as e:
-                    logger.error("Scheduler: failed to send tokens for election %s: %s", row["id"], e)
+                # Auto-send voting tokens to all voters for this election.
+                # Retry up to 3 times (2 s between attempts) in case admin-service
+                # is temporarily unavailable at the moment the election opens.
+                _max_attempts = 3
+                _retry_delay = 2
+                for _attempt in range(1, _max_attempts + 1):
+                    try:
+                        resp = await http_client.post(
+                            f"{ADMIN_SERVICE}/elections/{row['id']}/tokens/generate",
+                            json={"expiry_hours": 168},
+                        )
+                        data = resp.json()
+                        tokens_sent = data.get("tokens_generated", 0)
+                        emails_sent = data.get("emails_sent", 0)
+                        logger.info(
+                            "Scheduler: sent tokens for election %s — %s generated, %s emails sent",
+                            row["id"], tokens_sent, emails_sent,
+                        )
+                        await conn.execute(
+                            "INSERT INTO audit_log (event_type, election_id, actor_type, detail) VALUES ($1, $2, $3, $4::jsonb)",
+                            "tokens_sent", row["id"], "system",
+                            f'{{"tokens_generated": {tokens_sent}, "emails_sent": {emails_sent}}}',
+                        )
+                        break
+                    except Exception as e:
+                        logger.warning(
+                            "Scheduler: token generation for election %s failed (attempt %s/%s): %s",
+                            row["id"], _attempt, _max_attempts, e,
+                        )
+                        if _attempt < _max_attempts:
+                            await asyncio.sleep(_retry_delay)
+                        else:
+                            logger.error(
+                                "Scheduler: token generation failed for election %s after %s attempts"
+                                " — manual intervention may be required",
+                                row["id"], _max_attempts,
+                            )
 
             # Close any open elections whose scheduled_close_at has passed
             to_close = await conn.fetch(
@@ -162,6 +181,15 @@ def get_flashed_messages(request: Request) -> list[dict]:
     return request.session.pop("_messages", [])
 
 
+async def check_csrf(request: Request):
+    if os.getenv("TESTING"):
+        return
+    form = await request.form()
+    submitted_token = form.get("csrf_token")
+    if not validate_csrf_token(request.session, submitted_token):
+        raise HTTPException(status_code=403, detail="CSRF token missing or invalid")
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
@@ -201,7 +229,7 @@ async def list_elections(request: Request, organiser_id: int):
     }
 
 
-@app.post("/elections", status_code=201)
+@app.post("/elections", status_code=201, dependencies=[Depends(check_csrf)])
 async def create_election(request: Request, organiser_id: int, data: ElectionCreate):
     """Create a new election with options."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -237,11 +265,13 @@ async def create_election_page(request: Request):
     if redirect:
         return redirect
     return templates.TemplateResponse("create_election.html", {
-        "request": request, "messages": get_flashed_messages(request),
+        "request": request,
+        "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/elections/create", response_class=HTMLResponse)
+@app.post("/elections/create", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def create_election_form(request: Request):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -374,10 +404,11 @@ async def edit_election_page(request: Request, election_id: int):
             "scheduled_close_at": fmt_dt(election["scheduled_close_at"]),
         },
         "messages": get_flashed_messages(request),
+        "csrf_token": generate_csrf_token(request.session),
     })
 
 
-@app.post("/elections/{election_id}/edit", response_class=HTMLResponse)
+@app.post("/elections/{election_id}/edit", response_class=HTMLResponse, dependencies=[Depends(check_csrf)])
 async def edit_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -488,7 +519,7 @@ async def get_election(request: Request, election_id: int, organiser_id: int | N
     }
 
 
-@app.post("/elections/{election_id}/open")
+@app.post("/elections/{election_id}/open", dependencies=[Depends(check_csrf)])
 async def open_election(request: Request, election_id: int, organiser_id: int):
     """Open a draft election for voting."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -511,7 +542,7 @@ async def open_election(request: Request, election_id: int, organiser_id: int):
     return {"message": "Election opened successfully"}
 
 
-@app.post("/elections/{election_id}/close")
+@app.post("/elections/{election_id}/close", dependencies=[Depends(check_csrf)])
 async def close_election(request: Request, election_id: int, organiser_id: int):
     """Close an open election."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -768,7 +799,7 @@ async def election_detail_page(request: Request, election_id: int):
     })
 
 
-@app.post("/elections/{election_id}/open/confirm")
+@app.post("/elections/{election_id}/open/confirm", dependencies=[Depends(check_csrf)])
 async def open_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)
@@ -790,7 +821,7 @@ async def open_election_form(request: Request, election_id: int):
     return RedirectResponse(url=f"/elections/{election_id}/detail", status_code=303)
 
 
-@app.post("/elections/{election_id}/close/confirm")
+@app.post("/elections/{election_id}/close/confirm", dependencies=[Depends(check_csrf)])
 async def close_election_form(request: Request, election_id: int):
     logger.info('Request received: %s %s', request.method, request.url.path)
     redirect = _require_login(request)

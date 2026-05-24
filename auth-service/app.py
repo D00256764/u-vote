@@ -26,6 +26,10 @@ from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request
 from jose import jwt, JWTError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # -- Shared imports -----------------------------------------------------------
 current_dir = os.path.dirname(__file__)
@@ -59,6 +63,7 @@ from schemas import (
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 DEFAULT_ORG_ID = int(os.getenv("DEFAULT_ORG_ID", "1"))
+limiter = Limiter(key_func=get_remote_address)
 
 
 # -- Lifespan -----------------------------------------------------------------
@@ -77,6 +82,10 @@ app = FastAPI(
 
 from prometheus_fastapi_instrumentator import Instrumentator
 Instrumentator().instrument(app).expose(app)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 # ==========================================================================
@@ -113,6 +122,7 @@ async def register(request: Request, data: RegisterRequest):
 
 
 @app.post("/login", response_model=AuthResponse)
+@limiter.limit("5/minute")
 async def login(request: Request, data: LoginRequest):
     """Authenticate organiser and return JWT."""
     logger.info('Request received: %s %s', request.method, request.url.path)
@@ -263,6 +273,7 @@ async def send_otp(request: Request, token: str):
 
 
 @app.post("/mfa/verify", status_code=200)
+@limiter.limit("10/minute")
 async def verify_otp(request: Request, token: str, otp: str):
     """Verify the OTP submitted by the voter."""
     logger.info('Request received: %s %s', request.method, request.url.path)

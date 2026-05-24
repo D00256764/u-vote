@@ -49,6 +49,7 @@ _shared_dir = _election_dir.parent / "shared"  # u-vote/shared/
 # Forcing the value (not setdefault) ensures the test value is used even if
 # the variable is already set in the shell environment.
 os.environ["SESSION_SECRET"] = "test-secret-key"
+os.environ["TESTING"] = "true"
 
 for _p in [str(_shared_dir), str(_election_dir)]:
     if _p not in sys.path:

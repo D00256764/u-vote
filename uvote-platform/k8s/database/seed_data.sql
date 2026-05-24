@@ -20,12 +20,21 @@ INSERT INTO organisations (name, org_type)
 VALUES ('Demo University', 'university');
 
 -- Default organiser account
--- email: admin@uvote.com | password: admin123 (bcrypt, cost 12)
+-- ============================================================================
+-- SECURITY WARNING: The password_hash below is a placeholder.
+-- You MUST replace it with a bcrypt hash of a strong, unique password before
+-- any real deployment. Leaving this placeholder in place will prevent login.
+--
+-- Generate a replacement hash (Python):
+--   python3 -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_PASSWORD', bcrypt.gensalt(12)).decode())"
+--
+-- Then replace CHANGEME_BCRYPT_HASH_REQUIRED below with the generated hash.
+-- ============================================================================
 INSERT INTO organisers (org_id, email, password_hash)
 VALUES (
     1,
     'admin@uvote.com',
-    '$2b$12$Zjf21IXT2qs0QRJ55GyPuO6zQvjadonrl8USd0/WzihfomSAxDuGy'
+    'CHANGEME_BCRYPT_HASH_REQUIRED'
 );
 
 -- Sample election for development testing

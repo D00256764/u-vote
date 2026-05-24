@@ -14,6 +14,8 @@ spec:
     metadata:
       labels:
         app: postgresql
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: postgresql
@@ -68,7 +70,8 @@ spec:
           periodSeconds: 5
       volumes:
       - name: postgres-storage
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: postgres-pvc
       - name: init-scripts
         configMap:
           name: uvote-init-scripts

@@ -274,7 +274,12 @@ jobs:
           sarif_file: trivy-fs.sarif
           category: trivy-filesystem
 
-  # 8. Push images to GHCR — only on main / mvp_tests after scans complete ─────
+  # 8. Push images to ECR — only on main / mvp_tests after scans complete ──────
+  #    Set repository variables after terraform apply:
+  #      ECR_REGISTRY = <account>.dkr.ecr.<region>.amazonaws.com
+  #      AWS_REGION   = eu-west-1
+  #    Set repository secrets:
+  #      AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (or use OIDC + IAM role)
   push-images:
     name: Push — ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -283,7 +288,6 @@ jobs:
 
     permissions:
       contents: read
-      packages: write
 
     strategy:
       fail-fast: false
@@ -308,28 +312,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Set lowercase owner
-        run: echo "OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push ${{ matrix.service }}
+        env:
+          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ghcr.io/${{ env.OWNER }}/u-vote-${{ matrix.service }}:latest
-            ghcr.io/${{ env.OWNER }}/u-vote-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/uvote/${{ matrix.service }}:latest
+            ${{ env.ECR_REGISTRY }}/uvote/${{ matrix.service }}:${{ github.sha }}
 
   # 9. Update K8s manifests with the new image SHA ──────────────────────────────
-  #    Committing the tag change is what ArgoCD detects to trigger a sync.
+  #    Committing the tag change is what ArgoCD detects to trigger a sync / canary.
   update-manifests:
     name: Update image tags in manifests
     runs-on: ubuntu-latest
@@ -344,15 +351,17 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Stamp new SHA into deployment YAMLs
+      - name: Stamp new SHA into deployment and rollout YAMLs
+        env:
+          ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
         run: |
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          for svc in auth admin voting results election frontend; do
-            sed -i \
-              "s|ghcr.io/${OWNER}/u-vote-${svc}-service:.*|ghcr.io/${OWNER}/u-vote-${svc}-service:${SHORT_SHA}|" \
-              uvote-platform/k8s/services/${svc}-deployment.yaml
+          for base in auth admin voting results election; do
+            sed -i "s|PLACEHOLDER_ECR_REGISTRY/uvote/${base}-service:.*|${ECR_REGISTRY}/uvote/${base}-service:${SHORT_SHA}|g" \
+              "uvote-platform/k8s/services/${base}-deployment.yaml"
           done
+          sed -i "s|PLACEHOLDER_ECR_REGISTRY/uvote/frontend-service:.*|${ECR_REGISTRY}/uvote/frontend-service:${SHORT_SHA}|g" \
+            uvote-platform/k8s/services/frontend-rollout.yaml
 
       - name: Commit and push manifest update
         run: |
@@ -362,5 +371,5 @@ jobs:
           git add uvote-platform/k8s/services/
           git diff --staged --quiet \
             && echo "No tag changes to commit" \
-            || (git commit -m "chore: update image tags to ${SHORT_SHA} [skip ci]" \
+            || (git commit -m "chore: update ECR image tags to ${SHORT_SHA} [skip ci]" \
                 && git push origin ${{ github.ref_name }})

@@ -41,6 +41,7 @@
     <form method="POST" action="/vote/submit" id="voteForm">
         <input type="hidden" name="ballot_token" value="{{ ballot_token }}">
         <input type="hidden" name="election_id" value="{{ election.id }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
         <p style="font-size:0.875rem;font-weight:600;color:#374151;margin-bottom:0.875rem;">Select your choice:</p>
 
