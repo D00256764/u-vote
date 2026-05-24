@@ -48,6 +48,7 @@ _shared_dir = _frontend_dir.parent / "shared"  # u-vote/shared/
 # Set SESSION_SECRET before app.py is imported so SessionMiddleware uses
 # the same secret we use when signing test session cookies below.
 os.environ["SESSION_SECRET"] = "test-secret"
+os.environ["TESTING"] = "true"
 
 for _p in [str(_shared_dir), str(_frontend_dir)]:
     if _p not in sys.path:
