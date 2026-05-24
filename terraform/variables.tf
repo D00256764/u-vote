@@ -43,7 +43,7 @@ variable "single_nat_gateway" {
 variable "eks_node_instance_types" {
   description = "EC2 instance types for EKS managed node groups"
   type        = list(string)
-  default     = ["t3.small"]
+  default     = ["c7i-flex.large"]
 }
 
 variable "eks_node_desired_size" {
