@@ -44,7 +44,7 @@ spec:
       serviceAccountName: voting-service
       containers:
       - name: voting-service
-        image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service:47b912f
+        image: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service:a316554
         imagePullPolicy: Always
         ports:
         - containerPort: 5003
