@@ -3,16 +3,7 @@ kind: Installation
 metadata:
   name: default
 spec:
+  cni:
+    type: AmazonVPC
   calicoNetwork:
-    ipPools:
-    - blockSize: 26
-      cidr: 10.244.0.0/16
-      encapsulation: VXLANCrossSubnet
-      natOutgoing: Enabled
-      nodeSelector: all()
----
-apiVersion: operator.tigera.io/v1
-kind: APIServer
-metadata:
-  name: default
-spec: {}
+    bgp: Disabled
