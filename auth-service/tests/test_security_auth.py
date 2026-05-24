@@ -12,7 +12,6 @@ Run with:
 import importlib.util
 import sys
 import time
-from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch

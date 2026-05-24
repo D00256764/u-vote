@@ -1,7 +1,7 @@
 """Shared subprocess helper for U-Vote platform scripts."""
 
 import subprocess
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 # Module-level state — configure once per script via configure()
 _dry_run: bool = False

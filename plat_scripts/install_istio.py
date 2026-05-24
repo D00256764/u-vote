@@ -472,10 +472,10 @@ def step8_verify(istioctl: str) -> bool:
     # Only consider lines that are actual Istio analysis messages — they always
     # contain "[ISTxxxx]".  The "Error: Analyzers found issues..." summary line
     # emitted by istioctl itself has no IST code and must be excluded.
-    error_lines  = [l for l in combined.splitlines()
-                    if l.strip().startswith("Error") and "[IST" in l]
-    ist0101_lines = [l for l in error_lines if "IST0101" in l]
-    real_errors   = [l for l in error_lines if "IST0101" not in l]
+    error_lines  = [line for line in combined.splitlines()
+                    if line.strip().startswith("Error") and "[IST" in line]
+    ist0101_lines = [line for line in error_lines if "IST0101" in line]
+    real_errors   = [line for line in error_lines if "IST0101" not in line]
 
     if real_errors:
         for e in real_errors:
@@ -490,7 +490,7 @@ def step8_verify(istioctl: str) -> bool:
         for line in ist0101_lines:
             log.warning(line)
     else:
-        other_warnings = [l for l in combined.splitlines() if l.strip().startswith("Warning")]
+        other_warnings = [line for line in combined.splitlines() if line.strip().startswith("Warning")]
         for w in other_warnings:
             log.warning(w)
 
