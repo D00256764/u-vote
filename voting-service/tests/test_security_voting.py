@@ -16,7 +16,6 @@ Run with:
     .venv/bin/python -m pytest voting-service/tests/test_security_voting.py -v
 """
 
-import asyncio
 import importlib.util
 import os
 import secrets
