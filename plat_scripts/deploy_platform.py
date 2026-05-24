@@ -273,12 +273,17 @@ class PlatformDeployer:
             return False
         self.logger.success("✓ Docker daemon is running")
 
-        # Namespace
+        # Namespace — created by setup_k8s_platform.py (Step 1) via
+        # uvote-platform/k8s/namespaces/namespaces.yaml.  If it is missing,
+        # run setup_k8s_platform.py before this script.
         rc, _, _ = self.run_cmd(
             ["kubectl", "get", "namespace", self.namespace], check=False
         )
         if rc != 0:
-            self.logger.error(f"✗ Namespace '{self.namespace}' does not exist")
+            self.logger.error(
+                f"✗ Namespace '{self.namespace}' does not exist — "
+                "run setup_k8s_platform.py (Step 1) before deploy_platform.py"
+            )
             return False
         self.logger.success(f"✓ Namespace '{self.namespace}' exists")
 
@@ -846,6 +851,18 @@ class PlatformDeployer:
     def phase5_deploy_services(self, services: List[str]) -> bool:
         self.logger.header("Phase 5: Deploying Services")
         all_ok = True
+
+        # Service accounts must exist before any deployment references them.
+        sa_manifest = self.k8s_services_dir / "service-accounts.yaml"
+        if sa_manifest.exists():
+            self.logger.info("Applying service accounts...")
+            rc, _, err = self.run_cmd(
+                ["kubectl", "apply", "-f", str(sa_manifest)], check=False, mutating=True
+            )
+            if rc != 0:
+                self.logger.error(f"✗ Failed to apply service accounts: {err.strip()}")
+                return False
+            self.logger.success("✓ Service accounts applied")
 
         # Split into backend-first, frontend-last
         backends = [s for s in services if s != "frontend-service"]

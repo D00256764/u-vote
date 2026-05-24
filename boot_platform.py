@@ -105,6 +105,12 @@ def print_summary(
     help="Skip Step 4: observability addons (Prometheus, Grafana, Kiali, Jaeger).",
 )
 @click.option(
+    "--skip-build",
+    is_flag=True,
+    default=False,
+    help="Skip Docker image building in Step 3 (images must already be loaded into Kind).",
+)
+@click.option(
     "--cluster-name",
     default="uvote",
     show_default=True,
@@ -120,6 +126,7 @@ def main(
     skip_istio: bool,
     skip_observability: bool,
     skip_deploy: bool,
+    skip_build: bool,
     cluster_name: str,
     namespace: str,
 ) -> None:
@@ -134,11 +141,8 @@ def main(
 
     \b
     Notes:
-      --skip-build is always passed to deploy_platform.py because images are
-      expected to be pre-built before running the boot sequence.
-
-      --skip-nginx-removal is always passed to install_istio.py because Nginx
-      removal is managed by setup_k8s_platform.py, not the boot script.
+      By default Step 3 builds Docker images from source.  Pass --skip-build
+      when images are already loaded into the Kind cluster to save time.
     """
     # Set up logging
     logs_dir = PROJECT_ROOT / "logs"
@@ -188,9 +192,7 @@ def main(
         log.info("Step 2 skipped (--skip-istio)")
         outcomes["Step 2"] = "skip"
     else:
-        # --skip-nginx-removal is unconditional: Nginx removal is handled by
-        # setup_k8s_platform.py, not the boot script.
-        cmd2 = [sys.executable, str(ISTIO_SCRIPT), "--skip-nginx-removal"]
+        cmd2 = [sys.executable, str(ISTIO_SCRIPT)]
         if run_step(log, "Step 2 (install_istio.py)", cmd2):
             outcomes["Step 2"] = "pass"
         else:
@@ -207,13 +209,13 @@ def main(
         log.info("Step 3 skipped (--skip-deploy)")
         outcomes["Step 3"] = "skip"
     else:
-        # --skip-build: images are expected to be pre-built in the boot sequence.
         cmd3 = [
             sys.executable, str(DEPLOY_SCRIPT),
-            "--skip-build",
             "--cluster-name", cluster_name,
             "--namespace", namespace,
         ]
+        if skip_build:
+            cmd3.append("--skip-build")
         if run_step(log, "Step 3 (deploy_platform.py)", cmd3):
             outcomes["Step 3"] = "pass"
         else:
