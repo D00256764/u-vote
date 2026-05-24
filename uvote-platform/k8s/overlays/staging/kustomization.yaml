@@ -11,19 +11,19 @@ resources:
 images:
   - name: auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
   - name: admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
   - name: voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
   - name: results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
   - name: election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
   - name: frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
-    newTag: "e2b0050"
+    newTag: "b88423f"
