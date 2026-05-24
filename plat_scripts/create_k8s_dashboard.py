@@ -16,7 +16,6 @@ Steps:
 """
 import subprocess
 import sys
-import time
 
 NAMESPACE       = "kubernetes-dashboard"
 MANIFEST_URL    = (
