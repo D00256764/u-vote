@@ -115,9 +115,9 @@ spec:
         prometheus:
           address: http://prometheus:9090
           query: |
-            sum(rate(http_requests_total{job="frontend-service",status=~"5.."}[2m]))
+            (sum(rate(http_requests_total{job="frontend-service",status=~"5.."}[2m])) or vector(0))
             /
-            clamp_min(sum(rate(http_requests_total{job="frontend-service"}[2m])), 0.001)
+            clamp_min(sum(rate(http_requests_total{job="frontend-service"}[2m])) or vector(0.001), 0.001)
 
     - name: p99-latency
       interval: 60s
@@ -128,8 +128,10 @@ spec:
         prometheus:
           address: http://prometheus:9090
           query: |
-            histogram_quantile(0.99,
-              sum(rate(http_request_duration_seconds_bucket{job="frontend-service"}[2m])) by (le)
+            (
+              histogram_quantile(0.99,
+                sum(rate(http_request_duration_seconds_bucket{job="frontend-service"}[2m])) by (le)
+              ) or vector(0)
             )
 
 ---

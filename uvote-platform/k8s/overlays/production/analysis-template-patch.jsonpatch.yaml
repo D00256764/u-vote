@@ -2,5 +2,19 @@
   path: /spec/metrics/0/provider/prometheus/address
   value: http://prometheus.uvote-prod.svc.cluster.local:9090
 - op: replace
+  path: /spec/metrics/0/provider/prometheus/query
+  value: |
+    (sum(rate(http_requests_total{job="frontend-service",status=~"5.."}[2m])) or vector(0))
+    /
+    clamp_min(sum(rate(http_requests_total{job="frontend-service"}[2m])) or vector(0.001), 0.001)
+- op: replace
   path: /spec/metrics/1/provider/prometheus/address
   value: http://prometheus.uvote-prod.svc.cluster.local:9090
+- op: replace
+  path: /spec/metrics/1/provider/prometheus/query
+  value: |
+    (
+      histogram_quantile(0.99,
+        sum(rate(http_request_duration_seconds_bucket{job="frontend-service"}[2m])) by (le)
+      ) or vector(0)
+    )
