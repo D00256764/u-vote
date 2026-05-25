@@ -12,3 +12,5 @@ spec:
               value: "http://a65a70d00aff54118b22314acafaf560-640951759.eu-west-1.elb.amazonaws.com"
             - name: ELECTION_DASHBOARD_URL
               value: "/dashboard"
+            - name: FEATURE_QUICK_SETUP
+              value: "true"
