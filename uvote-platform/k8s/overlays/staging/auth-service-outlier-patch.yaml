@@ -1,0 +1,14 @@
+# Staging runs single-replica Deployments. Default/mesh outlier detection can eject
+# the only auth-service pod after a few 5xx during restarts → 503 for all logins.
+# Use a high threshold so brief errors during rollouts do not drain the pool.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: auth-service
+spec:
+  trafficPolicy:
+    outlierDetection:
+      consecutive5xxErrors: 100
+      consecutiveGatewayErrors: 100
+      interval: 60s
+      baseEjectionTime: 10s
