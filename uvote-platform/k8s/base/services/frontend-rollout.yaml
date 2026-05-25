@@ -33,7 +33,7 @@ spec:
             - name: AUTH_SERVICE_URL
               value: "http://auth-service:5001"
             - name: ELECTION_DASHBOARD_URL
-              value: "http://localhost/dashboard"
+              value: "/dashboard"
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:
@@ -113,7 +113,7 @@ spec:
       failureLimit: 1
       provider:
         prometheus:
-          address: http://prometheus.uvote-dev.svc.cluster.local:9090
+          address: http://prometheus:9090
           query: |
             sum(rate(http_requests_total{job="frontend-service",status=~"5.."}[2m]))
             /
@@ -126,7 +126,7 @@ spec:
       failureLimit: 1
       provider:
         prometheus:
-          address: http://prometheus.uvote-dev.svc.cluster.local:9090
+          address: http://prometheus:9090
           query: |
             histogram_quantile(0.99,
               sum(rate(http_request_duration_seconds_bucket{job="frontend-service"}[2m])) by (le)
