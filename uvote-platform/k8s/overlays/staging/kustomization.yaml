@@ -21,10 +21,14 @@ patches:
     target:
       kind: Deployment
       name: results-service
-  - path: frontend-rollout-patch.yaml
+  - path: frontend-rollout-steps.jsonpatch.yaml
     target:
       kind: Rollout
       name: frontend-service
+  - path: analysis-template-patch.jsonpatch.yaml
+    target:
+      kind: AnalysisTemplate
+      name: frontend-success-rate
   # Expose monitoring via NodePort for easy dev access (prod uses ClusterIP)
   - path: prometheus-nodeport-patch.yaml
     target:
@@ -35,23 +39,24 @@ patches:
       kind: Service
       name: grafana
 
-# Image tags — updated by CI update-manifests job on staging push
+# Image tags — updated by CI update-manifests job on staging push.
+# Use full ECR repo path so the transformer matches Rollout CRDs (not only Deployments).
 images:
-  - name: auth-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newTag: "d503992"
-  - name: admin-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newTag: "d503992"
-  - name: voting-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newTag: "d503992"
-  - name: results-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newTag: "d503992"
-  - name: election-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newTag: "d503992"
-  - name: frontend-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newTag: "d503992"

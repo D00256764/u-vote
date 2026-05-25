@@ -31,9 +31,17 @@ spec:
       - RespectIgnoreDifferences=true
 
   ignoreDifferences:
+    - group: argoproj.io
+      kind: Rollout
+      jqPathExpressions:
+        - .status
     - group: networking.istio.io
       kind: VirtualService
       name: uvote-frontend
       jsonPointers:
         - /spec/http/0/route/0/weight
         - /spec/http/0/route/1/weight
+    - group: networking.istio.io
+      kind: VirtualService
+      jqPathExpressions:
+        - .spec.http[]?.route[]?.weight

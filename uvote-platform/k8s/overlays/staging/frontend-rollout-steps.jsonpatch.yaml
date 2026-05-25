@@ -1,0 +1,5 @@
+# JSON6902 — only replace canary steps (avoids wiping strategy.trafficRouting on Rollout CRD).
+- op: replace
+  path: /spec/strategy/canary/steps
+  value:
+    - setWeight: 100
