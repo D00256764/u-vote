@@ -22,15 +22,6 @@ patches:
   - path: peer-auth-patch.yaml
     target:
       kind: PeerAuthentication
-  # Change monitoring services to ClusterIP (NodePorts 30090/30300 used by staging)
-  - path: prometheus-clusterip-patch.yaml
-    target:
-      kind: Service
-      name: prometheus
-  - path: grafana-clusterip-patch.yaml
-    target:
-      kind: Service
-      name: grafana
 
 # Image tags — updated by CI update-manifests job on main push
 images:

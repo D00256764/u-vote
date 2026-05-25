@@ -7,7 +7,18 @@ resources:
   - ../../base
   - secrets.yaml
 
-# Image tags — updated by CI update-manifests job on mvp_tests push
+patches:
+  # Expose monitoring via NodePort for easy dev access (prod uses ClusterIP)
+  - path: monitoring-nodeport-patch.yaml
+    target:
+      kind: Service
+      name: prometheus
+  - path: monitoring-nodeport-patch.yaml
+    target:
+      kind: Service
+      name: grafana
+
+# Image tags — updated by CI update-manifests job on staging push
 images:
   - name: auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service

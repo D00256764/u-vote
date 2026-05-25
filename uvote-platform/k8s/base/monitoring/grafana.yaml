@@ -352,7 +352,7 @@ spec:
 
 ---
 # -----------------------------------------------------------------------------
-# Grafana Service — NodePort 30300
+# Grafana Service
 # -----------------------------------------------------------------------------
 apiVersion: v1
 kind: Service
@@ -361,11 +361,10 @@ metadata:
   labels:
     app: grafana
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: grafana
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30300
     name: http
