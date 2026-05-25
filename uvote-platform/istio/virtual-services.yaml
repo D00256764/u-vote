@@ -1,3 +1,4 @@
+# Legacy manual install — prefer overlays/staging/istio.yaml via Argo CD (FQDN routes).
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -7,24 +8,19 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
   - match:
     - uri:
         prefix: /api/auth
     route:
     - destination:
-        host: auth-service
+        host: auth-service.uvote-dev.svc.cluster.local
         port:
           number: 5001
     timeout: 10s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -34,24 +30,19 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
   - match:
     - uri:
         prefix: /api/elections
     route:
     - destination:
-        host: election-service
+        host: election-service.uvote-dev.svc.cluster.local
         port:
           number: 5005
     timeout: 10s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -61,35 +52,19 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
-  - match:
-    - method:
-        exact: POST
-      uri:
-        prefix: /vote/submit
-    route:
-    - destination:
-        host: voting-service
-        port:
-          number: 5003
-    timeout: 15s
   - match:
     - uri:
         prefix: /api/voting
     route:
     - destination:
-        host: voting-service
+        host: voting-service.uvote-dev.svc.cluster.local
         port:
           number: 5003
     timeout: 15s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -99,24 +74,19 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
   - match:
     - uri:
         prefix: /api/results
     route:
     - destination:
-        host: results-service
+        host: results-service.uvote-dev.svc.cluster.local
         port:
           number: 5004
     timeout: 10s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -126,24 +96,19 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
   - match:
     - uri:
         prefix: /api/admin
     route:
     - destination:
-        host: admin-service
+        host: admin-service.uvote-dev.svc.cluster.local
         port:
           number: 5002
     timeout: 10s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -153,7 +118,7 @@ spec:
   hosts:
   - "*"
   gateways:
-  - uvote-gateway
+  - uvote-dev/uvote-gateway
   http:
   - name: primary
     match:
@@ -161,19 +126,15 @@ spec:
         prefix: /
     route:
     - destination:
-        host: frontend-service
+        host: frontend-service.uvote-dev.svc.cluster.local
         subset: stable
         port:
           number: 5000
       weight: 100
     - destination:
-        host: frontend-service
+        host: frontend-service.uvote-dev.svc.cluster.local
         subset: canary
         port:
           number: 5000
       weight: 0
     timeout: 10s
-    retries:
-      attempts: 3
-      perTryTimeout: 2s
-      retryOn: gateway-error,connect-failure,retriable-4xx

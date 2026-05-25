@@ -8,8 +8,12 @@ resources:
   - secrets.yaml
   - istio.yaml
   - hpa.yaml
+  - frontend-lb.yaml
 
 patches:
+  - path: url-env-patch.yaml
+    target:
+      kind: Deployment
   # Scale all backend services to 2 replicas for prod
   - path: replicas-patch.yaml
     target:

@@ -37,3 +37,12 @@ spec:
       jsonPointers:
         - /spec/http/0/route/0/weight
         - /spec/http/0/route/1/weight
+    - group: networking.istio.io
+      kind: VirtualService
+      jqPathExpressions:
+        - .spec.http[]?.route[]?.weight
+    - group: ""
+      kind: Service
+      name: frontend-prod-lb
+      jqPathExpressions:
+        - .metadata.annotations["argocd.argoproj.io/tracking-id"]

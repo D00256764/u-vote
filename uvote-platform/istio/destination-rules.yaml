@@ -1,126 +1,74 @@
+# Legacy manual install — prefer overlays/staging/istio.yaml via Argo CD.
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: auth-service
   namespace: uvote-dev
 spec:
-  host: auth-service
+  host: auth-service.uvote-dev.svc.cluster.local
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: election-service
   namespace: uvote-dev
 spec:
-  host: election-service
+  host: election-service.uvote-dev.svc.cluster.local
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: voting-service
   namespace: uvote-dev
 spec:
-  host: voting-service
+  host: voting-service.uvote-dev.svc.cluster.local
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: results-service
   namespace: uvote-dev
 spec:
-  host: results-service
+  host: results-service.uvote-dev.svc.cluster.local
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: admin-service
   namespace: uvote-dev
 spec:
-  host: admin-service
+  host: admin-service.uvote-dev.svc.cluster.local
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
 
 ---
-
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
   name: frontend-service
   namespace: uvote-dev
 spec:
-  host: frontend-service
+  host: frontend-service.uvote-dev.svc.cluster.local
   subsets:
     - name: stable
     - name: canary
   trafficPolicy:
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 30s
-      baseEjectionTime: 30s
     tls:
       mode: ISTIO_MUTUAL
