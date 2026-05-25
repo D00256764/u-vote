@@ -49,19 +49,19 @@ patches:
 images:
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
-    newTag: "df80c90"
+    newTag: "a21aca8"
