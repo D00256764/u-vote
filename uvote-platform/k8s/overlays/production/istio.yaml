@@ -1,3 +1,7 @@
+# Production Gateway server port 8080 — NLB :8080 must map to pod targetPort 8080 (not 80).
+# If both NLB 80 and 8080 target pod :8080, Envoy merges staging+prod routes; staging wins.
+# Fix: plat_scripts/patch_istio_ingress_dual_listener.sh
+---
 apiVersion: networking.istio.io/v1beta1
 kind: Gateway
 metadata:
@@ -8,7 +12,7 @@ spec:
     istio: ingressgateway
   servers:
     - port:
-        number: 8080
+        number: 9080
         name: http-prod
         protocol: HTTP
       hosts:
