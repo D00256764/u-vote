@@ -3,7 +3,7 @@
 # DaemonSet log collector: tails uvote-* container logs → Elasticsearch
 # =============================================================================
 #
-# Tails only pods in uvote-dev namespace (filename pattern uvote-dev_*).
+# Tails pods in both uvote-dev and uvote-prod namespaces.
 # Services emit pure JSON stdout (python-json-logger + --no-access-log).
 # Elasticsearch is running with HTTPS enforced; TLS verify is Off
 # (self-signed cert acceptable for local Kind development).
@@ -57,7 +57,7 @@ config:
   inputs: |
     [INPUT]
         Name              tail
-        Path              /var/log/containers/*uvote-dev*.log
+        Path              /var/log/containers/*uvote-dev*.log,/var/log/containers/*uvote-prod*.log
         multiline.parser  docker, cri
         Tag               uvote.*
         Mem_Buf_Limit     5MB
