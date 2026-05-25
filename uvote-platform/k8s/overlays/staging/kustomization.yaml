@@ -29,6 +29,11 @@ patches:
     target:
       kind: AnalysisTemplate
       name: frontend-success-rate
+  # Lenient outlier detection — single auth pod must not be ejected on restart blips
+  - path: auth-service-outlier-patch.yaml
+    target:
+      kind: DestinationRule
+      name: auth-service
   # Expose monitoring via NodePort for easy dev access (prod uses ClusterIP)
   - path: prometheus-nodeport-patch.yaml
     target:
