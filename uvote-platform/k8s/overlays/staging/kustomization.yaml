@@ -12,6 +12,14 @@ patches:
   - path: url-env-patch.yaml
     target:
       kind: Deployment
+  - path: frontend-env-patch.yaml
+    target:
+      kind: Rollout
+      name: frontend-service
+  - path: frontend-rollout-patch.yaml
+    target:
+      kind: Rollout
+      name: frontend-service
   # Expose monitoring via NodePort for easy dev access (prod uses ClusterIP)
   - path: prometheus-nodeport-patch.yaml
     target:
