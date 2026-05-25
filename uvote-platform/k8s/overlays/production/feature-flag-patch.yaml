@@ -9,4 +9,4 @@ spec:
         - name: election-service
           env:
             - name: FEATURE_QUICK_SETUP
-              value: "false"
+              value: "true"
