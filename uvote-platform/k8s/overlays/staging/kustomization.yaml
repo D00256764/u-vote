@@ -12,6 +12,15 @@ patches:
   - path: url-env-patch.yaml
     target:
       kind: Deployment
+      name: election-service
+  - path: url-env-admin-patch.yaml
+    target:
+      kind: Deployment
+      name: admin-service
+  - path: url-env-results-patch.yaml
+    target:
+      kind: Deployment
+      name: results-service
   - path: frontend-env-patch.yaml
     target:
       kind: Rollout

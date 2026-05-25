@@ -1,4 +1,3 @@
-# Browser-reachable URLs for staging (port 80). Update if your public host differs.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,29 +12,3 @@ spec:
               value: "http://a65a70d00aff54118b22314acafaf560-640951759.eu-west-1.elb.amazonaws.com"
             - name: ELECTION_DASHBOARD_URL
               value: "/dashboard"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: admin-service
-spec:
-  template:
-    spec:
-      containers:
-        - name: admin-service
-          env:
-            - name: BASE_URL
-              value: "http://a65a70d00aff54118b22314acafaf560-640951759.eu-west-1.elb.amazonaws.com"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: results-service
-spec:
-  template:
-    spec:
-      containers:
-        - name: results-service
-          env:
-            - name: BASE_URL
-              value: "http://a65a70d00aff54118b22314acafaf560-640951759.eu-west-1.elb.amazonaws.com"
