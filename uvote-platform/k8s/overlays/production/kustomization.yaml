@@ -36,19 +36,19 @@ patches:
 images:
   - name: auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
   - name: admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
   - name: voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
   - name: results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
   - name: election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
   - name: frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
-    newTag: "54b2c4f"
+    newTag: "26532ab"
