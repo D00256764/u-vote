@@ -9,5 +9,6 @@ spec:
   trafficPolicy:
     outlierDetection:
       consecutive5xxErrors: 100
+      consecutiveGatewayErrors: 100
       interval: 60s
       baseEjectionTime: 10s
