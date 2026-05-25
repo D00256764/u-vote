@@ -57,3 +57,6 @@ istioctl
 
 # Local scripts
 generate_presentation.py
+
+# Argo Rollouts CLI binary (too large for GitHub)
+kubectl-argo-rollouts-darwin-arm64
