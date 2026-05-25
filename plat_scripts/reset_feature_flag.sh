@@ -10,7 +10,9 @@ if [[ "$(git branch --show-current)" != "main" ]]; then
   exit 1
 fi
 
+git stash --include-untracked 2>/dev/null || true
 git pull --rebase origin main
+git stash pop 2>/dev/null || true
 
 CURRENT=$(grep 'value:' "$OVERLAY" | awk '{print $2}' | tr -d '"')
 if [[ "$CURRENT" == "false" ]]; then
