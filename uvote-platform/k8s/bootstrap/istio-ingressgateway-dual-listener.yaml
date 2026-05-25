@@ -1,0 +1,11 @@
+# See plat_scripts/patch_istio_ingress_dual_listener.sh for the safe cluster patch.
+# This file documents the target state only (do not blind-apply — may conflict with Istio install).
+#
+# Target istio-ingressgateway Service ports:
+#   80   -> targetPort 80   (staging Gateway server port 80)
+#   8080 -> targetPort 8080 (production Gateway server port 8080)
+#
+# Target deployment container ports: 80 (http80) and 8080 (http8080) on istio-proxy.
+#
+# Run:
+#   bash plat_scripts/patch_istio_ingress_dual_listener.sh

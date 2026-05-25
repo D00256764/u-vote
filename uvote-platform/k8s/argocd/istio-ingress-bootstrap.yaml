@@ -1,0 +1,25 @@
+# Optional Argo CD app — keeps ingress Service ports from drifting back to 80→8080 collapse.
+# Apply after core Argo CD install:
+#   kubectl apply -n argocd -f uvote-platform/k8s/argocd/istio-ingress-bootstrap.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-ingress-bootstrap
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/D00256764/u-vote
+    targetRevision: main
+    path: uvote-platform/k8s/bootstrap
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
