@@ -6,7 +6,6 @@ namespace: uvote-prod
 resources:
   - ../../base
   - secrets.yaml
-  - frontend-lb.yaml
   - istio.yaml
 
 patches:

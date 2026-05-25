@@ -8,8 +8,8 @@ spec:
     istio: ingressgateway
   servers:
     - port:
-        number: 80
-        name: http
+        number: 8080
+        name: http-prod
         protocol: HTTP
       hosts:
         - "*"
