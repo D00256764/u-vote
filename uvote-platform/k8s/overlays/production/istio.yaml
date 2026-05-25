@@ -15,6 +15,7 @@ spec:
         - "*"
 
 ---
+# Auth service — JWT login/register/verify
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -41,6 +42,7 @@ spec:
         retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
+# Election service — dashboard, elections CRUD, results sub-paths, admin sub-paths
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -54,19 +56,60 @@ spec:
   http:
     - match:
         - uri:
+            prefix: /dashboard
+      route:
+        - destination:
+            host: election-service
+            port:
+              number: 5005
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+    - match:
+        - uri:
+            regex: ^/elections/[0-9]+/results.*
+      route:
+        - destination:
+            host: results-service
+            port:
+              number: 5004
+      timeout: 10s
+    - match:
+        - uri:
+            regex: ^/elections/[0-9]+/(voters|tokens).*
+      route:
+        - destination:
+            host: admin-service
+            port:
+              number: 5002
+      timeout: 10s
+    - match:
+        - uri:
+            prefix: /elections
+      route:
+        - destination:
+            host: election-service
+            port:
+              number: 5005
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+    - match:
+        - uri:
             prefix: /api/elections
       route:
         - destination:
             host: election-service
             port:
               number: 5005
-      timeout: 10s
-      retries:
-        attempts: 3
-        perTryTimeout: 2s
-        retryOn: gateway-error,connect-failure,retriable-4xx
+      timeout: 15s
 
 ---
+# Voting service — vote submission and receipt
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -79,10 +122,21 @@ spec:
     - uvote-gateway
   http:
     - match:
-        - method:
-            exact: POST
-          uri:
-            prefix: /vote/submit
+        - uri:
+            prefix: /vote
+      route:
+        - destination:
+            host: voting-service
+            port:
+              number: 5003
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+    - match:
+        - uri:
+            prefix: /receipt
       route:
         - destination:
             host: voting-service
@@ -98,12 +152,9 @@ spec:
             port:
               number: 5003
       timeout: 15s
-      retries:
-        attempts: 3
-        perTryTimeout: 2s
-        retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
+# Results service — API path only (direct results paths handled in elections VS)
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -130,6 +181,7 @@ spec:
         retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
+# Admin service
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -156,6 +208,7 @@ spec:
         retryOn: gateway-error,connect-failure,retriable-4xx
 
 ---
+# Frontend — catch-all, must be last
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
