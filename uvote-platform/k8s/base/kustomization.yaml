@@ -8,6 +8,7 @@ resources:
   - services/voting-deployment.yaml
   - services/results-deployment.yaml
   - services/election-deployment.yaml
+  - services/frontend-deployment.yaml
   - services/frontend-rollout.yaml
   - services/service-accounts.yaml
   # Network policies
