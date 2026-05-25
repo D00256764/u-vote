@@ -14,6 +14,15 @@ patches:
   - path: url-env-patch.yaml
     target:
       kind: Deployment
+      name: election-service
+  - path: url-env-admin-patch.yaml
+    target:
+      kind: Deployment
+      name: admin-service
+  - path: url-env-results-patch.yaml
+    target:
+      kind: Deployment
+      name: results-service
   # Scale all backend services to 2 replicas for prod
   - path: replicas-patch.yaml
     target:
@@ -27,24 +36,38 @@ patches:
   - path: peer-auth-patch.yaml
     target:
       kind: PeerAuthentication
+  # Change monitoring services to ClusterIP (NodePorts 30090/30300 used by staging)
+  - path: prometheus-clusterip-patch.yaml
+    target:
+      kind: Service
+      name: prometheus
+  - path: grafana-clusterip-patch.yaml
+    target:
+      kind: Service
+      name: grafana
+  - path: analysis-template-patch.jsonpatch.yaml
+    target:
+      kind: AnalysisTemplate
+      name: frontend-success-rate
 
-# Image tags — updated by CI update-manifests job on main push
+# Image tags — updated by CI update-manifests job on main push.
+# Use full ECR repo path so the transformer matches Rollout CRDs (not only Deployments).
 images:
-  - name: auth-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newTag: "9bbcda4"
-  - name: admin-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newTag: "9bbcda4"
-  - name: voting-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newTag: "9bbcda4"
-  - name: results-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newTag: "9bbcda4"
-  - name: election-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newTag: "9bbcda4"
-  - name: frontend-service
+  - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newTag: "9bbcda4"
