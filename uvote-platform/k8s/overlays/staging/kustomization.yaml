@@ -21,10 +21,6 @@ patches:
     target:
       kind: Deployment
       name: results-service
-  - path: frontend-env-patch.yaml
-    target:
-      kind: Rollout
-      name: frontend-service
   - path: frontend-rollout-patch.yaml
     target:
       kind: Rollout
