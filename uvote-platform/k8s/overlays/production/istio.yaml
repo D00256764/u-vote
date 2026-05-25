@@ -1,0 +1,314 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: uvote-gateway
+  namespace: uvote-prod
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-auth
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/auth
+      route:
+        - destination:
+            host: auth-service
+            port:
+              number: 5001
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-elections
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/elections
+      route:
+        - destination:
+            host: election-service
+            port:
+              number: 5005
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-voting
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - match:
+        - method:
+            exact: POST
+          uri:
+            prefix: /vote/submit
+      route:
+        - destination:
+            host: voting-service
+            port:
+              number: 5003
+      timeout: 15s
+    - match:
+        - uri:
+            prefix: /api/voting
+      route:
+        - destination:
+            host: voting-service
+            port:
+              number: 5003
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-results
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/results
+      route:
+        - destination:
+            host: results-service
+            port:
+              number: 5004
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-admin
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/admin
+      route:
+        - destination:
+            host: admin-service
+            port:
+              number: 5002
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: uvote-frontend
+  namespace: uvote-prod
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - uvote-gateway
+  http:
+    - name: primary
+      match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: frontend-service
+            subset: stable
+            port:
+              number: 5000
+          weight: 100
+        - destination:
+            host: frontend-service
+            subset: canary
+            port:
+              number: 5000
+          weight: 0
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: gateway-error,connect-failure,retriable-4xx
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: frontend-service
+  namespace: uvote-prod
+spec:
+  host: frontend-service
+  subsets:
+    - name: stable
+    - name: canary
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: auth-service
+  namespace: uvote-prod
+spec:
+  host: auth-service
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: election-service
+  namespace: uvote-prod
+spec:
+  host: election-service
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: voting-service
+  namespace: uvote-prod
+spec:
+  host: voting-service
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: results-service
+  namespace: uvote-prod
+spec:
+  host: results-service
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: admin-service
+  namespace: uvote-prod
+spec:
+  host: admin-service
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 30s
+      baseEjectionTime: 30s
+    tls:
+      mode: ISTIO_MUTUAL

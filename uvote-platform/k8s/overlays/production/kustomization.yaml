@@ -7,6 +7,7 @@ resources:
   - ../../base
   - secrets.yaml
   - frontend-lb.yaml
+  - istio.yaml
 
 patches:
   # Scale all backend services to 2 replicas for prod
