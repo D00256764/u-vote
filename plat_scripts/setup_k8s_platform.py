@@ -171,39 +171,19 @@ def install_calico() -> bool:
     """Install Calico CNI"""
     print_step(2, "Installing Calico CNI...")
     
-    # Install Calico operator
-    print_info("Installing Calico operator...")
+    # Apply the Calico manifest directly — bundles the CNI plugin, node
+    # daemonset, kube-controllers, and all required RBAC in a single step.
+    print_info("Applying Calico manifest...")
     success, _, _ = run_command([
         'kubectl', 'apply', '-f',
-        'https://raw.githubusercontent.com/projectcalico/calico/v3.26.1/manifests/tigera-operator.yaml'
+        'https://raw.githubusercontent.com/projectcalico/calico/v3.29.3/manifests/calico.yaml'
     ], check=False, capture_output=True)
 
     if not success:
-        print_error("Failed to install Calico operator")
+        print_error("Failed to apply Calico manifest")
         return False
-    
-    # Wait for tigera-operator to register its CRDs before applying custom resources
-    print_info("Waiting for tigera-operator deployment to be ready...")
-    rollout_ok, _, _ = run_command([
-        'kubectl', 'rollout', 'status', 'deployment/tigera-operator',
-        '-n', 'tigera-operator', '--timeout=120s'
-    ], check=False)
-    if not rollout_ok:
-        print_warning("tigera-operator rollout wait failed; attempting custom-resources apply anyway")
 
-    # Install Calico custom resources (local copy with correct pod CIDR)
-    print_info("Installing Calico custom resources...")
-    calico_cr = Path(__file__).parent.parent / "uvote-platform" / "k8s" / "calico" / "custom-resources.yaml"
-    if not calico_cr.exists():
-        print_error(f"Calico custom-resources.yaml not found: {calico_cr}")
-        return False
-    success, _, _ = run_command([
-        'kubectl', 'apply', '-f', str(calico_cr)
-    ], check=False, capture_output=True)
-
-    if not success:
-        print_error("Failed to install Calico custom resources")
-        return False
+    print_success("Calico manifest applied")
     
     # Wait for Calico to be ready
     print_info("Waiting for Calico to be ready (this may take 2-3 minutes)...")
@@ -222,8 +202,18 @@ def install_calico() -> bool:
         ], check=False)
         if not success:
             print_warning(f"{name} pods may still be starting")
-            return True  # Continue anyway
-    
+
+    # Block until all nodes have cleared the not-ready taint.
+    # Calico must be fully running before the taint is removed, so this
+    # gates the return and prevents deploy_database() from racing ahead.
+    print_info("Waiting for all nodes to become Ready...")
+    success, _, _ = run_command([
+        'kubectl', 'wait', '--for=condition=Ready', 'nodes', '--all', '--timeout=180s'
+    ], check=False)
+    if not success:
+        print_error("Nodes did not become Ready after Calico installation")
+        return False
+
     print_success("Calico installed and ready")
     
     # Verify nodes are Ready
