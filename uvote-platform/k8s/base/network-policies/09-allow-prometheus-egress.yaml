@@ -57,7 +57,7 @@ spec:
     ports:
     - port: 5000
       protocol: TCP
-  # Forward firing alerts to Alertmanager
+  # Allow Prometheus to send alerts to AlertManager
   - to:
     - podSelector:
         matchLabels:

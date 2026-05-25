@@ -1,8 +1,9 @@
-# Alertmanager: receive alerts from Prometheus, send notifications to Slack (HTTPS).
+# AlertManager: accept alerts from Prometheus, send notifications to Slack
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-prometheus-to-alertmanager
+  name: allow-alertmanager-ingress-from-prometheus
   labels:
     app: uvote
     security: network-policy
@@ -13,15 +14,15 @@ spec:
     matchLabels:
       app: alertmanager
   policyTypes:
-    - Ingress
+  - Ingress
   ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: prometheus
-      ports:
-        - port: 9093
-          protocol: TCP
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - port: 9093
+      protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -37,26 +38,17 @@ spec:
     matchLabels:
       app: alertmanager
   policyTypes:
-    - Egress
+  - Egress
   egress:
-    # Slack incoming webhooks (hooks.slack.com:443)
-    - ports:
-        - port: 443
-          protocol: TCP
----
-apiVersion: networking.istio.io/v1beta1
-kind: ServiceEntry
-metadata:
-  name: slack-webhooks
-  labels:
-    app: uvote
-    purpose: observability
-spec:
-  hosts:
-    - hooks.slack.com
-  ports:
-    - number: 443
-      name: https
-      protocol: HTTPS
-  location: MESH_EXTERNAL
-  resolution: DNS
+  # Allow outbound HTTPS to Slack (hooks.slack.com)
+  - ports:
+    - port: 443
+      protocol: TCP
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
