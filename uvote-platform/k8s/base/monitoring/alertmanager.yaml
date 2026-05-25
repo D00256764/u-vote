@@ -1,11 +1,8 @@
 # =============================================================================
-# Alertmanager — receives alerts from Prometheus, notifies Slack
+# Alertmanager — receives alerts from Prometheus (failure demo)
 #
 # UI:  kubectl port-forward svc/alertmanager 9093:9093 -n uvote-dev
 #       http://localhost:9093
-#
-# Slack webhook (do not commit the real URL):
-#   bash plat_scripts/setup_alertmanager_slack.sh 'https://hooks.slack.com/services/...'
 # =============================================================================
 
 apiVersion: v1
@@ -18,30 +15,22 @@ data:
       resolve_timeout: 5m
 
     route:
-      receiver: slack
-      group_by: ['alertname', 'job']
+      receiver: default
+      group_by: ['alertname', 'service']
       group_wait: 10s
       group_interval: 10s
-      repeat_interval: 4h
+      repeat_interval: 1h
 
     receivers:
-      - name: slack
-        slack_configs:
-          - api_url_file: /etc/alertmanager/secrets/slack_api_url
-            send_resolved: true
-            title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.job }})'
-            text: |-
-              {{ range .Alerts }}
-              *{{ .Annotations.summary }}*
-              {{ .Annotations.description }}
-              {{ end }}
+      # No external receiver — alerts visible in Alertmanager UI (demo).
+      - name: default
 
     inhibit_rules:
       - source_matchers:
           - severity = critical
         target_matchers:
           - severity = warning
-        equal: ['alertname', 'job']
+        equal: ['alertname', 'service']
 
 ---
 apiVersion: apps/v1
@@ -59,9 +48,6 @@ spec:
     metadata:
       labels:
         app: alertmanager
-      annotations:
-        # Plain HTTP to Slack via hooks.slack.com — avoid Istio mTLS on outbound HTTPS
-        sidecar.istio.io/inject: "false"
     spec:
       containers:
         - name: alertmanager
@@ -76,9 +62,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/alertmanager
-            - name: slack-secret
-              mountPath: /etc/alertmanager/secrets
-              readOnly: true
           resources:
             requests:
               memory: "64Mi"
@@ -90,10 +73,6 @@ spec:
         - name: config
           configMap:
             name: alertmanager-config
-        - name: slack-secret
-          secret:
-            secretName: alertmanager-slack
-            optional: true
 
 ---
 apiVersion: v1

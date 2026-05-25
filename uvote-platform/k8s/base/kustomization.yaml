@@ -26,7 +26,6 @@ resources:
   - network-policies/10-allow-grafana-prometheus.yaml
   - network-policies/11-allow-prometheus-scrape-istio.yaml
   - network-policies/12-allow-kiali.yaml
-  - network-policies/13-allow-alertmanager.yaml
   # Mailhog (safe email sink for both envs)
   - mailhog/mailhog-deployment.yaml
   # Monitoring — each environment gets its own independently observable stack
