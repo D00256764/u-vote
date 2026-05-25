@@ -4,5 +4,9 @@ project_name = "uvote"
 environment  = "dev"
 cluster_name = "uvote"
 
+# EKS workers — t3.medium recommended (Istio/sidecars need ~4 GiB per node)
+eks_node_instance_types = ["t3.medium"]
+# eks_node_desired_size = 2  # set to 1 to reduce cost when not demoing
+
 # Required — use a strong password; never commit terraform.tfvars
 db_password = "CHANGE_ME_use_a_long_random_password"
