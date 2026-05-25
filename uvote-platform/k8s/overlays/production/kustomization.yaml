@@ -55,19 +55,19 @@ patches:
 images:
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/auth-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/admin-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/voting-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/results-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/election-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
   - name: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
     newName: 484010150615.dkr.ecr.eu-west-1.amazonaws.com/uvote/frontend-service
-    newTag: "65bb1cb"
+    newTag: "e8d063d"
