@@ -1,0 +1,7 @@
+# Argo Rollouts controller resolves Prometheus from argo-rollouts namespace — use FQDN.
+- op: replace
+  path: /spec/metrics/0/provider/prometheus/address
+  value: http://prometheus.uvote-dev.svc.cluster.local:9090
+- op: replace
+  path: /spec/metrics/1/provider/prometheus/address
+  value: http://prometheus.uvote-dev.svc.cluster.local:9090

@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: results-service
+spec:
+  template:
+    spec:
+      containers:
+        - name: results-service
+          env:
+            - name: BASE_URL
+              value: "http://a65a70d00aff54118b22314acafaf560-640951759.eu-west-1.elb.amazonaws.com"
