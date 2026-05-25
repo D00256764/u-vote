@@ -48,7 +48,7 @@ variable "eks_node_instance_types" {
 
 variable "eks_node_desired_size" {
   type    = number
-  default = 2
+  default = 4
 }
 
 variable "eks_node_min_size" {
