@@ -25,14 +25,14 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - match:
         - uri:
             prefix: /api/auth
       route:
         - destination:
-            host: auth-service
+            host: auth-service.uvote-prod.svc.cluster.local
             port:
               number: 5001
       timeout: 10s
@@ -52,14 +52,14 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - match:
         - uri:
             prefix: /dashboard
       route:
         - destination:
-            host: election-service
+            host: election-service.uvote-prod.svc.cluster.local
             port:
               number: 5005
       timeout: 15s
@@ -72,7 +72,7 @@ spec:
             regex: ^/elections/[0-9]+/results.*
       route:
         - destination:
-            host: results-service
+            host: results-service.uvote-prod.svc.cluster.local
             port:
               number: 5004
       timeout: 10s
@@ -81,7 +81,7 @@ spec:
             regex: ^/elections/[0-9]+/(voters|tokens).*
       route:
         - destination:
-            host: admin-service
+            host: admin-service.uvote-prod.svc.cluster.local
             port:
               number: 5002
       timeout: 10s
@@ -90,7 +90,7 @@ spec:
             prefix: /elections
       route:
         - destination:
-            host: election-service
+            host: election-service.uvote-prod.svc.cluster.local
             port:
               number: 5005
       timeout: 15s
@@ -103,7 +103,7 @@ spec:
             prefix: /api/elections
       route:
         - destination:
-            host: election-service
+            host: election-service.uvote-prod.svc.cluster.local
             port:
               number: 5005
       timeout: 15s
@@ -119,14 +119,14 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - match:
         - uri:
             prefix: /vote
       route:
         - destination:
-            host: voting-service
+            host: voting-service.uvote-prod.svc.cluster.local
             port:
               number: 5003
       timeout: 15s
@@ -139,7 +139,7 @@ spec:
             prefix: /receipt
       route:
         - destination:
-            host: voting-service
+            host: voting-service.uvote-prod.svc.cluster.local
             port:
               number: 5003
       timeout: 15s
@@ -148,7 +148,7 @@ spec:
             prefix: /api/voting
       route:
         - destination:
-            host: voting-service
+            host: voting-service.uvote-prod.svc.cluster.local
             port:
               number: 5003
       timeout: 15s
@@ -164,14 +164,14 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - match:
         - uri:
             prefix: /api/results
       route:
         - destination:
-            host: results-service
+            host: results-service.uvote-prod.svc.cluster.local
             port:
               number: 5004
       timeout: 10s
@@ -191,14 +191,14 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - match:
         - uri:
             prefix: /api/admin
       route:
         - destination:
-            host: admin-service
+            host: admin-service.uvote-prod.svc.cluster.local
             port:
               number: 5002
       timeout: 10s
@@ -218,7 +218,7 @@ spec:
   hosts:
     - "*"
   gateways:
-    - uvote-gateway
+    - uvote-prod/uvote-gateway
   http:
     - name: primary
       match:
@@ -226,13 +226,13 @@ spec:
             prefix: /
       route:
         - destination:
-            host: frontend-service
+            host: frontend-service.uvote-prod.svc.cluster.local
             subset: stable
             port:
               number: 5000
           weight: 100
         - destination:
-            host: frontend-service
+            host: frontend-service.uvote-prod.svc.cluster.local
             subset: canary
             port:
               number: 5000
@@ -250,7 +250,7 @@ metadata:
   name: frontend-service
   namespace: uvote-prod
 spec:
-  host: frontend-service
+  host: frontend-service.uvote-prod.svc.cluster.local
   subsets:
     - name: stable
     - name: canary
@@ -273,7 +273,7 @@ metadata:
   name: auth-service
   namespace: uvote-prod
 spec:
-  host: auth-service
+  host: auth-service.uvote-prod.svc.cluster.local
   trafficPolicy:
     connectionPool:
       http:
@@ -293,7 +293,7 @@ metadata:
   name: election-service
   namespace: uvote-prod
 spec:
-  host: election-service
+  host: election-service.uvote-prod.svc.cluster.local
   trafficPolicy:
     connectionPool:
       http:
@@ -313,7 +313,7 @@ metadata:
   name: voting-service
   namespace: uvote-prod
 spec:
-  host: voting-service
+  host: voting-service.uvote-prod.svc.cluster.local
   trafficPolicy:
     connectionPool:
       http:
@@ -333,7 +333,7 @@ metadata:
   name: results-service
   namespace: uvote-prod
 spec:
-  host: results-service
+  host: results-service.uvote-prod.svc.cluster.local
   trafficPolicy:
     connectionPool:
       http:
@@ -353,7 +353,7 @@ metadata:
   name: admin-service
   namespace: uvote-prod
 spec:
-  host: admin-service
+  host: admin-service.uvote-prod.svc.cluster.local
   trafficPolicy:
     connectionPool:
       http:
